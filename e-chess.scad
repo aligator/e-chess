@@ -1,4 +1,4 @@
-renderTop=false;
+renderTop=true;
 renderGrid=true;
 renderBottom=true;
 
@@ -52,10 +52,11 @@ module Top() {
 }
 
 module Grid() {
+    translate([fieldBorder, fieldBorder, 0]) 
     eachGrid() {
         difference() {
-            cube([fieldSize, fieldSize, boxHeight]);
-            translate([fieldBorder, fieldBorder, -c0]) cube([fieldSize - fieldBorder*2, fieldSize - fieldBorder*2, boxHeight+c0*2]);
+            cube([fieldSize + 2*fieldBorder, fieldSize + 2*fieldBorder, boxHeight]);
+            translate([fieldBorder, fieldBorder, -c0]) cube([fieldSize, fieldSize, boxHeight+c0*2]);
 
             // wires
             translate([
@@ -74,22 +75,24 @@ module Grid() {
             rotate([90, 0, 90])
             cylinder(h = fieldSize+c0*2, r = wireRadius);
         }
-    }
+    };
 
-    translate([-fieldBorder, -fieldBorder, 0]) 
+    translate([0, 0, 0]) 
     difference() {
-        cube([size * fieldSize + 2*fieldBorder, size * fieldSize + 2*fieldBorder, boxHeight+fieldBorder*2]);
+        cube([size * fieldSize + 4*fieldBorder, size * fieldSize + 4*fieldBorder, boxHeight+fieldBorder*2]);
 
+    //     // inner hole
         translate([fieldBorder*2, fieldBorder*2, -c0]) 
-        cube([size * fieldSize-fieldBorder, size * fieldSize-fieldBorder, boxHeight+fieldBorder*2 + c0*2]);
+        cube([size * fieldSize, size * fieldSize, boxHeight+fieldBorder*2 + c0*2]);
 
+    //     // cut out, where the top part goes
         translate([fieldBorder, fieldBorder, boxHeight])
-        cube([size * fieldSize, size * fieldSize, fieldBorder+c0]);
+        cube([size * fieldSize + fieldBorder*2, size * fieldSize + fieldBorder*2, fieldBorder+c0]);
     }
 }
 
 if (renderTop) {
-    translate([0, 0, boxHeight]) Top();
+    translate([fieldBorder, fieldBorder, boxHeight]) Top();
 }
 
 if (renderGrid) {
