@@ -22,6 +22,15 @@ wireRadius=2;
 
 boxHeight=30;
 
+ledWidth=11;
+ledHeight=3;
+bottomHeight=5;
+bottomGridOverlap=0.4;
+
+// Additional bottomSize to the size of the grid.
+bottomSize=3;
+
+
 tollerance=0.2;
 
 // Just a constant to make cutouts larger for better preview rendering.
@@ -29,6 +38,8 @@ c0=1+0;
 
 $fa=12;
 $fs=1;
+
+gridOuter=size * fieldSize + 4*fieldBorder + 2*tollerance;
 
 module eachGrid() { 
     for ( i = [0:1:size-1]) {
@@ -81,29 +92,39 @@ module Grid() {
 
     translate([0, 0, 0]) 
     difference() {
-        cube([size * fieldSize + 4*fieldBorder + 2*tollerance, size * fieldSize + 4*fieldBorder + 2*tollerance, boxHeight+fieldBorder*2]);
+        cube([gridOuter, gridOuter, boxHeight+fieldBorder*2]);
 
-    //     // inner hole
+        // inner hole
         translate([fieldBorder*2 + tollerance, fieldBorder*2 + tollerance, -c0]) 
         cube([size * fieldSize, size * fieldSize, boxHeight+fieldBorder*2 + c0*2]);
 
-    //     // cut out, where the top part goes
+        // cut out, where the top part goes
         translate([fieldBorder, fieldBorder, boxHeight])
         cube([size * fieldSize + 2*fieldBorder + 2*tollerance, size * fieldSize + 2*fieldBorder + 2*tollerance, fieldBorder+c0]);
     }
 }
 
+module Bottom() {
+    difference() {
+        cube([gridOuter + 2*bottomSize + 2*tollerance, gridOuter + 2*bottomSize + 2*tollerance, bottomHeight]);
+        translate([bottomSize, bottomSize, bottomHeight-bottomGridOverlap]) 
+        cube([gridOuter + 2*tollerance, gridOuter + 2*tollerance, bottomGridOverlap+c0]);
+    }
+}
+
 if (renderTop) {
-    translate([fieldBorder + tollerance, fieldBorder + tollerance, boxHeight]) Top();
+    translate([fieldBorder + tollerance + bottomSize+tollerance, fieldBorder + tollerance + bottomSize+tollerance, boxHeight+bottomHeight-bottomGridOverlap]) 
+    Top();
 }
 
 if (renderGrid) {
     // Grid, including the wiring for the reed contacts.
     // Open at the bottom, to allow easy wiring.
+    translate([bottomSize+tollerance, bottomSize+tollerance, bottomHeight-bottomGridOverlap]) 
     Grid();
 }
 
 if (renderBottom) {
     // The bottom embeds the led strip.
-
+    Bottom();
 }
