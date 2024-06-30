@@ -22,6 +22,8 @@ wireRadius=2;
 
 boxHeight=30;
 
+tollerance=0.2;
+
 // Just a constant to make cutouts larger for better preview rendering.
 c0=1+0;
 
@@ -52,7 +54,7 @@ module Top() {
 }
 
 module Grid() {
-    translate([fieldBorder, fieldBorder, 0]) 
+    translate([fieldBorder + tollerance, fieldBorder + tollerance, 0]) 
     eachGrid() {
         difference() {
             cube([fieldSize + 2*fieldBorder, fieldSize + 2*fieldBorder, boxHeight]);
@@ -79,20 +81,20 @@ module Grid() {
 
     translate([0, 0, 0]) 
     difference() {
-        cube([size * fieldSize + 4*fieldBorder, size * fieldSize + 4*fieldBorder, boxHeight+fieldBorder*2]);
+        cube([size * fieldSize + 4*fieldBorder + 2*tollerance, size * fieldSize + 4*fieldBorder + 2*tollerance, boxHeight+fieldBorder*2]);
 
     //     // inner hole
-        translate([fieldBorder*2, fieldBorder*2, -c0]) 
+        translate([fieldBorder*2 + tollerance, fieldBorder*2 + tollerance, -c0]) 
         cube([size * fieldSize, size * fieldSize, boxHeight+fieldBorder*2 + c0*2]);
 
     //     // cut out, where the top part goes
         translate([fieldBorder, fieldBorder, boxHeight])
-        cube([size * fieldSize + fieldBorder*2, size * fieldSize + fieldBorder*2, fieldBorder+c0]);
+        cube([size * fieldSize + 2*fieldBorder + 2*tollerance, size * fieldSize + 2*fieldBorder + 2*tollerance, fieldBorder+c0]);
     }
 }
 
 if (renderTop) {
-    translate([fieldBorder, fieldBorder, boxHeight]) Top();
+    translate([fieldBorder + tollerance, fieldBorder + tollerance, boxHeight]) Top();
 }
 
 if (renderGrid) {
