@@ -10,7 +10,8 @@ fieldSize=33;
 // Board field count. For a normal chess -> 8.
 size=8;
 
-top=0.4; // 2 layers for layer thickness 0.2
+// 3 layers for layer thickness 0.2
+top=0.6; 
 
 fieldBorderHeight=0.4; 
 fieldBorder=0.4; 
@@ -25,7 +26,7 @@ boxHeight=30;
 ledWidth=11;
 ledHeight=3;
 bottomHeight=5;
-bottomGridOverlap=0.4;
+bottomGridOverlap=1;
 
 // Additional bottomSize to the size of the grid.
 bottomSize=3;
