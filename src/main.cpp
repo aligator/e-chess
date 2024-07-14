@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 
-#define LED_PIN    8
+#define LED_PIN   22
 
 // How many NeoPixels are attached to the Arduino?
 #define LED_COUNT 9
@@ -19,8 +19,8 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 const uint8_t FIELD_SIZE = 3;
 
-const uint8_t COLS[FIELD_SIZE] = { 5, 6, 7 };
-const uint8_t ROWS[FIELD_SIZE] = { 2, 3, 4 };
+const uint8_t COLS[FIELD_SIZE] = { 26, 27, 4 };
+const uint8_t ROWS[FIELD_SIZE] = { 32, 33, 25 };
 
 uint8_t field[FIELD_SIZE][FIELD_SIZE] = {
   {0, 0, 0},
