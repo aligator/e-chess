@@ -1,71 +1,94 @@
 #include <Arduino.h>
+#include <Adafruit_NeoPixel.h>
 
-bool ledB2 = false;
-bool ledB1 = false;
-bool ledA2 = false;
-bool ledA1 = false;
+#define LED_PIN    8
 
+// How many NeoPixels are attached to the Arduino?
+#define LED_COUNT 9
+
+// Declare our NeoPixel strip object:
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Argument 1 = Number of pixels in NeoPixel strip
+// Argument 2 = Arduino pin number (most are valid)
+// Argument 3 = Pixel type flags, add together as needed:
+//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
+//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
+//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
+//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
+//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
+
+const uint8_t FIELD_SIZE = 3;
+
+const uint8_t COLS[FIELD_SIZE] = { 5, 6, 7 };
+const uint8_t ROWS[FIELD_SIZE] = { 2, 3, 4 };
+
+uint8_t field[FIELD_SIZE][FIELD_SIZE] = {
+  {0, 0, 0},
+  {0, 0, 0},
+  {0, 0, 0},
+};
+
+void printField() {
+  for (size_t row = 0; row < FIELD_SIZE; row++)
+  {
+    for (size_t col = 0; col < FIELD_SIZE; col++)
+    {
+      Serial.print(field[row][col]);
+      field[row][col] = 0;
+    }
+    Serial.println("");
+  }
+}
 
 void setup() {
   Serial.begin(9600);
 
+  strip.begin();           // INITIALIZE NeoPixel strip object (REQUIRED)
+  strip.show();            // Turn OFF all pixels ASAP
+  strip.setBrightness(255); // Set BRIGHTNESS to about 1/5 (max = 255)
+
   // Grid input
-  pinMode(4, INPUT_PULLUP);
-  pinMode(5, INPUT_PULLUP);
-
+  for (auto &&i : ROWS)
+  {
+    pinMode(i, INPUT_PULLUP);
+  }
+  
   // Grid output
-  pinMode(2, OUTPUT);
-  pinMode(3, OUTPUT);
+  for (auto &&i : COLS)
+  {
+    pinMode(i, OUTPUT);
+  }
 
-  // Leds
-  pinMode(7, OUTPUT); // A2
-  pinMode(8, OUTPUT); // B2
-  pinMode(9, OUTPUT); // A1
-  pinMode(10, OUTPUT); // B1
+  printField();
+
+
+  for (size_t col = 0; col < FIELD_SIZE; col++)
+  {
+    digitalWrite(COLS[col], true);
+  }
 }
 
 void loop() {
-  ledB2 = false;
-  ledB1 = false;
-  ledA2 = false;
-  ledA1 = false;
+  // Check each field
+  for (size_t col = 0; col < FIELD_SIZE; col++)
+  {
+    digitalWrite(COLS[col], false);
+    
+    for (size_t row = 0; row < FIELD_SIZE; row++)
+    {
+   
+      field[row][col] = !digitalRead(ROWS[row]);
 
-  // enable line 1
-  digitalWrite(2, true);
-  digitalWrite(3, false);
-  //delay(100);
+      uint16_t pixel = row*FIELD_SIZE+col;
+      if (row % 2 == 0) {
+        pixel = row*FIELD_SIZE+(FIELD_SIZE-col-1);
+      }
+      
 
-  if (!digitalRead(4)) {
-    ledA2 = true;
+      strip.setPixelColor(pixel, 100 * field[row][col], 0, 0);
+    }
+    digitalWrite(COLS[col], true);
   }
-
-  if (!digitalRead(5)) {
-    ledB2 = true;
-  }
-  Serial.println("ledA2 " + String(ledA2));
-  Serial.println("ledB2 " + String(ledB2));
-
-  // enable line 2
-  digitalWrite(2, false);
-  digitalWrite(3, true);
-  //delay(100);
-
-  if (!digitalRead(4)) {
-    ledA1 = true;
-  }
-
-  if (!digitalRead(5)) {
-    ledB1 = true;
-  }
-  Serial.println("ledA1 " + String(ledA1));
-  Serial.println("ledB1 " + String(ledB1));
-  Serial.println("________");
   
-
-  digitalWrite(7, ledA2);
-  digitalWrite(8, ledB2);
-  digitalWrite(9, ledA1);
-  digitalWrite(10, ledB1);
-
-  delay(100);
+  strip.show();
 }
