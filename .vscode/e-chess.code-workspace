@@ -1,0 +1,20 @@
+{
+    "folders": [
+        {
+            "path": "..",
+            "name": "E-Chess"
+        },
+        {
+            "path": "../cpp-playground",
+            "name": "Arduino - Playground firmware"
+        },
+        {
+            "path": "../firmware",
+            "name": "Rust firmware"
+        },
+        {
+            "path": "../scad",
+            "name": "OpenSCAD 3D model"
+        }
+    ]
+}
