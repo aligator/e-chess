@@ -1,30 +1,27 @@
 // use std::sync::mpsc::channel;
-use std::{thread, time::*, ptr, string::String};
-use std::str;
 use std::result::Result::Ok;
+use std::str;
+use std::{ptr, string::String, thread, time::*};
 
 use anyhow::*;
 use log::*;
 
-
 // Common IDF stuff
-use esp_idf_hal::prelude::*;
 use esp_idf_hal::modem::*;
 use esp_idf_hal::peripheral::*;
-use esp_idf_sys::time_t;
-use esp_idf_sys::time;
+use esp_idf_hal::prelude::*;
 use esp_idf_sys::link_patches;
+use esp_idf_sys::time;
+use esp_idf_sys::time_t;
 
 // Wi-Fi
 use esp_idf_svc::eventloop::*;
 use esp_idf_svc::netif::*;
-use esp_idf_svc::wifi::*;
-use esp_idf_svc::wifi::EspWifi;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::wifi::EspWifi;
+use esp_idf_svc::wifi::*;
 
-use esp_idf_svc::{
-    log::EspLogger,
-};
+use esp_idf_svc::log::EspLogger;
 
 const WIFI_SSID: &str = "Wokwi-GUEST";
 const WIFI_PASS: &str = "";
@@ -43,7 +40,7 @@ fn main() -> Result<()> {
 
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
-    
+
     // Set up peripherals and display
     let peripherals = Peripherals::take().unwrap();
     let sysloop = EspSystemEventLoop::take()?;
@@ -63,19 +60,14 @@ fn main() -> Result<()> {
 
     info!("WIFI connection done");
 
-
-    loop {
-
-    }
+    loop {}
 }
-
 
 fn connect_wifi(
     wifi: &mut BlockingWifi<EspWifi<'static>>,
-    wifi_ssid : &str, 
-    wifi_password : &str, 
+    wifi_ssid: &str,
+    wifi_password: &str,
 ) -> anyhow::Result<()> {
-
     let wifi_configuration: Configuration = Configuration::Client(ClientConfiguration {
         ssid: wifi_ssid.try_into().unwrap(),
         bssid: None,
