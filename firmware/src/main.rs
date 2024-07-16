@@ -4,6 +4,7 @@ use anyhow::Result;
 use esp_idf_hal::gpio::{AnyIOPin, Level, PinDriver, Pull};
 use esp_idf_hal::peripheral::Peripheral;
 use esp_idf_hal::peripherals::Peripherals;
+use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 
 use std::thread::sleep;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -78,54 +79,70 @@ fn main() -> Result<()> {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
+    ThreadSpawnConfiguration {
+        name: Some(b"app-thread\0"),
+        stack_size: 10000,
+        priority: 15,
+        ..Default::default()
+    }
+    .set()
+    .unwrap();
+
     let peripherals = Peripherals::take().unwrap();
     let led_pin = peripherals.pins.gpio22;
     let channel = peripherals.rmt.channel0;
     let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin).unwrap();
 
-    let mut board = Board::new(
-        [
-            AnyIOPin::from(peripherals.pins.gpio26),
-            AnyIOPin::from(peripherals.pins.gpio27),
-            AnyIOPin::from(peripherals.pins.gpio4),
-        ],
-        [
-            AnyIOPin::from(peripherals.pins.gpio32),
-            AnyIOPin::from(peripherals.pins.gpio33),
-            AnyIOPin::from(peripherals.pins.gpio25),
-        ],
-    );
+    let _thread_1 = std::thread::Builder::new()
+        .spawn(move || {
+            let mut board = Board::new(
+                [
+                    AnyIOPin::from(peripherals.pins.gpio26),
+                    AnyIOPin::from(peripherals.pins.gpio27),
+                    AnyIOPin::from(peripherals.pins.gpio4),
+                ],
+                [
+                    AnyIOPin::from(peripherals.pins.gpio32),
+                    AnyIOPin::from(peripherals.pins.gpio33),
+                    AnyIOPin::from(peripherals.pins.gpio25),
+                ],
+            );
 
-    board.setup();
+            board.setup();
 
-    loop {
-        // make black
-        let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
+            loop {
+                // make black
+                let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
 
-        board.tick();
+                board.tick();
 
-        // for columns in board.field.iter() {
-        //     info!("{:?}", columns);
-        // }
-        // info!("");
+                // for columns in board.field.iter() {
+                //     info!("{:?}", columns);
+                // }
+                // info!("");
 
-        for (row, columns) in board.field.iter().enumerate() {
-            for (column, value) in columns.iter().enumerate() {
-                let mut pixel = row * board.size() + column;
-                if row % 2 == 0 {
-                    pixel = row * board.size() + (board.size() - column - 1);
+                for (row, columns) in board.field.iter().enumerate() {
+                    for (column, value) in columns.iter().enumerate() {
+                        let mut pixel = row * board.size() + column;
+                        if row % 2 == 0 {
+                            pixel = row * board.size() + (board.size() - column - 1);
+                        }
+
+                        if *value {
+                            pixels[pixel] = smart_leds::RGB { r: 255, g: 0, b: 0 }
+                        } else {
+                            pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 0 }
+                        }
+                    }
                 }
 
-                if *value {
-                    pixels[pixel] = smart_leds::RGB { r: 255, g: 0, b: 0 }
-                } else {
-                    pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 0 }
-                }
+                ws2812.write_nocopy(pixels).unwrap();
+
+                sleep(Duration::from_millis(100));
             }
-        }
+        })
+        .unwrap();
 
-        ws2812.write_nocopy(pixels).unwrap();
-
-        sleep(Duration::from_millis(100));
-    }
+    _thread_1.join().unwrap();
+    loop {}
 }
