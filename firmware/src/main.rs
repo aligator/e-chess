@@ -11,16 +11,10 @@ use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::{self, EspHttpServer};
 use esp_idf_svc::http::Method;
-use esp_idf_svc::ipv4::DHCPClientSettings;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::ping::EspPing;
 use esp_idf_svc::wifi;
 use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
-use esp_idf_svc::{io, ipv4};
-use esp_idf_sys::{
-    esp_netif_create_default_wifi_sta, esp_netif_get_ip_info, wifi_netif_driver,
-    xTaskCreatePinnedToCore, xTaskGetCoreID, TaskHandle_t,
-};
+use esp_idf_sys::xTaskCreatePinnedToCore;
 use log::*;
 use std::thread::sleep;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -180,7 +174,7 @@ fn main() -> Result<()> {
     let app_params = APP_PARAMS.lock().unwrap();
     app_params.replace(Some(AppParams {
         board: board,
-        led_pin: AnyIOPin::from(peripherals.pins.gpio22),
+        led_pin: AnyIOPin::from(peripherals.pins.gpio23),
         channel: peripherals.rmt.channel0,
     }));
     drop(app_params);
