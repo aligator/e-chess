@@ -1,76 +1,138 @@
+use std::cell::RefCell;
+use std::ffi::{c_void, CString};
+use std::sync::Mutex;
 use std::time::Duration;
 
-use anyhow::Result;
-use esp_idf_hal::gpio::{AnyIOPin, Level, PinDriver, Pull};
-use esp_idf_hal::peripheral::Peripheral;
+use anyhow::{Ok, Result};
+use board::Board;
+use esp_idf_hal::gpio::AnyIOPin;
+use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
-
+use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::http::server::{self, EspHttpServer};
+use esp_idf_svc::http::Method;
+use esp_idf_svc::ipv4::DHCPClientSettings;
+use esp_idf_svc::nvs::EspDefaultNvsPartition;
+use esp_idf_svc::ping::EspPing;
+use esp_idf_svc::wifi;
+use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
+use esp_idf_svc::{io, ipv4};
+use esp_idf_sys::{
+    esp_netif_create_default_wifi_sta, esp_netif_get_ip_info, wifi_netif_driver,
+    xTaskCreatePinnedToCore, xTaskGetCoreID, TaskHandle_t,
+};
+use log::*;
 use std::thread::sleep;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
+mod board;
 
-pub trait BoardPinExt {
-    fn set_output(&mut self, high: bool);
-    fn disable(&mut self);
+const WIFI_SSID: &str = "Freifunk";
+const WIFI_PASS: &str = "";
+
+fn connect_wifi(
+    wifi: &mut BlockingWifi<EspWifi<'static>>,
+    wifi_ssid: &str,
+    wifi_password: &str,
+) -> anyhow::Result<()> {
+    let wifi_configuration: wifi::Configuration =
+        wifi::Configuration::Client(wifi::ClientConfiguration {
+            ssid: wifi_ssid.try_into().unwrap(),
+            bssid: None,
+            auth_method: esp_idf_svc::wifi::AuthMethod::None,
+            password: wifi_password.try_into().unwrap(),
+            channel: None,
+            ..Default::default()
+        });
+
+    wifi.set_configuration(&wifi_configuration)?;
+
+    wifi.start()?;
+    info!("Wifi started");
+
+    wifi.connect()?;
+    info!("Wifi connected");
+
+    wifi.wait_netif_up()?;
+    info!("Wifi netif up");
+
+    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
+    info!(
+        "IP: \n{}\n{}\n{:?}\n{:?}",
+        ip_info.ip, ip_info.subnet, ip_info.dns, ip_info.secondary_dns
+    );
+
+    return Ok(());
 }
 
-pub struct Board<'a, const N: usize> {
-    column_pins: [PinDriver<'a, AnyIOPin, esp_idf_hal::gpio::Output>; N],
-    row_pins: [PinDriver<'a, AnyIOPin, esp_idf_hal::gpio::Input>; N],
-
-    pub field: [[bool; N]; N],
+struct AppParams<'a, const N: usize> {
+    board: Board<'a, N>,
+    led_pin: AnyIOPin,
+    channel: esp_idf_hal::rmt::CHANNEL0, // For now only channel0 - don't know how to type this to support any channel...
 }
 
-impl<'a, const N: usize> Board<'a, N> {
-    pub fn size(&self) -> usize {
-        N
-    }
+const FIELD_SIZE: usize = 3;
 
-    fn new(
-        column_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
-        row_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
-    ) -> Self {
-        Board {
-            column_pins: column_pins.map(|pin| PinDriver::output(pin).unwrap()),
-            row_pins: row_pins.map(|pin| PinDriver::input(pin).unwrap()),
+static APP_PARAMS: Mutex<RefCell<Option<AppParams<FIELD_SIZE>>>> = Mutex::new(RefCell::new(None));
 
-            field: [[false; N]; N],
-        }
-    }
+extern "C" fn app_loop_receiver(_: *mut c_void) {
+    // Fetch the app params and remove it afterwards.
+    let app_mu = APP_PARAMS.lock().unwrap();
+    let app_mu_ref = app_mu.replace(None);
+    drop(app_mu);
 
-    pub fn setup(&mut self) {
-        // Set up the pullup.
-        for pin in &mut self.row_pins {
-            pin.set_pull(Pull::Up).unwrap();
-        }
+    let app = app_mu_ref.expect("app params not");
+    let mut ws2812 = Ws2812Esp32Rmt::new(app.channel, app.led_pin).unwrap();
+    let mut board = app.board;
+    loop {
+        board.tick();
 
-        // Set all columns high.
-        for pin in &mut self.column_pins {
-            pin.set_high().unwrap();
-        }
-    }
+        // for columns in board.field.iter() {
+        //     info!("{:?}", columns);
+        // }
+        // info!("");
 
-    pub fn tick(&mut self) {
-        // Check each field
-        for (col, col_pin) in &mut self.column_pins.iter_mut().enumerate() {
-            col_pin.set_low().unwrap();
+        // make black
+        let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
+        for (row, columns) in board.field.iter().enumerate() {
+            for (column, value) in columns.iter().enumerate() {
+                let mut pixel = row * board.size() + column;
+                if row % 2 == 0 {
+                    pixel = row * board.size() + (board.size() - column - 1);
+                }
 
-            for (row, row_pin) in &mut self.row_pins.iter().enumerate() {
-                self.field[row][col] = row_pin.get_level() == Level::Low;
+                if *value {
+                    pixels[pixel] = smart_leds::RGB { r: 255, g: 0, b: 0 }
+                } else {
+                    pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 0 }
+                }
             }
-
-            col_pin.set_high().unwrap();
         }
+
+        ws2812.write_nocopy(pixels).unwrap();
+
+        sleep(Duration::from_millis(100));
     }
+}
+
+fn index_html() -> String {
+    format!(
+        r#"
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>E-Chess</title>
+        </head>
+        <body>
+           Hello World!
+        </body>
+        </html>
+        "#
+    )
 }
 
 /// Entry point to our application.
-///
-/// It sets up a Wi-Fi connection to the Access Point given in the
-/// configuration, then blinks the RGB LED green/blue.
-///
-/// If the LED goes solid red, then it was unable to connect to your Wi-Fi
-/// network.
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
     // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
@@ -79,70 +141,75 @@ fn main() -> Result<()> {
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    ThreadSpawnConfiguration {
-        name: Some(b"app-thread\0"),
-        stack_size: 10000,
-        priority: 15,
-        ..Default::default()
-    }
-    .set()
-    .unwrap();
-
     let peripherals = Peripherals::take().unwrap();
-    let led_pin = peripherals.pins.gpio22;
-    let channel = peripherals.rmt.channel0;
-    let mut ws2812 = Ws2812Esp32Rmt::new(channel, led_pin).unwrap();
+    let sysloop = EspSystemEventLoop::take()?;
+    let nvs = EspDefaultNvsPartition::take()?;
 
-    let _thread_1 = std::thread::Builder::new()
-        .spawn(move || {
-            let mut board = Board::new(
-                [
-                    AnyIOPin::from(peripherals.pins.gpio26),
-                    AnyIOPin::from(peripherals.pins.gpio27),
-                    AnyIOPin::from(peripherals.pins.gpio4),
-                ],
-                [
-                    AnyIOPin::from(peripherals.pins.gpio32),
-                    AnyIOPin::from(peripherals.pins.gpio33),
-                    AnyIOPin::from(peripherals.pins.gpio25),
-                ],
-            );
+    info!(
+        "About to initialize WiFi (SSID: {}, PASS: {})",
+        WIFI_SSID, WIFI_PASS
+    );
 
-            board.setup();
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs))?,
+        sysloop,
+    )?;
 
-            loop {
-                // make black
-                let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
+    connect_wifi(&mut wifi, WIFI_SSID, WIFI_PASS)?;
 
-                board.tick();
+    info!("WIFI connection done");
 
-                // for columns in board.field.iter() {
-                //     info!("{:?}", columns);
-                // }
-                // info!("");
+    let mut board = Board::new(
+        [
+            AnyIOPin::from(peripherals.pins.gpio26),
+            AnyIOPin::from(peripherals.pins.gpio27),
+            AnyIOPin::from(peripherals.pins.gpio4),
+        ],
+        [
+            AnyIOPin::from(peripherals.pins.gpio32),
+            AnyIOPin::from(peripherals.pins.gpio33),
+            AnyIOPin::from(peripherals.pins.gpio25),
+        ],
+    );
+    board.setup();
 
-                for (row, columns) in board.field.iter().enumerate() {
-                    for (column, value) in columns.iter().enumerate() {
-                        let mut pixel = row * board.size() + column;
-                        if row % 2 == 0 {
-                            pixel = row * board.size() + (board.size() - column - 1);
-                        }
+    // To avoid interference with the wifi thread (on core0) all other app-logic is running on core 1.
+    // Especially the LED strip may blink when wifi is used.
+    // It doesn't seem to fix the problem fully, as with high wifi-load it still does flicker.
+    // https://github.com/cat-in-136/ws2812-esp32-rmt-driver/issues/33
+    let app_params = APP_PARAMS.lock().unwrap();
+    app_params.replace(Some(AppParams {
+        board: board,
+        led_pin: AnyIOPin::from(peripherals.pins.gpio22),
+        channel: peripherals.rmt.channel0,
+    }));
+    drop(app_params);
 
-                        if *value {
-                            pixels[pixel] = smart_leds::RGB { r: 255, g: 0, b: 0 }
-                        } else {
-                            pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 0 }
-                        }
-                    }
-                }
+    unsafe {
+        let name = CString::new("app-thread").unwrap();
 
-                ws2812.write_nocopy(pixels).unwrap();
+        xTaskCreatePinnedToCore(
+            Some(app_loop_receiver),
+            name.as_ptr(),
+            10000,
+            std::ptr::null_mut(),
+            15,
+            std::ptr::null_mut(),
+            1,
+        );
+    };
 
-                sleep(Duration::from_millis(100));
-            }
-        })
-        .unwrap();
+    // Set the HTTP server
+    let mut server = EspHttpServer::new(&server::Configuration::default())?;
+    // http://<sta ip>/ handler
+    server.fn_handler("/", Method::Get, |request| {
+        let html = index_html();
+        let mut response = request.into_ok_response()?;
+        response.write_all(html.as_bytes())?;
+        Ok(())
+    })?;
 
-    _thread_1.join().unwrap();
-    loop {}
+    loop {
+        sleep(Duration::new(10, 0));
+    }
 }
