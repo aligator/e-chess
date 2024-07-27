@@ -1,18 +1,21 @@
-use std::cell::RefCell;
-use std::ffi::{c_void, CString};
-use std::sync::Mutex;
-use std::time::Duration;
-
 use anyhow::Result;
 use board::Board;
 use esp_idf_hal::gpio::AnyIOPin;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_sys::xTaskCreatePinnedToCore;
 use log::*;
+use std::cell::RefCell;
+use std::ffi::{c_void, CString};
+use std::sync::Mutex;
 use std::thread::sleep;
+use std::time::Duration;
+use tic_tac_toe::TicTacToe;
 use wifi::{wifi_loop_receiver, WifiParams, WIFI_PARAMS};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
+
+mod bitboard;
 mod board;
+mod tic_tac_toe;
 mod wifi;
 
 const FIELD_SIZE: usize = 3;
@@ -33,8 +36,12 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
     let app = app_mu_ref.expect("app params not");
     let mut ws2812 = Ws2812Esp32Rmt::new(app.channel, app.led_pin).unwrap();
     let mut board = app.board;
+
+    let mut tic_tac_toe: TicTacToe<FIELD_SIZE> = TicTacToe::new();
+
     loop {
         board.tick();
+        tic_tac_toe.tick(board.field);
 
         // for columns in board.field.iter() {
         //     info!("{:?}", columns);
@@ -43,6 +50,10 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
 
         // make black
         let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
+
+        println!("Player1 {:032b}", tic_tac_toe.players[0]);
+        println!("Player2 {:032b}", tic_tac_toe.players[1]);
+
         for (row, columns) in board.field.iter().enumerate() {
             for (column, value) in columns.iter().enumerate() {
                 let mut pixel = row * board.size() + column;
@@ -50,10 +61,35 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
                     pixel = row * board.size() + (board.size() - column - 1);
                 }
 
-                if *value {
-                    pixels[pixel] = smart_leds::RGB { r: 255, g: 0, b: 0 }
-                } else {
-                    pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 0 }
+                let pos = (board.size() - row - 1) * board.size() + (board.size() - column - 1);
+                let player1: bool = bitboard::get(tic_tac_toe.players[0], pos);
+                let player2: bool = bitboard::get(tic_tac_toe.players[1], pos);
+
+                println!(
+                    "POS {} p1: {:?} p2: {:?} v: {:?}",
+                    pos, player1, player2, *value
+                );
+
+                //if *value {
+                if player1 {
+                    pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 255 }
+                } else if player2 {
+                    pixels[pixel] = smart_leds::RGB { r: 0, g: 255, b: 0 }
+                } else if *value {
+                    // Something is wrong because the field should not be occupied.
+                    // Can happen if the program starts while there are still parts on the
+                    // board.
+                    pixels[pixel] = smart_leds::RGB { r: 100, g: 0, b: 0 }
+                }
+
+                if !*value && (player1 || player2) {
+                    // Something is wrong, because the field should be occupied.
+                    // This may happen if a part got removed which should not be done.
+                    pixels[pixel] = smart_leds::RGB {
+                        r: 100,
+                        g: 100,
+                        b: 0,
+                    }
                 }
             }
         }
@@ -61,6 +97,9 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
         ws2812.write_nocopy(pixels).unwrap();
 
         sleep(Duration::from_millis(100));
+
+        // Uncomment for debugging
+        // sleep(Duration::from_secs(1));
     }
 }
 
@@ -74,6 +113,8 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
+
+    info!("Starting TicTacToe!");
 
     let mut board = Board::new(
         [

@@ -11,10 +11,6 @@ pub struct Board<'a, const N: usize> {
 }
 
 impl<'a, const N: usize> Board<'a, N> {
-    pub fn size(&self) -> usize {
-        N
-    }
-
     pub fn new(
         column_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
         row_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
@@ -25,6 +21,10 @@ impl<'a, const N: usize> Board<'a, N> {
 
             field: [[false; N]; N],
         }
+    }
+
+    pub fn size(&self) -> usize {
+        N
     }
 
     pub fn setup(&mut self) {
