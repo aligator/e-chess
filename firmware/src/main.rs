@@ -70,11 +70,18 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
                     pos, player1, player2, *value
                 );
 
-                //if *value {
                 if player1 {
-                    pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 255 }
+                    if tic_tac_toe.winner == Some(1) {
+                        pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 50 }
+                    } else {
+                        pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 255 }
+                    }
                 } else if player2 {
-                    pixels[pixel] = smart_leds::RGB { r: 0, g: 255, b: 0 }
+                    if tic_tac_toe.winner == Some(0) {
+                        pixels[pixel] = smart_leds::RGB { r: 0, g: 50, b: 0 }
+                    } else {
+                        pixels[pixel] = smart_leds::RGB { r: 0, g: 255, b: 0 }
+                    }
                 } else if *value {
                     // Something is wrong because the field should not be occupied.
                     // Can happen if the program starts while there are still parts on the

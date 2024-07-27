@@ -9,10 +9,9 @@ pub(crate) struct TicTacToe<const N: usize> {
     current_player: usize,
 
     pub last_board: u32,
-}
 
-const TIC_TAC_TOE_MASK: u32 =
-    0b00000000_00000000_00000000_00000000_00000000_00000111_00000111_00000111;
+    pub winner: Option<usize>,
+}
 
 const WINNING_MASKS: [u32; 8] = [
     // rows
@@ -66,6 +65,7 @@ impl<const N: usize> TicTacToe<N> {
             current_player: 0,
             last_board: 0,
             players: [0, 0],
+            winner: None,
         }
     }
 
@@ -74,6 +74,11 @@ impl<const N: usize> TicTacToe<N> {
     }
 
     pub fn tick(&mut self, occupied_fields: [[bool; N]; N]) {
+        // If there is already a winner, just do nothing.
+        if self.winner.is_some() {
+            return;
+        }
+
         // Convert the board to a bit_board. (TODO: The board.rs could already just work with a bitboard...)
         let new_board = to_bit_board(occupied_fields);
 
@@ -82,6 +87,7 @@ impl<const N: usize> TicTacToe<N> {
             self.current_player = 0;
             self.last_board = 0;
             self.players = [0, 0];
+            self.winner = None;
         }
 
         // The new board must have more bits set - e.g. it must be a higher number.
@@ -108,5 +114,20 @@ impl<const N: usize> TicTacToe<N> {
         self.current_player = if self.current_player == 1 { 0 } else { 1 };
 
         self.last_board = new_board;
+
+        self.check();
+    }
+
+    /// check the winning conditions.
+    /// Sets the respective player as winner if needed.
+    fn check(&mut self) {
+        for (player_index, player) in self.players.iter().enumerate() {
+            for mask in WINNING_MASKS.iter() {
+                if *player & *mask == *mask {
+                    self.winner = Some(player_index);
+                    return;
+                }
+            }
+        }
     }
 }
