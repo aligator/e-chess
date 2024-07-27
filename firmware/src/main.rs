@@ -7,6 +7,7 @@ use anyhow::{Ok, Result};
 use board::Board;
 use esp_idf_hal::gpio::AnyIOPin;
 use esp_idf_hal::io::Write;
+use esp_idf_hal::modem;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::{self, EspHttpServer};
@@ -58,14 +59,13 @@ fn connect_wifi(
     return Ok(());
 }
 
+const FIELD_SIZE: usize = 3;
+
 struct AppParams<'a, const N: usize> {
     board: Board<'a, N>,
     led_pin: AnyIOPin,
     channel: esp_idf_hal::rmt::CHANNEL0, // For now only channel0 - don't know how to type this to support any channel...
 }
-
-const FIELD_SIZE: usize = 3;
-
 static APP_PARAMS: Mutex<RefCell<Option<AppParams<FIELD_SIZE>>>> = Mutex::new(RefCell::new(None));
 
 extern "C" fn app_loop_receiver(_: *mut c_void) {
@@ -126,6 +126,54 @@ fn index_html() -> String {
     )
 }
 
+struct WifiParams {
+    modem: modem::Modem,
+}
+static WIFI_PARAMS: Mutex<RefCell<Option<WifiParams>>> = Mutex::new(RefCell::new(None));
+
+extern "C" fn wifi_loop_receiver(_: *mut c_void) {
+    // Fetch the wifi params and remove it afterwards.
+    let wifi_mu = WIFI_PARAMS.lock().unwrap();
+    let wifi_mu_ref = wifi_mu.replace(None);
+    drop(wifi_mu);
+
+    let wifi = wifi_mu_ref.expect("wifi params not");
+
+    let sysloop = EspSystemEventLoop::take().unwrap();
+    let nvs = EspDefaultNvsPartition::take().unwrap();
+
+    info!(
+        "About to initialize WiFi (SSID: {}, PASS: {})",
+        WIFI_SSID, WIFI_PASS
+    );
+
+    let mut wifi = BlockingWifi::wrap(
+        EspWifi::new(wifi.modem, sysloop.clone(), Some(nvs)).unwrap(),
+        sysloop,
+    )
+    .unwrap();
+
+    connect_wifi(&mut wifi, WIFI_SSID, WIFI_PASS).unwrap();
+
+    info!("WIFI connection done");
+
+    // Set the HTTP server
+    let mut server = EspHttpServer::new(&server::Configuration::default()).unwrap();
+    // http://<sta ip>/ handler
+    server
+        .fn_handler("/", Method::Get, |request| {
+            let html = index_html();
+            let mut response = request.into_ok_response()?;
+            response.write_all(html.as_bytes())?;
+            Ok(())
+        })
+        .unwrap();
+
+    loop {
+        sleep(Duration::from_millis(100));
+    }
+}
+
 /// Entry point to our application.
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -136,22 +184,6 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
-    let sysloop = EspSystemEventLoop::take()?;
-    let nvs = EspDefaultNvsPartition::take()?;
-
-    info!(
-        "About to initialize WiFi (SSID: {}, PASS: {})",
-        WIFI_SSID, WIFI_PASS
-    );
-
-    let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(peripherals.modem, sysloop.clone(), Some(nvs))?,
-        sysloop,
-    )?;
-
-    connect_wifi(&mut wifi, WIFI_SSID, WIFI_PASS)?;
-
-    info!("WIFI connection done");
 
     let mut board = Board::new(
         [
@@ -187,21 +219,30 @@ fn main() -> Result<()> {
             name.as_ptr(),
             10000,
             std::ptr::null_mut(),
-            15,
+            24,
             std::ptr::null_mut(),
             1,
         );
     };
 
-    // Set the HTTP server
-    let mut server = EspHttpServer::new(&server::Configuration::default())?;
-    // http://<sta ip>/ handler
-    server.fn_handler("/", Method::Get, |request| {
-        let html = index_html();
-        let mut response = request.into_ok_response()?;
-        response.write_all(html.as_bytes())?;
-        Ok(())
-    })?;
+    let wifi_params = WIFI_PARAMS.lock().unwrap();
+    wifi_params.replace(Some(WifiParams {
+        modem: peripherals.modem,
+    }));
+    drop(wifi_params);
+
+    unsafe {
+        let name = CString::new("wifi-thread").unwrap();
+        xTaskCreatePinnedToCore(
+            Some(wifi_loop_receiver),
+            name.as_ptr(),
+            10000,
+            std::ptr::null_mut(),
+            1,
+            std::ptr::null_mut(),
+            0,
+        );
+    };
 
     loop {
         sleep(Duration::new(10, 0));
