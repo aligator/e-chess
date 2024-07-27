@@ -3,61 +3,17 @@ use std::ffi::{c_void, CString};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use board::Board;
 use esp_idf_hal::gpio::AnyIOPin;
-use esp_idf_hal::io::Write;
-use esp_idf_hal::modem;
 use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::http::server::{self, EspHttpServer};
-use esp_idf_svc::http::Method;
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::wifi;
-use esp_idf_svc::wifi::{BlockingWifi, EspWifi};
 use esp_idf_sys::xTaskCreatePinnedToCore;
 use log::*;
 use std::thread::sleep;
+use wifi::{wifi_loop_receiver, WifiParams, WIFI_PARAMS};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 mod board;
-
-const WIFI_SSID: &str = "Freifunk";
-const WIFI_PASS: &str = "";
-
-fn connect_wifi(
-    wifi: &mut BlockingWifi<EspWifi<'static>>,
-    wifi_ssid: &str,
-    wifi_password: &str,
-) -> anyhow::Result<()> {
-    let wifi_configuration: wifi::Configuration =
-        wifi::Configuration::Client(wifi::ClientConfiguration {
-            ssid: wifi_ssid.try_into().unwrap(),
-            bssid: None,
-            auth_method: esp_idf_svc::wifi::AuthMethod::None,
-            password: wifi_password.try_into().unwrap(),
-            channel: None,
-            ..Default::default()
-        });
-
-    wifi.set_configuration(&wifi_configuration)?;
-
-    wifi.start()?;
-    info!("Wifi started");
-
-    wifi.connect()?;
-    info!("Wifi connected");
-
-    wifi.wait_netif_up()?;
-    info!("Wifi netif up");
-
-    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
-    info!(
-        "IP: \n{}\n{}\n{:?}\n{:?}",
-        ip_info.ip, ip_info.subnet, ip_info.dns, ip_info.secondary_dns
-    );
-
-    return Ok(());
-}
+mod wifi;
 
 const FIELD_SIZE: usize = 3;
 
@@ -108,72 +64,6 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
     }
 }
 
-fn index_html() -> String {
-    format!(
-        r#"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>E-Chess</title>
-        </head>
-        <body>
-           Hello World!
-        </body>
-        </html>
-        "#
-    )
-}
-
-struct WifiParams {
-    modem: modem::Modem,
-}
-static WIFI_PARAMS: Mutex<RefCell<Option<WifiParams>>> = Mutex::new(RefCell::new(None));
-
-extern "C" fn wifi_loop_receiver(_: *mut c_void) {
-    // Fetch the wifi params and remove it afterwards.
-    let wifi_mu = WIFI_PARAMS.lock().unwrap();
-    let wifi_mu_ref = wifi_mu.replace(None);
-    drop(wifi_mu);
-
-    let wifi = wifi_mu_ref.expect("wifi params not");
-
-    let sysloop = EspSystemEventLoop::take().unwrap();
-    let nvs = EspDefaultNvsPartition::take().unwrap();
-
-    info!(
-        "About to initialize WiFi (SSID: {}, PASS: {})",
-        WIFI_SSID, WIFI_PASS
-    );
-
-    let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(wifi.modem, sysloop.clone(), Some(nvs)).unwrap(),
-        sysloop,
-    )
-    .unwrap();
-
-    connect_wifi(&mut wifi, WIFI_SSID, WIFI_PASS).unwrap();
-
-    info!("WIFI connection done");
-
-    // Set the HTTP server
-    let mut server = EspHttpServer::new(&server::Configuration::default()).unwrap();
-    // http://<sta ip>/ handler
-    server
-        .fn_handler("/", Method::Get, |request| {
-            let html = index_html();
-            let mut response = request.into_ok_response()?;
-            response.write_all(html.as_bytes())?;
-            Ok(())
-        })
-        .unwrap();
-
-    loop {
-        sleep(Duration::from_millis(100));
-    }
-}
-
 /// Entry point to our application.
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -203,6 +93,9 @@ fn main() -> Result<()> {
     // Especially the LED strip may blink when wifi is used.
     // It doesn't seem to fix the problem fully, as with high wifi-load it still does flicker.
     // https://github.com/cat-in-136/ws2812-esp32-rmt-driver/issues/33
+    //
+    // Note that I did not get it working to pass the parameters as pvParameters.
+    // So I now pre-fill a mutex which is read inside the thread.
     let app_params = APP_PARAMS.lock().unwrap();
     app_params.replace(Some(AppParams {
         board: board,
