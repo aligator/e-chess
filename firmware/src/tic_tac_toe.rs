@@ -92,9 +92,15 @@ impl<const N: usize> TicTacToe<N> {
         self.current_index % 2
     }
 
-    fn add(&mut self, new_state: HistoryEntry) {
+    fn push(&mut self, new_state: HistoryEntry) {
         self.current_index += 1;
         self.history[self.current_index] = Some(new_state);
+    }
+
+    fn pull(&mut self) -> HistoryEntry {
+        self.history[self.current_index] = None;
+        self.current_index -= 1;
+        return self.current();
     }
 
     pub fn tick(&mut self, now_occupied: u32) -> GameState {
@@ -118,7 +124,15 @@ impl<const N: usize> TicTacToe<N> {
         }
 
         // The new board must have more bits set - e.g. it must be a higher number.
-        if last_occupied >= now_occupied {
+        if last_occupied > now_occupied && self.current_index != 0 {
+            let previous = self.pull();
+            return GameState {
+                board: previous,
+                _player: self.current_player(),
+            };
+        } else if last_occupied == now_occupied
+            || (last_occupied > now_occupied && self.current_index == 0)
+        {
             return GameState {
                 board: state,
                 _player: current_player,
@@ -142,7 +156,7 @@ impl<const N: usize> TicTacToe<N> {
         // Add the new field to the current player.
         new_state.players[current_player] = new_state.players[current_player] | diff;
         self.calculate_win(&mut new_state);
-        self.add(new_state);
+        self.push(new_state);
 
         return GameState {
             board: new_state,
