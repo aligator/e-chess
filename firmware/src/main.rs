@@ -41,18 +41,14 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
 
     loop {
         board.tick();
-        tic_tac_toe.tick(board.field);
-
-        // for columns in board.field.iter() {
-        //     info!("{:?}", columns);
-        // }
-        // info!("");
+        let game = tic_tac_toe.tick(board.bitboard());
 
         // make black
         let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
 
-        println!("Player1 {:032b}", tic_tac_toe.players[0]);
-        println!("Player2 {:032b}", tic_tac_toe.players[1]);
+        println!("Board   {:032b}", board.bitboard());
+        println!("Player1 {:032b}", game.board.players[0]);
+        println!("Player2 {:032b}", game.board.players[1]);
 
         for (row, columns) in board.field.iter().enumerate() {
             for (column, value) in columns.iter().enumerate() {
@@ -64,22 +60,22 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
                 let pos = (board.size() - row - 1) * board.size()
                     + (board.size() - column - 1)
                     + (board.size() - row - 1) * (8 - board.size()); // Padding to the bigger u32 chess board
-                let player1: bool = bitboard::get(tic_tac_toe.players[0], pos);
-                let player2: bool = bitboard::get(tic_tac_toe.players[1], pos);
+                let player1: bool = bitboard::get(game.board.players[0], pos);
+                let player2: bool = bitboard::get(game.board.players[1], pos);
 
-                println!(
+                debug!(
                     "POS {} p1: {:?} p2: {:?} v: {:?}",
                     pos, player1, player2, *value
                 );
 
                 if player1 {
-                    if tic_tac_toe.winner == Some(1) {
+                    if game.board.winner == Some(1) {
                         pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 10 }
                     } else {
                         pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 255 }
                     }
                 } else if player2 {
-                    if tic_tac_toe.winner == Some(0) {
+                    if game.board.winner == Some(0) {
                         pixels[pixel] = smart_leds::RGB { r: 0, g: 10, b: 0 }
                     } else {
                         pixels[pixel] = smart_leds::RGB { r: 0, g: 255, b: 0 }
@@ -108,7 +104,7 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
         sleep(Duration::from_millis(100));
 
         // Uncomment for debugging
-        //sleep(Duration::from_secs(1));
+        // sleep(Duration::from_secs(1));
     }
 }
 
