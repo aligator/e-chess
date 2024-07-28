@@ -88,6 +88,14 @@ impl<const N: usize> TicTacToe<N> {
         self.history[self.current_index].expect("index not in the history")
     }
 
+    fn last(&self) -> Option<HistoryEntry> {
+        if self.current_index == 0 {
+            return None;
+        }
+
+        self.history[self.current_index - 1]
+    }
+
     fn current_player(&self) -> usize {
         self.current_index % 2
     }
@@ -124,15 +132,31 @@ impl<const N: usize> TicTacToe<N> {
         }
 
         // The new board must have more bits set - e.g. it must be a higher number.
-        if last_occupied > now_occupied && self.current_index != 0 {
-            let previous = self.pull();
-            return GameState {
-                board: previous,
-                _player: self.current_player(),
+        if last_occupied > now_occupied {
+            return match self.last() {
+                Some(last) => {
+                    if last.occupied() != now_occupied {
+                        // The new state is not the same like the last one.
+                        // Do notheing
+                        return GameState {
+                            board: state,
+                            _player: current_player,
+                        };
+                    }
+
+                    // Undo one move.
+                    let previous = self.pull();
+                    return GameState {
+                        board: previous,
+                        _player: self.current_player(),
+                    };
+                }
+                None => GameState {
+                    board: state,
+                    _player: current_player,
+                },
             };
-        } else if last_occupied == now_occupied
-            || (last_occupied > now_occupied && self.current_index == 0)
-        {
+        } else if last_occupied == now_occupied {
             return GameState {
                 board: state,
                 _player: current_player,
