@@ -1,5 +1,4 @@
 use crate::bitboard::*;
-use log::*;
 
 pub(crate) struct TicTacToe<const N: usize> {
     // Use bitboards here.
@@ -51,7 +50,8 @@ fn to_bit_board<const N: usize>(board: [[bool; N]; N]) -> u32 {
                 continue;
             }
 
-            let pos = (N - row - 1) * N + (N - column - 1);
+            //                                                    + Padding to the bigger u32 chess board
+            let pos = (N - row - 1) * N + (N - column - 1) + (N - row - 1) * (8 - N);
             bit_board = set_bit(bit_board, pos);
         }
     }
@@ -69,16 +69,7 @@ impl<const N: usize> TicTacToe<N> {
         }
     }
 
-    pub fn size(&self) -> usize {
-        N
-    }
-
     pub fn tick(&mut self, occupied_fields: [[bool; N]; N]) {
-        // If there is already a winner, just do nothing.
-        if self.winner.is_some() {
-            return;
-        }
-
         // Convert the board to a bit_board. (TODO: The board.rs could already just work with a bitboard...)
         let new_board = to_bit_board(occupied_fields);
 
@@ -88,6 +79,11 @@ impl<const N: usize> TicTacToe<N> {
             self.last_board = 0;
             self.players = [0, 0];
             self.winner = None;
+        }
+
+        // If there is already a winner, just do nothing.
+        if self.winner.is_some() {
+            return;
         }
 
         // The new board must have more bits set - e.g. it must be a higher number.
@@ -100,14 +96,9 @@ impl<const N: usize> TicTacToe<N> {
         // Then only check if it is only 1 new bit. Else something must be wrong.
         let diff = only_different(new_board, self.last_board);
         let only_one = only_one_bit_set_to_one(diff);
-        println!("last {:032b}", self.last_board);
-        println!("new  {:032b}", new_board);
-        println!("diff {:032b} - {:?}", diff, only_one);
         if !only_one {
             return;
         }
-
-        println!("add bit");
 
         // Add the new field to the current player.
         self.players[self.current_player] = self.players[self.current_player] | diff;
