@@ -1,5 +1,5 @@
-renderTop=true;
-renderGrid=true;
+renderTop=false;
+renderGrid=false;
 renderBottom=true;
 
 cutParts=false;
@@ -135,6 +135,13 @@ module BottomElectronic() {
         // Led strips
         translate([fieldBorder, i*fieldSize + bottomSize+tollerance + fieldSize/2 - ledWidth/2, bottomHeight-bottomGridOverlap-ledHeight])
         cube([gridOuter+bottomSize*2+c0, ledWidth, ledHeight+bottomGridOverlap+c0]);
+        
+        // Wires for the strips.
+        translate([fieldBorder, bottomSize, bottomSize])
+        cube([bottomSize , gridOuter+2*tollerance, boxHeight/2]);
+
+        translate([gridOuter+tollerance+bottomSize, bottomSize, bottomSize])
+        cube([bottomSize , gridOuter+2*tollerance, boxHeight/2]);
     }
 
     // Add hole for the wires of the reeds
@@ -144,9 +151,9 @@ module BottomElectronic() {
 
 module Bottom() {
     difference() {
-        cube([gridOuter + 2*bottomSize + 2*tollerance, gridOuter + 2*bottomSize + 2*tollerance, bottomHeight]);
+        cube([gridOuter + 2*bottomSize + 2*tollerance, gridOuter + 2*bottomSize + 2*tollerance, bottomHeight+boxHeight]);
         translate([bottomSize, bottomSize, bottomHeight-bottomGridOverlap]) 
-        cube([gridOuter + 2*tollerance, gridOuter + 2*tollerance, bottomGridOverlap+c0]);
+        cube([gridOuter + 2*tollerance, gridOuter + 2*tollerance, bottomGridOverlap+boxHeight+c0]);
 
         BottomElectronic();
     }
