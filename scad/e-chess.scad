@@ -132,16 +132,18 @@ module Grid() {
 
 module BottomElectronic() {
     for ( i = [0:1:size-1]) {
+        ledLength = i == size-1 ? gridOuter+bottomSize*2+c0 : gridOuter+bottomSize*2-tollerance;
+
         // Led strips
         translate([fieldBorder, i*fieldSize + bottomSize+tollerance + fieldSize/2 - ledWidth/2, bottomHeight-bottomGridOverlap-ledHeight])
-        cube([gridOuter+bottomSize*2+c0, ledWidth, ledHeight+bottomGridOverlap+c0]);
+        cube([ledLength, ledWidth, ledHeight+bottomGridOverlap+c0]);
         
         // Wires for the strips.
         translate([fieldBorder, bottomSize, bottomSize])
-        cube([bottomSize , gridOuter+2*tollerance, boxHeight/2]);
+        cube([bottomSize, gridOuter+2*tollerance, boxHeight/2]);
 
         translate([gridOuter+tollerance+bottomSize, bottomSize, bottomSize])
-        cube([bottomSize , gridOuter+2*tollerance, boxHeight/2]);
+        cube([bottomSize, gridOuter+2*tollerance, boxHeight/2]);
     }
 
     // Add hole for the wires of the reeds
