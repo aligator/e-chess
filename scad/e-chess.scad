@@ -1,5 +1,5 @@
-renderTop=false;
-renderGrid=false;
+renderTop=true;
+renderGrid=true;
 renderBottom=true;
 
 cutParts=false;
