@@ -1,6 +1,9 @@
 renderTop = true;
 renderGrid = true;
 renderBottom = true;
+renderElectronicCase = true;
+renderElectronicCaseCover = true;
+flipElectronicCaseCover = false;
 
 cutParts = false;
 
@@ -28,8 +31,14 @@ ledHeight = 3;
 bottomHeight = 5;
 bottomGridOverlap = 1;
 
-// Additional bottomSize to the size of the grid.
-bottomSize = 3;
+// Additional bottomWallSize to the size of the grid.
+bottomWallSize = 3;
+
+electronicCaseWidth = 33;
+electronicCaseCover = 1;
+electronicCaseCoverMagnetDiameter = 10;
+electronicCaseCoverMagnetHolderThickness = 3;
+electronicCaseCoverMagnetThickness = 3;
 
 tollerance = 0.2;
 
@@ -137,30 +146,30 @@ module BottomElectronic()
 {
     for (i = [0:1:size - 1])
     {
-        ledLength = i == size - 1 ? gridOuter + bottomSize * 2 + c0 : gridOuter + bottomSize * 2 - tollerance;
+        ledLength = i == size - 1 ? gridOuter + bottomWallSize * 2 + c0 : gridOuter + bottomWallSize * 2 - tollerance;
 
         // Led strips
         translate([
-            fieldBorder, i * fieldSize + bottomSize + tollerance + fieldSize / 2 - ledWidth / 2,
+            fieldBorder, i * fieldSize + bottomWallSize + tollerance + fieldSize / 2 - ledWidth / 2,
             bottomHeight - bottomGridOverlap -
             ledHeight
         ]) cube([ ledLength, ledWidth, ledHeight + bottomGridOverlap + c0 ]);
 
         // Wires for the strips.
-        translate([ fieldBorder, bottomSize, bottomSize ])
-            cube([ bottomSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ fieldBorder, bottomWallSize, bottomWallSize ])
+            cube([ bottomWallSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
 
-        translate([ gridOuter + tollerance + bottomSize, bottomSize, bottomSize ])
-            cube([ bottomSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ gridOuter + tollerance + bottomWallSize, bottomWallSize, bottomWallSize ])
+            cube([ bottomWallSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
     }
 
     // Add hole for the wires of the reeds
     translate([
         gridOuter - fieldSize,
-        bottomSize + tollerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + fieldSize * (size - 1),
+        bottomWallSize + tollerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + fieldSize * (size - 1),
         bottomHeight - bottomGridOverlap -
         ledHeight
-    ]) cube([ fieldSize + bottomSize * 2 + tollerance + c0, ledHeight, ledHeight + c0 ]);
+    ]) cube([ fieldSize + bottomWallSize * 2 + tollerance + c0, ledHeight, ledHeight + c0 ]);
 }
 
 module Bottom()
@@ -168,20 +177,60 @@ module Bottom()
     difference()
     {
         cube([
-            gridOuter + 2 * bottomSize + 2 * tollerance, gridOuter + 2 * bottomSize + 2 * tollerance, bottomHeight +
+            gridOuter + 2 * bottomWallSize + 2 * tollerance, gridOuter + 2 * bottomWallSize + 2 * tollerance,
+            bottomHeight +
             boxHeight
         ]);
-        translate([ bottomSize, bottomSize, bottomHeight - bottomGridOverlap ])
+        translate([ bottomWallSize, bottomWallSize, bottomHeight - bottomGridOverlap ])
             cube([ gridOuter + 2 * tollerance, gridOuter + 2 * tollerance, bottomGridOverlap + boxHeight + c0 ]);
 
         BottomElectronic();
     }
 }
 
+module ElectronicCase()
+{
+    difference()
+    {
+        cube([ electronicCaseWidth, gridOuter + 2 * bottomWallSize + 2 * tollerance, bottomHeight + boxHeight ]);
+        translate([ 0, bottomWallSize, bottomWallSize ])
+            cube([ electronicCaseWidth - 1 * bottomWallSize, gridOuter + 2 * tollerance, bottomHeight + boxHeight ]);
+    }
+}
+
+module ElectronicCaseCover()
+{
+    coverWidth = electronicCaseWidth - bottomWallSize - 2 * tollerance;
+
+    translate([ tollerance, bottomWallSize + tollerance, bottomHeight + boxHeight - electronicCaseCover ])
+    {
+        cube([ coverWidth, gridOuter, electronicCaseCover ]);
+
+        // Magnets
+        translate([
+            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2, electronicCaseCoverMagnetThickness, -
+            electronicCaseCoverMagnetDiameter
+        ])
+            cube([
+                electronicCaseCoverMagnetDiameter, electronicCaseCoverMagnetHolderThickness,
+                electronicCaseCoverMagnetDiameter
+            ]);
+        translate([
+            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
+            gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness, -
+            electronicCaseCoverMagnetDiameter
+        ])
+            cube([
+                electronicCaseCoverMagnetDiameter, electronicCaseCoverMagnetHolderThickness,
+                electronicCaseCoverMagnetDiameter
+            ]);
+    }
+}
+
 if (renderTop)
 {
     translate([
-        fieldBorder + tollerance + bottomSize + tollerance, fieldBorder + tollerance + bottomSize + tollerance,
+        fieldBorder + tollerance + bottomWallSize + tollerance, fieldBorder + tollerance + bottomWallSize + tollerance,
         boxHeight + bottomHeight -
         bottomGridOverlap
     ]) cut4([ fieldSize * size + 2 * fieldBorder, fieldSize * size + 2 * fieldBorder, bottomHeight + boxHeight ],
@@ -192,7 +241,7 @@ if (renderGrid)
 {
     // Grid, including the wiring for the reed contacts.
     // Open at the bottom, to allow easy wiring.
-    translate([ bottomSize + tollerance, bottomSize + tollerance, bottomHeight - bottomGridOverlap ])
+    translate([ bottomWallSize + tollerance, bottomWallSize + tollerance, bottomHeight - bottomGridOverlap ])
         cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize) Grid();
 }
 
@@ -201,8 +250,28 @@ if (renderBottom)
     // The bottom embeds the led strip.
     cut4(
         [
-            gridOuter + bottomSize * 2 + tollerance * 2, gridOuter + bottomSize * 2 + tollerance * 2, bottomHeight +
+            gridOuter + bottomWallSize * 2 + tollerance * 2, gridOuter + bottomWallSize * 2 + tollerance * 2,
+            bottomHeight +
             boxHeight
         ],
         cutPartsSize) Bottom();
+}
+
+if (renderElectronicCase)
+{
+    translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ]) ElectronicCase();
+}
+
+if (renderElectronicCaseCover)
+{
+    if (flipElectronicCaseCover)
+    {
+        translate(
+            [ tollerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2, 0, bottomHeight + boxHeight ])
+            rotate([ 0, 180, 0 ]) ElectronicCaseCover();
+    }
+    else
+    {
+        translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ]) ElectronicCaseCover();
+    }
 }
