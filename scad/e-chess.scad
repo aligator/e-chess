@@ -39,6 +39,7 @@ electronicCaseCover = 1;
 electronicCaseCoverMagnetDiameter = 10;
 electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
+electronicCaseCoverStamp = 3;
 
 tollerance = 0.2;
 
@@ -244,6 +245,24 @@ module ElectronicCaseCover()
             cube([
                 electronicCaseCoverMagnetDiameter, electronicCaseCoverMagnetHolderThickness,
                 electronicCaseCoverMagnetDiameter
+            ]);
+
+        // Stamps at the center
+        translate([
+            0, gridOuter / 2 - electronicCaseCoverStamp / 2,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverStamp, electronicCaseCoverStamp, bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
+            ]);
+        translate([
+            coverWidth - electronicCaseCoverStamp, gridOuter / 2 - electronicCaseCoverStamp / 2,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverStamp, electronicCaseCoverStamp, bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
             ]);
     }
 }
