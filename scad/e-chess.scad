@@ -42,6 +42,7 @@ electronicCaseCoverMagnetThickness = 3;
 
 tollerance = 0.2;
 
+coverWidth = electronicCaseWidth - bottomWallSize - 2 * tollerance;
 // Just a constant to make cutouts larger for better preview rendering.
 c0 = 1 + 0;
 
@@ -80,6 +81,28 @@ module cut4(partSize, gap)
                     translate([ -i * partSize[0] / 2, -j * partSize[1] / 2 ]) children();
                     cube([ partSize[0] / 2, partSize[1] / 2, partSize[2] ]);
                 }
+            }
+        }
+    }
+}
+
+module cut2(partSize, gap, translation = [ 0, 0, 0 ])
+{
+    if (gap == 0)
+    {
+        // Fast path to avoid unneeded rendering
+        children();
+    }
+    else
+    {
+        i = 0;
+        for (j = [0:1:1])
+        {
+
+            translate([ 0, j * partSize[1] / 2 + j * gap, 0 ]) intersection()
+            {
+                translate([ 0, -j * partSize[1] / 2 ]) children();
+                translate(translation) cube([ partSize[0], partSize[1] / 2, partSize[2] ]);
             }
         }
     }
@@ -200,8 +223,6 @@ module ElectronicCase()
 
 module ElectronicCaseCover()
 {
-    coverWidth = electronicCaseWidth - bottomWallSize - 2 * tollerance;
-
     translate([ tollerance, bottomWallSize + tollerance, bottomHeight + boxHeight - electronicCaseCover ])
     {
         cube([ coverWidth, gridOuter, electronicCaseCover ]);
@@ -257,21 +278,26 @@ if (renderBottom)
         cutPartsSize) Bottom();
 }
 
-if (renderElectronicCase)
+translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase)
 {
-    translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ]) ElectronicCase();
-}
+    translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ])
+        cut2([ electronicCaseWidth, gridOuter + 2 * bottomWallSize + 2 * tollerance, bottomHeight + boxHeight ],
+             cutPartsSize) ElectronicCase();
+};
 
-if (renderElectronicCaseCover)
+translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCaseCover)
 {
     if (flipElectronicCaseCover)
     {
         translate(
             [ tollerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2, 0, bottomHeight + boxHeight ])
-            rotate([ 0, 180, 0 ]) ElectronicCaseCover();
+            rotate([ 0, 180, 0 ]) cut2([ coverWidth, gridOuter, electronicCaseCover + bottomHeight + boxHeight ],
+                                       cutPartsSize, [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
     }
     else
     {
-        translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ]) ElectronicCaseCover();
+        translate([ gridOuter + 2 * bottomWallSize + 2 * tollerance, 0, 0 ])
+            cut2([ coverWidth, gridOuter, electronicCaseCover + bottomHeight + boxHeight ], cutPartsSize,
+                 [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
     }
 }
