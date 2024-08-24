@@ -45,11 +45,11 @@ electronicCaseCoverStamp = 3;
 
 tollerance = 0.3;
 
-ledWallCutout = 2;
+ledWallCutout = 2.0;
 
 coverWidth = electronicCaseWidth - bottomWallSize - 2 * tollerance;
 // Just a constant to make cutouts larger for better preview rendering.
-c0 = 1 + 0;
+c0 = 0.001 + 0;
 
 $fa = 12;
 $fs = 1;
@@ -174,21 +174,22 @@ module BottomElectronic()
 {
     for (i = [0:1:size - 1])
     {
-        ledLength = i == size - 1 ? gridOuter + bottomWallSize * 2 + c0 : gridOuter + bottomWallSize * 2 - tollerance;
+        ledLength =
+            i == size - 1 ? gridOuter + bottomWallSize * 2 + c0 : gridOuter + tollerance * 3 + ledWallCutout * 2;
 
         // Led strips
         translate([
-            fieldBorder, i * fieldSize + bottomWallSize + tollerance + fieldSize / 2 - ledWidth / 2,
+            bottomWallSize - ledWallCutout, i * fieldSize + bottomWallSize + tollerance + fieldSize / 2 - ledWidth / 2,
             bottomHeight - bottomGridOverlap -
             ledHeight
         ]) cube([ ledLength, ledWidth, ledHeight + bottomGridOverlap + c0 ]);
 
         // Wires for the strips.
-        translate([ fieldBorder + tollerance, bottomWallSize, bottomWallSize ])
-            cube([ ledWallCutout + tollerance * 2, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ bottomWallSize - ledWallCutout, bottomWallSize, bottomWallSize ])
+            cube([ ledWallCutout + c0, gridOuter + 2 * tollerance, boxHeight / 2 ]);
 
-        translate([ gridOuter + bottomWallSize + tollerance, bottomWallSize, bottomWallSize ])
-            cube([ ledWallCutout + tollerance, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ gridOuter + bottomWallSize + tollerance + tollerance - c0, bottomWallSize, bottomWallSize ])
+            cube([ ledWallCutout + tollerance + c0, gridOuter + 2 * tollerance, boxHeight / 2 ]);
     }
 
     // Add hole for the wires of the reeds
