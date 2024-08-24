@@ -194,7 +194,7 @@ module BottomElectronic()
 
     // Add hole for the wires of the reeds
     translate([
-        gridOuter - fieldSize,
+        gridOuter - fieldSize + tollerance,
         bottomWallSize + tollerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + fieldSize * (size - 1),
         bottomHeight - bottomGridOverlap -
         ledHeight
