@@ -41,7 +41,9 @@ electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
 
-tollerance = 0.2;
+tollerance = 0.3;
+
+ledWallCutout = 2;
 
 coverWidth = electronicCaseWidth - bottomWallSize - 2 * tollerance;
 // Just a constant to make cutouts larger for better preview rendering.
@@ -180,11 +182,11 @@ module BottomElectronic()
         ]) cube([ ledLength, ledWidth, ledHeight + bottomGridOverlap + c0 ]);
 
         // Wires for the strips.
-        translate([ fieldBorder, bottomWallSize, bottomWallSize ])
-            cube([ bottomWallSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ fieldBorder + tollerance, bottomWallSize, bottomWallSize ])
+            cube([ ledWallCutout + tollerance * 2, gridOuter + 2 * tollerance, boxHeight / 2 ]);
 
-        translate([ gridOuter + tollerance + bottomWallSize, bottomWallSize, bottomWallSize ])
-            cube([ bottomWallSize, gridOuter + 2 * tollerance, boxHeight / 2 ]);
+        translate([ gridOuter + bottomWallSize + tollerance, bottomWallSize, bottomWallSize ])
+            cube([ ledWallCutout + tollerance, gridOuter + 2 * tollerance, boxHeight / 2 ]);
     }
 
     // Add hole for the wires of the reeds
