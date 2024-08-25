@@ -235,21 +235,21 @@ module ElectronicCaseCover()
 
         // Magnets
         translate([
-            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2, electronicCaseCoverMagnetThickness, -
-            electronicCaseCoverMagnetDiameter
+            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2, electronicCaseCoverMagnetThickness, -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
         ])
             cube([
                 electronicCaseCoverMagnetDiameter, electronicCaseCoverMagnetHolderThickness,
-                electronicCaseCoverMagnetDiameter
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
             ]);
         translate([
             -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-            gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness, -
-            electronicCaseCoverMagnetDiameter
+            gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness, -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
         ])
             cube([
                 electronicCaseCoverMagnetDiameter, electronicCaseCoverMagnetHolderThickness,
-                electronicCaseCoverMagnetDiameter
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
             ]);
 
         // Stamps at the center
