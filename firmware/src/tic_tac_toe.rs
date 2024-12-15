@@ -2,6 +2,43 @@ use log::*;
 
 use crate::bitboard::*;
 
+/// Represents board coordinates.
+type PlayingPosition = (u8, u8);
+
+const BOARD_MASK: u32 = 0b00000000_00000000_00000000_00000000_00000000_00000111_00000111_00000111;
+const WINNING_MASKS: [u32; 8] = [
+    // rows
+    0b00000000_00000000_00000000_00000000_00000000_00000111_00000000_00000000,
+    0b00000000_00000000_00000000_00000000_00000000_00000000_00000111_00000000,
+    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000111,
+    // columns
+    0b00000000_00000000_00000000_00000000_00000000_00000100_00000100_00000100,
+    0b00000000_00000000_00000000_00000000_00000000_00000010_00000010_00000010,
+    0b00000000_00000000_00000000_00000000_00000000_00000001_00000001_00000001,
+    // diagonals
+    0b00000000_00000000_00000000_00000000_00000000_00000100_00000010_00000001,
+    0b00000000_00000000_00000000_00000000_00000000_00000001_00000010_00000100,
+];
+
+/// Represents a move that can be performed by the computer.
+#[derive(Clone, Copy)]
+struct Move {
+    /// The coordinates of this move.
+    pos: PlayingPosition,
+    /// The score associated with this move.
+    score: i32,
+}
+
+impl Move {
+    fn new(pos: PlayingPosition, score: i32) -> Self {
+        Move { pos, score }
+    }
+
+    fn with_score(score: i32) -> Self {
+        Move::new((0, 0), score)
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 /// Defines a "snapshot" of the game.
 /// It contains the board state, so it
@@ -19,8 +56,12 @@ pub struct HistoryEntry {
 }
 
 impl HistoryEntry {
-    fn occupied(self) -> u32 {
+    fn get_occupied(self) -> u32 {
         self.players[0] | self.players[1]
+    }
+
+    fn get_free(self) -> u32 {
+        return !self.get_occupied() & BOARD_MASK;
     }
 }
 
@@ -65,20 +106,6 @@ impl<const N: usize> Default for TicTacToe<N> {
     }
 }
 
-const WINNING_MASKS: [u32; 8] = [
-    // rows
-    0b00000000_00000000_00000000_00000000_00000000_00000111_00000000_00000000,
-    0b00000000_00000000_00000000_00000000_00000000_00000000_00000111_00000000,
-    0b00000000_00000000_00000000_00000000_00000000_00000000_00000000_00000111,
-    // columns
-    0b00000000_00000000_00000000_00000000_00000000_00000100_00000100_00000100,
-    0b00000000_00000000_00000000_00000000_00000000_00000010_00000010_00000010,
-    0b00000000_00000000_00000000_00000000_00000000_00000001_00000001_00000001,
-    // diagonals
-    0b00000000_00000000_00000000_00000000_00000000_00000100_00000010_00000001,
-    0b00000000_00000000_00000000_00000000_00000000_00000001_00000010_00000100,
-];
-
 impl<const N: usize> TicTacToe<N> {
     pub fn new() -> Self {
         TicTacToe::default()
@@ -114,7 +141,7 @@ impl<const N: usize> TicTacToe<N> {
     pub fn tick(&mut self, now_occupied: u32) -> GameState {
         let state = self.current();
 
-        let last_occupied = state.occupied();
+        let last_occupied = state.get_occupied();
         let current_player = self.current_player();
 
         // If the new board is empty - reset the game.
@@ -135,7 +162,7 @@ impl<const N: usize> TicTacToe<N> {
         if last_occupied > now_occupied {
             return match self.last() {
                 Some(last) => {
-                    if last.occupied() != now_occupied {
+                    if last.get_occupied() != now_occupied {
                         // The new state is not the same like the last one.
                         // Do notheing
                         return GameState {
