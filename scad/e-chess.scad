@@ -16,11 +16,12 @@ fieldSize = 33;
 // Board field count. For a normal chess -> 8.
 size = 8;
 
-// 3 layers for layer thickness 0.2mm = 0.6mm
-top = 0.6;
+// 4 layers for layer thickness 0.2mm = 0.8mm
+// However note that this may not match if your bottom layer is different.
+top = 0.8;
 
 topBoardHeight = 0.4;
-fieldBorder = 0.6;
+fieldBorder = 0.8;
 
 wireRadius = 1.5;
 
@@ -136,20 +137,24 @@ module TopGrid()
         fieldBorder + tolerance,
         0
     ]) {
-    // Render border
+        // Render border
         translate([-tolerance - fieldBorder, -tolerance - fieldBorder, bottomHeight-top- topBoardHeight])
         difference() {
             cube([
                 size * fieldSize + fieldBorder * 4 + tolerance*2, 
                 size * fieldSize + fieldBorder * 4 + tolerance*2, 
-                boxHeight + topBoardHeight
+                boxHeight + topBoardHeight + top
             ]);
 
-            translate([tolerance + fieldBorder*2, tolerance + fieldBorder*2, -c0 ])
+            translate([
+                tolerance + fieldBorder*2, 
+                tolerance + fieldBorder*2,
+                -c0
+            ])
             cube([ 
+                size * fieldSize, // Use c0 here to fuse the grid with the border. Otherwise these are handled as two parts.
                 size * fieldSize, 
-                size * fieldSize, 
-                boxHeight + topBoardHeight + c0 * 2
+                boxHeight + topBoardHeight + c0 * 2 + top
             ]);
         }
         
