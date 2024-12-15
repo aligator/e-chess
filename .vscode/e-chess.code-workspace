@@ -16,5 +16,8 @@
             "path": "../scad",
             "name": "OpenSCAD 3D model"
         }
-    ]
+    ],
+    "settings": {
+        "scad-lsp.fmtStyle": "Google"
+    }
 }
