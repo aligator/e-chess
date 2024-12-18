@@ -16,12 +16,10 @@ fieldSize = 33;
 // Board field count. For a normal chess -> 8.
 size = 8;
 
-// 4 layers for layer thickness 0.2mm = 0.8mm
-// However note that this may not match if your bottom layer is different.
-top = 0.8;
+top = 1.0;
 
 topBoardHeight = 0.4;
-fieldBorder = 0.8;
+fieldBorder = 1.0;
 
 wireRadius = 1.5;
 
@@ -30,7 +28,6 @@ boxHeight = 30;
 ledWidth = 11;
 ledHeight = 3;
 bottomHeight = 5;
-bottomGridOverlap = 1;
 
 // Additional bottomWallSize to the size of the grid.
 bottomWallSize = 3;
@@ -54,7 +51,7 @@ $fa = 12;
 $fs = 1;
 
 gridInner = size * fieldSize;
-gridOuter = size * fieldSize + 4 * fieldBorder + 2 * tolerance;
+gridOuter = gridInner + 4 * fieldBorder + 2 * tolerance;
 cutPartsSize = cutParts ? 10 : 0;
 
 fullOuterBoard = gridOuter + 2 * bottomWallSize + 2 * tolerance;
@@ -111,7 +108,7 @@ module Field() {
 
 module TopBoard() {
   translate([ tolerance + fieldBorder, tolerance + fieldBorder, 0 ]) cube([
-    size * fieldSize - tolerance * 2, size * fieldSize - tolerance * 2,
+    gridInner - tolerance * 2, gridInner - tolerance * 2,
     topBoardHeight
   ]);
 }
@@ -124,8 +121,8 @@ module TopGrid() {
       topBoardHeight
     ]) difference() {
       cube([
-        size * fieldSize + fieldBorder * 4 + tolerance * 2,
-        size * fieldSize + fieldBorder * 4 + tolerance * 2,
+        gridInner + fieldBorder * 4 + tolerance * 2,
+        gridInner + fieldBorder * 4 + tolerance * 2,
         boxHeight + topBoardHeight +
         top
       ]);
@@ -134,15 +131,15 @@ module TopGrid() {
           [ tolerance + fieldBorder * 2, tolerance + fieldBorder * 2,
             -c0 ])
           cube([
-            size * fieldSize,  // Use c0 here to fuse the grid with the border.
+            gridInner,  // Use c0 here to fuse the grid with the border.
                                // Otherwise these are handled as two parts.
-            size * fieldSize, boxHeight + topBoardHeight + c0 * 2 +
+            gridInner, boxHeight + topBoardHeight + c0 * 2 +
             top
           ]);
     }
 
     translate(
-        [ 0, 0, boxHeight + bottomHeight - bottomGridOverlap + topBoardHeight ])
+        [ 0, 0, boxHeight + bottomHeight - top ])
         eachGrid() {
       Field();
     }
@@ -172,11 +169,11 @@ module Grid() {
             // Base cube for each field
             cube([
               fieldSize + 2 * fieldBorder, fieldSize + 2 * fieldBorder,
-              boxHeight
+              boxHeight - topBoardHeight - top
             ]);
     // Cut out inner block so that only the outlines are left.
     translate([ fieldBorder, fieldBorder, -c0 ])
-        cube([ fieldSize, fieldSize, boxHeight + c0 * 2 ]);
+        cube([ fieldSize, fieldSize, boxHeight- topBoardHeight + c0 * 2 ]);
 
     // Wires
     translate([
@@ -205,9 +202,8 @@ module BottomElectronic() {
     translate([
       bottomWallSize - ledWallCutout,
       i * fieldSize + bottomWallSize + tolerance + fieldSize / 2 - ledWidth / 2,
-      bottomHeight - bottomGridOverlap -
-      ledHeight
-    ]) cube([ ledLength, ledWidth, ledHeight + bottomGridOverlap + c0 ]);
+      bottomHeight -       ledHeight
+    ]) cube([ ledLength, ledWidth, ledHeight  + c0 ]);
 
     // Wires for the strips.
     translate(
@@ -229,7 +225,7 @@ module BottomElectronic() {
     gridOuter - fieldSize + tolerance,
     bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder +
         fieldSize * (size - 1),
-    bottomHeight - bottomGridOverlap -
+    bottomHeight - 
     ledHeight
   ])
       cube([
@@ -242,10 +238,9 @@ module Bottom() {
   difference() {
     cube([ fullOuterBoard, fullOuterBoard, bottomHeight + boxHeight ]);
     translate(
-        [ bottomWallSize, bottomWallSize, bottomHeight - bottomGridOverlap ])
+        [ bottomWallSize, bottomWallSize, bottomHeight ])
         cube([
-          gridOuter + 2 * tolerance, gridOuter + 2 * tolerance,
-          bottomGridOverlap + boxHeight +
+          gridOuter + 2 * tolerance, gridOuter + 2 * tolerance, boxHeight +
           c0
         ]);
 
@@ -325,8 +320,7 @@ if (!renderPrintable) {
     translate([
       fieldBorder + tolerance + bottomWallSize + tolerance,
       fieldBorder + tolerance + bottomWallSize + tolerance,
-      boxHeight + bottomHeight -
-      bottomGridOverlap
+      boxHeight + bottomHeight - top - topBoardHeight
     ])
         cut4(
             [
@@ -352,8 +346,7 @@ if (!renderPrintable) {
     // Grid, including the wiring for the reed contacts.
     // Open at the bottom, to allow easy wiring.
     translate([
-      bottomWallSize + tolerance, bottomWallSize + tolerance, bottomHeight -
-      bottomGridOverlap
+      bottomWallSize + tolerance, bottomWallSize + tolerance, bottomHeight
     ]) cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
         Grid();
   }
@@ -432,7 +425,7 @@ if (!renderPrintable) {
     translate([
       bottomWallSize + tolerance,
       bottomWallSize + tolerance + 40 + gridOuter * 2,
-      bottomHeight - bottomGridOverlap -
+      bottomHeight - 
       bottomHeight
     ]) cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
         Grid();
