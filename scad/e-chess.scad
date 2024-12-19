@@ -16,10 +16,13 @@ fieldSize = 33;
 // Board field count. For a normal chess -> 8.
 size = 8;
 
-top = 1.0;
+top = 2.0;
 
 topBoardHeight = 0.4;
-fieldBorder = 1.0;
+
+// Border on each field.
+// Note that two borders side by side lead to an effective *2 border.
+fieldBorder = 1;
 
 wireRadius = 1.5;
 
