@@ -120,14 +120,12 @@ module TopGrid() {
   translate([ fieldBorder + tolerance, fieldBorder + tolerance, 0 ]) {
     // Render border
     translate([
-      -tolerance - fieldBorder, -tolerance - fieldBorder, bottomHeight - top -
-      topBoardHeight
+      -tolerance - fieldBorder, -tolerance - fieldBorder, bottomHeight
     ]) difference() {
       cube([
         gridInner + fieldBorder * 4 + tolerance * 2,
         gridInner + fieldBorder * 4 + tolerance * 2,
-        boxHeight + topBoardHeight +
-        top
+        boxHeight 
       ]);
 
       translate(
