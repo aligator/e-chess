@@ -33,7 +33,7 @@ ledHeight = 3;
 bottomHeight = 5;
 
 // Additional bottomWallSize to the size of the grid.
-bottomWallSize = 3;
+bottomWallSize = 4;
 
 electronicCaseWidth = 50;
 electronicCaseCover = 1;
