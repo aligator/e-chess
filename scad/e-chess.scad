@@ -33,7 +33,7 @@ ledHeight = 3;
 bottomHeight = 5;
 
 // Additional bottomWallSize to the size of the grid.
-bottomWallSize = 4;
+bottomWallSize = 5;
 
 electronicCaseWidth = 50;
 electronicCaseCover = 1;
@@ -230,7 +230,7 @@ module BottomElectronic() {
     ledHeight
   ])
       cube([
-        fieldSize + bottomWallSize * 2 + tolerance + c0, ledHeight, ledHeight +
+        fieldSize + bottomWallSize * 3 + tolerance + c0, wireRadius*4, ledHeight +
         c0
       ]);
 }
@@ -258,6 +258,9 @@ module ElectronicCase() {
       bottomHeight +
       boxHeight
     ]);
+    
+    translate([-fullOuterBoard, 0, 0])
+      BottomElectronic();
   }
 }
 
