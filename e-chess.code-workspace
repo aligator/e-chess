@@ -1,0 +1,29 @@
+{
+    "folders": [
+        {
+            "path": ".",
+            "name": "E-Chess"
+        },
+        {
+            "path": "./cpp-playground",
+            "name": "Arduino - C++ Playground"
+        },
+        {
+            "path": "./firmware",
+            "name": "Rust firmware"
+        },
+        {
+            "path": "./scad",
+            "name": "OpenSCAD 3D model"
+        }
+    ],
+    "settings": {
+        "scad-lsp.fmtStyle": "Google",
+        "cSpell.words": [
+            "bitboard"
+        ],
+        // This screws up internal terminal colors needed for the debug output of the chess game.
+        "terminal.integrated.minimumContrastRatio": 1,
+        "debug.allowBreakpointsEverywhere": true
+    }
+}
