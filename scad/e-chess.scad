@@ -5,6 +5,8 @@ renderBottom = true;
 renderElectronicCase = true;
 renderElectronicCaseCover = true;
 renderReedPins = true;
+// Just for debugging
+renderMetalPlate = false;
 flipElectronicCaseCover = false;
 
 renderPrintable = false;
@@ -45,9 +47,10 @@ electronicCaseCoverStamp = 3;
 
 reedPinBorder = 2;
 metalPlateThickness = 0.2;
+metalPlateRadius = 5;
 reedThickness = 3;
-reedWireThickness = 1;
-reedOffset = 3;
+reedWireThickness = 2;
+reedOffset = 4;
 
 tolerance = 0.3;
 
@@ -353,19 +356,21 @@ module ElectronicCaseCover()
 
 module ReedPin()
 {
-    cutoutWidth = reedPinWidth - 2 * reedPinBorder;
+    metalPlateDia = metalPlateRadius * 2;
+    cutoutWidthH = metalPlateDia - 2 * reedPinBorder;
+    cutoutWidthV = reedPinWidth - 2 * reedPinBorder;
     cutoutHeight = reedPinHeight - reedThickness - reedPinBorder;
 
     difference()
     {
         // Reed boxHeight - metalPlateThicknesspin
-        cube([ reedPinWidth, reedPinWidth, reedPinHeight ]);
+        cube([ metalPlateDia, reedPinWidth, reedPinHeight ]);
 
         // Reed
         translate([
             -reedOffset, reedPinWidth / 2 - reedThickness / 2, reedPinHeight -
             reedThickness
-        ]) cube([ reedPinWidth, reedThickness, reedThickness + c0 ]);
+        ]) cube([ metalPlateDia, reedThickness, reedThickness + c0 ]);
 
         // Wire
         translate([
@@ -374,9 +379,21 @@ module ReedPin()
 
         // Cutouts
         translate([ reedPinBorder, -c0, -c0 ])
-            cube([ cutoutWidth, reedPinWidth + 2 * c0, cutoutHeight + c0 ]);
+            cube([ cutoutWidthH, reedPinWidth + 2 * c0, cutoutHeight + c0 ]);
         translate([ -c0, reedPinBorder, -c0 ])
-            cube([ reedPinWidth + 2 * c0, cutoutWidth, cutoutHeight + c0 ]);
+            cube([ reedPinWidth + 2 * c0, cutoutWidthV, cutoutHeight + c0 ]);
+        translate([ reedPinBorder, -c0, -c0 ])
+            cube([ cutoutWidthH, reedPinBorder + c0, reedPinHeight + 2 * c0 ]);
+        translate([ reedPinBorder, reedPinWidth - reedPinBorder + c0, -c0 ])
+            cube([ cutoutWidthH, reedPinBorder + c0, reedPinHeight + 2 * c0 ]);
+    }
+
+    if (renderMetalPlate) {
+        translate([
+            metalPlateRadius, reedPinWidth / 2,
+            reedPinHeight
+        ])
+            cylinder(h = metalPlateThickness, r = metalPlateRadius);
     }
 }
 
@@ -446,7 +463,7 @@ if (!renderPrintable) {
             eachGrid()
             {
                 translate([
-                    fieldSize / 2 - reedPinWidth / 2,
+                    fieldSize / 2 - metalPlateRadius,
                     fieldSize / 2 - reedPinWidth / 2,
                     0
                 ]) ReedPin();
@@ -552,7 +569,7 @@ if (!renderPrintable) {
             {
                 translate([
                     fieldSize / 2 - reedPinWidth / 2, fieldSize / 2 - reedPinWidth / 2, 0
-                ]) ReedPin();
+                ]) translate([ 0, reedPinWidth, reedPinHeight ]) rotate([ 180, 0, 0 ]) ReedPin();
             }
         }
     }
