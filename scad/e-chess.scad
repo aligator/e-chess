@@ -46,11 +46,11 @@ electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
 
 reedPinBorder = 3;
-metalPlateThickness = 0.2;
-metalPlateRadius = 5;
-reedThickness = 3;
+metalPlateThickness = 0.3;
+metalPlateRadius = 7.5;
+reedThickness = 3.3;
 reedWireThickness = 2;
-reedOffset = 4;
+reedOffset = 3;
 
 tolerance = 0.3;
 
