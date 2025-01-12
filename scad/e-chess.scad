@@ -438,16 +438,16 @@ if (!renderPrintable) {
             ],
             cutPartsSize)
             translate([
-                bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
-                bottomWallSize + tolerance,
+                bottomWallSize + tolerance + fieldBorder,
+                bottomWallSize + tolerance + fieldBorder,
                 bottomHeight
             ])
         {
             eachGrid()
             {
                 translate([
-                    0, // fieldSize / 2 - reedPinWidth / 2,
-                    0, // fieldSize / 2 - reedPinWidth / 2,
+                    fieldSize / 2 - reedPinWidth / 2,
+                    fieldSize / 2 - reedPinWidth / 2,
                     0
                 ]) ReedPin();
             }
