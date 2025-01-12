@@ -18,7 +18,7 @@
         }
     ],
     "settings": {
-        "scad-lsp.fmtStyle": "Google",
+        "scad-lsp.fmtStyle": "WebKit",
         "cSpell.words": [
             "bitboard"
         ],
