@@ -9,7 +9,7 @@ renderReedPins = true;
 renderMetalPlate = false;
 flipElectronicCaseCover = false;
 
-renderPrintable = false;
+renderPrintable = true;
 
 cutParts = false;
 
@@ -45,7 +45,7 @@ electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
 
-reedPinBorder = 2;
+reedPinBorder = 3;
 metalPlateThickness = 0.2;
 metalPlateRadius = 5;
 reedThickness = 3;
