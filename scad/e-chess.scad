@@ -194,24 +194,7 @@ module Grid()
         {
             eachGrid()
             {
-                difference()
-                {
-                    Field(boxHeight - topBoardHeight - top - tolerance);
-
-                    // Wires
-                    translate([
-                        wireRadius + fieldBorder * 2 + tolerance,
-                        fieldSize + fieldBorder * 2 + c0,
-                        wireRadius + fieldBorder * 2,
-                    ]) rotate([ 90, 0, 0 ])
-                        cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
-                    translate([
-                        -c0,
-                        wireRadius + fieldBorder * 2 + tolerance,
-                        wireRadius + fieldBorder * 2 + wireRadius * 2,
-                    ]) rotate([ 90, 0, 90 ])
-                        cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
-                }
+                Field(boxHeight - topBoardHeight - top - tolerance);
             }
         }
     }
@@ -250,6 +233,35 @@ module BottomElectronic()
             ]);
     }
 
+    // Wires for the reeds. (vertical)
+    for (i = [0:1:size - 1]) {
+
+        translate([
+            i * fieldSize + bottomWallSize + 2 * tolerance + fieldBorder * 2,
+            bottomWallSize + tolerance + fieldSize / 2,
+            bottomHeight - wireRadius * 2
+        ])
+            cube([
+                wireRadius * 2,
+                (size - 1) * fieldSize,
+                wireRadius * 2 + c0,
+            ]);
+    }
+
+    // Wires for the reeds. (horizontal)
+    for (i = [0:1:size - 1]) {
+        translate([
+            bottomWallSize + tolerance + fieldSize / 2,
+            i * fieldSize + bottomWallSize + 2 * tolerance + fieldBorder * 2,
+            bottomHeight - wireRadius * 2
+        ])
+            cube([
+                (size - 1) * fieldSize,
+                wireRadius * 2,
+                wireRadius * 2 + c0,
+            ]);
+    }
+
     // Add hole for the wires of the reeds
     translate([
         gridOuter - fieldSize + tolerance,
@@ -279,6 +291,31 @@ module Bottom()
             ]);
 
         BottomElectronic();
+    }
+
+    if (renderReedPins) {
+        cut4(
+            [
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
+                boxHeight
+            ],
+            cutPartsSize)
+            translate([
+                bottomWallSize + tolerance + fieldBorder,
+                bottomWallSize + tolerance + fieldBorder,
+                bottomHeight
+            ])
+        {
+            eachGrid()
+            {
+                translate([
+                    fieldSize / 2 - metalPlateRadius,
+                    fieldSize / 2 - reedPinWidth / 2,
+                    0
+                ]) ReedPin();
+            }
+        }
     }
 }
 
@@ -400,15 +437,16 @@ module ReedPin()
 if (!renderPrintable) {
     if (renderTopBoard) {
         translate([
-            fieldBorder + tolerance + bottomWallSize + tolerance,
-            fieldBorder + tolerance + bottomWallSize + tolerance,
+            fieldBorder + 2 * tolerance + bottomWallSize,
+            fieldBorder + 2 * tolerance + bottomWallSize,
             boxHeight + bottomHeight - top -
             topBoardHeight
         ])
             cut4(
                 [
-                    fieldSize * size + 2 * fieldBorder,
-                    fieldSize * size + 2 * fieldBorder, bottomHeight +
+                    fieldSize * size - tolerance * 2,
+                    fieldSize * size - tolerance * 2,
+                    bottomHeight +
                     boxHeight
                 ],
                 cutPartsSize) TopBoard();
@@ -418,8 +456,8 @@ if (!renderPrintable) {
         translate([ bottomWallSize + tolerance, bottomWallSize + tolerance, 0 ])
             cut4(
                 [
-                    fieldSize * size + 4 * fieldBorder + tolerance * 2,
-                    fieldSize * size + 4 * fieldBorder + tolerance * 2, bottomHeight +
+                    fieldSize * size + 2 * fieldBorder,
+                    fieldSize * size + 2 * fieldBorder, bottomHeight +
                     boxHeight
                 ],
                 cutPartsSize) TopGrid();
@@ -444,31 +482,6 @@ if (!renderPrintable) {
                 boxHeight
             ],
             cutPartsSize) Bottom();
-    }
-
-    if (renderReedPins) {
-        cut4(
-            [
-                gridOuter + bottomWallSize * 2 + tolerance * 2,
-                gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
-                boxHeight
-            ],
-            cutPartsSize)
-            translate([
-                bottomWallSize + tolerance + fieldBorder,
-                bottomWallSize + tolerance + fieldBorder,
-                bottomHeight
-            ])
-        {
-            eachGrid()
-            {
-                translate([
-                    fieldSize / 2 - metalPlateRadius,
-                    fieldSize / 2 - reedPinWidth / 2,
-                    0
-                ]) ReedPin();
-            }
-        }
     }
 
     translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase)
@@ -512,8 +525,9 @@ if (!renderPrintable) {
         ])
             cut4(
                 [
-                    fieldSize * size + 2 * fieldBorder,
-                    fieldSize * size + 2 * fieldBorder, bottomHeight +
+                    fieldSize * size - tolerance * 2,
+                    fieldSize * size - tolerance * 2,
+                    bottomHeight +
                     boxHeight
                 ],
                 cutPartsSize) TopBoard();
@@ -526,7 +540,9 @@ if (!renderPrintable) {
             boxHeight +
             bottomHeight
         ]) rotate([ 180, 0, 0 ])
-            cut4([ topGridSize, topGridSize, bottomHeight + boxHeight ],
+            cut4([ fieldSize * size + 2 * fieldBorder,
+                fieldSize * size + 2 * fieldBorder, bottomHeight +
+                boxHeight ],
                 cutPartsSize) TopGrid();
     }
 
@@ -550,28 +566,6 @@ if (!renderPrintable) {
                 boxHeight
             ],
             cutPartsSize) Bottom();
-    }
-
-    if (renderReedPins) {
-        translate([ fullOuterBoard + electronicCaseWidth + 50, 0, 0 ]) cut4(
-            [
-                gridOuter + bottomWallSize * 2 + tolerance * 2,
-                gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
-                boxHeight
-            ],
-            cutPartsSize)
-            translate([
-                bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
-                bottomWallSize + tolerance, 0
-            ])
-        {
-            eachGrid()
-            {
-                translate([
-                    fieldSize / 2 - reedPinWidth / 2, fieldSize / 2 - reedPinWidth / 2, 0
-                ]) translate([ 0, reedPinWidth, reedPinHeight ]) rotate([ 180, 0, 0 ]) ReedPin();
-            }
-        }
     }
 
     translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase)
