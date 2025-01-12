@@ -4,6 +4,7 @@ renderGrid = true;
 renderBottom = true;
 renderElectronicCase = true;
 renderElectronicCaseCover = true;
+renderReedPins = true;
 flipElectronicCaseCover = false;
 
 renderPrintable = false;
@@ -42,13 +43,22 @@ electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
 
+reedPinBorder = 2;
+metalPlateThickness = 0.2;
+reedThickness = 3;
+reedWireThickness = 1;
+reedOffset = 3;
+
 tolerance = 0.3;
 
 ledWallCutout = 2.0;
 
 coverWidth = electronicCaseWidth - bottomWallSize - 2 * tolerance;
+
+reedPinHeight = boxHeight - topBoardHeight - top - metalPlateThickness;
+
 // Just a constant to make cutouts larger for better preview rendering.
-c0 = 0.001 + 0;
+c0 = 0.01 + 0;
 
 $fa = 12;
 $fs = 1;
@@ -59,411 +69,564 @@ cutPartsSize = cutParts ? 10 : 0;
 
 fullOuterBoard = gridOuter + 2 * bottomWallSize + 2 * tolerance;
 
-module eachGrid() {
-  for (i = [0:1:size - 1]) {
-    for (j = [0:1:size - 1]) {
-      translate([ i * fieldSize, j * fieldSize, 0 ]) children();
-    }
-  }
-}
+reedPinWidth = ledWidth + reedPinBorder * 2;
 
-module cut4(partSize, gap) {
-  if (gap == 0) {
-    // Fast path to avoid unneeded rendering
-    children();
-  } else {
-    for (i = [0:1:1]) {
-      for (j = [0:1:1]) {
-        translate(
-            [ i * partSize[0] / 2 + i * gap, j * partSize[1] / 2 + j * gap, 0 ])
-            intersection() {
-          translate([ -i * partSize[0] / 2, -j * partSize[1] / 2 ]) children();
-          cube([ partSize[0] / 2, partSize[1] / 2, partSize[2] ]);
+module
+eachGrid()
+{
+    for (i = [0:1:size - 1]) {
+        for (j = [0:1:size - 1]) {
+            translate([ i * fieldSize, j * fieldSize, 0 ]) children();
         }
-      }
     }
-  }
 }
 
-module cut2(partSize, gap, translation = [ 0, 0, 0 ]) {
-  if (gap == 0) {
-    // Fast path to avoid unneeded rendering
-    children();
-  } else {
-    i = 0;
-    for (j = [0:1:1]) {
-      translate([ 0, j * partSize[1] / 2 + j * gap, 0 ]) intersection() {
-        translate([ 0, -j * partSize[1] / 2 ]) children();
-        translate(translation)
-            cube([ partSize[0], partSize[1] / 2, partSize[2] ]);
-      }
+module
+cut4(partSize, gap)
+{
+    if (gap == 0) {
+        // Fast path to avoid unneeded rendering
+        children();
+    } else {
+        for (i = [0:1:1]) {
+            for (j = [0:1:1]) {
+                translate(
+                    [ i * partSize[0] / 2 + i * gap, j * partSize[1] / 2 + j * gap, 0 ])
+                    intersection()
+                {
+                    translate([ -i * partSize[0] / 2, -j * partSize[1] / 2 ]) children();
+                    cube([ partSize[0] / 2, partSize[1] / 2, partSize[2] ]);
+                }
+            }
+        }
     }
-  }
 }
 
-module Field() {
-  difference() {
-    cube([ fieldSize + fieldBorder * 2, fieldSize + fieldBorder * 2, top ]);
-    translate([ fieldBorder, fieldBorder, -c0 ])
-        cube([ fieldSize, fieldSize, top + c0 * 2 ]);
-  };
-}
-
-module TopBoard() {
-  translate([ tolerance + fieldBorder, tolerance + fieldBorder, 0 ]) cube([
-    gridInner - tolerance * 2, gridInner - tolerance * 2,
-    topBoardHeight
-  ]);
-}
-
-module TopGrid() {
-  translate([ fieldBorder + tolerance, fieldBorder + tolerance, 0 ]) {
-    // Render border
-    translate([
-      -tolerance - fieldBorder, -tolerance - fieldBorder, bottomHeight
-    ]) difference() {
-      cube([
-        gridInner + fieldBorder * 4 + tolerance * 2,
-        gridInner + fieldBorder * 4 + tolerance * 2,
-        boxHeight 
-      ]);
-
-      translate(
-          [ tolerance + fieldBorder * 2, tolerance + fieldBorder * 2,
-            -c0 ])
-          cube([
-            gridInner,  // Use c0 here to fuse the grid with the border.
-                               // Otherwise these are handled as two parts.
-            gridInner, boxHeight + topBoardHeight + c0 * 2 +
-            top
-          ]);
+module
+cut2(partSize, gap, translation = [ 0, 0, 0 ])
+{
+    if (gap == 0) {
+        // Fast path to avoid unneeded rendering
+        children();
+    } else {
+        i = 0;
+        for (j = [0:1:1]) {
+            translate([ 0, j * partSize[1] / 2 + j * gap, 0 ]) intersection()
+            {
+                translate([ 0, -j * partSize[1] / 2 ]) children();
+                translate(translation)
+                    cube([ partSize[0], partSize[1] / 2, partSize[2] ]);
+            }
+        }
     }
-
-    translate(
-        [ 0, 0, boxHeight + bottomHeight - top ])
-        eachGrid() {
-      Field();
-    }
-  }
 }
 
-module Grid() {
-  // Render the grid, but remove the outer border as that is rendered separately
-  // with the top grid.
-  intersection() {
-    // Base cube, cuts away the outer border
-    translate([
-      fieldBorder * 2 + tolerance * 2 + c0,
-      fieldBorder * 2 + tolerance * 2 + c0, 0
-    ])
-        // Note we make the grid even smaller (by tolerance) to make sure it
-        // fits nicely in the top-grid.
-        cube([
-          gridInner - 2 * tolerance - c0 * 2,
-          gridInner - 2 * tolerance - c0 * 2,
-          boxHeight
-        ]);
+module
+Field()
+{
+    difference()
+    {
+        cube([ fieldSize + fieldBorder * 2, fieldSize + fieldBorder * 2, top ]);
+        translate([ fieldBorder, fieldBorder, -c0 ])
+            cube([ fieldSize, fieldSize, top + c0 * 2 ]);
+    };
+}
 
-    // Grid itself
+module
+TopBoard()
+{
+    translate([ tolerance + fieldBorder, tolerance + fieldBorder, 0 ]) cube(
+        [ gridInner - tolerance * 2, gridInner - tolerance * 2, topBoardHeight ]);
+}
+
+module
+TopGrid()
+{
     translate([ fieldBorder + tolerance, fieldBorder + tolerance, 0 ])
-        eachGrid(){difference(){
-            // Base cube for each field
+    {
+        // Render border
+        translate(
+            [ -tolerance - fieldBorder, -tolerance - fieldBorder, bottomHeight ])
+            difference()
+        {
             cube([
-              fieldSize + 2 * fieldBorder, fieldSize + 2 * fieldBorder,
-              boxHeight - topBoardHeight - top
+                gridInner + fieldBorder * 4 + tolerance * 2,
+                gridInner + fieldBorder * 4 + tolerance * 2,
+                boxHeight
             ]);
-    // Cut out inner block so that only the outlines are left.
-    translate([ fieldBorder, fieldBorder, -c0 ])
-        cube([ fieldSize, fieldSize, boxHeight- topBoardHeight + c0 * 2 ]);
 
-    // Wires
-    translate([
-      wireRadius + fieldBorder * 2 + tolerance,
-      fieldSize + fieldBorder * 2 + c0,
-      wireRadius + fieldBorder * 2,
-    ]) rotate([ 90, 0, 0 ])
-        cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
-    translate([
-      -c0,
-      wireRadius + fieldBorder * 2 + tolerance,
-      wireRadius + fieldBorder * 2 + wireRadius * 2,
-    ]) rotate([ 90, 0, 90 ])
-        cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
-  }
+            translate(
+                [ tolerance + fieldBorder * 2,
+                    tolerance + fieldBorder * 2,
+                    -c0 ])
+                cube([
+                    gridInner, // Use c0 here to fuse the grid with the border.
+                               // Otherwise these are handled as two parts.
+                    gridInner,
+                    boxHeight + topBoardHeight + c0 * 2 +
+                    top
+                ]);
+        }
+
+        translate([ 0, 0, boxHeight + bottomHeight - top ]) eachGrid()
+        {
+            Field();
+        }
+    }
+}
+
+module
+Grid()
+{
+    // Render the grid, but remove the outer border as that is rendered
+    // separately with the top grid.
+    intersection()
+    {
+        // Base cube, cuts away the outer border
+        translate([
+            fieldBorder * 2 + tolerance * 2 + c0,
+            fieldBorder * 2 + tolerance * 2 + c0,
+            0
+        ])
+            // Note we make the grid even smaller (by tolerance) to make sure it
+            // fits nicely in the top-grid.
+            cube([
+                gridInner - 2 * tolerance - c0 * 2,
+                gridInner - 2 * tolerance - c0 * 2,
+                boxHeight
+            ]);
+
+        // Grid itself
+        translate([ fieldBorder + tolerance, fieldBorder + tolerance, 0 ])
+            eachGrid() { difference() { // Base cube for each field
+                cube([
+                    fieldSize + 2 * fieldBorder,
+                    fieldSize + 2 * fieldBorder,
+                    boxHeight - topBoardHeight -
+                    top
+                ]);
+        // Cut out inner block so that only the outlines are left.
+        translate([ fieldBorder, fieldBorder, -c0 ])
+            cube([ fieldSize, fieldSize, boxHeight - topBoardHeight + c0 * 2 ]);
+
+        // Wires
+        translate([
+            wireRadius + fieldBorder * 2 + tolerance,
+            fieldSize + fieldBorder * 2 + c0,
+            wireRadius + fieldBorder * 2,
+        ]) rotate([ 90, 0, 0 ])
+            cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
+        translate([
+            -c0,
+            wireRadius + fieldBorder * 2 + tolerance,
+            wireRadius + fieldBorder * 2 + wireRadius * 2,
+        ]) rotate([ 90, 0, 90 ])
+            cylinder(h = fieldSize + fieldBorder * 2 + c0 * 2, r = wireRadius);
+    }
 };
 }
 }
 
-module BottomElectronic() {
-  for (i = [0:1:size - 1]) {
-    ledLength = i == size - 1 ? gridOuter + bottomWallSize * 2 + c0
-                              : gridOuter + tolerance * 3 + ledWallCutout * 2;
+module
+BottomElectronic()
+{
+    for (i = [0:1:size - 1]) {
+        ledLength = i == size - 1 ? gridOuter + bottomWallSize * 2 + c0
+                                  : gridOuter + tolerance * 3 + ledWallCutout * 2;
 
-    // Led strips
+        // Led strips
+        translate([
+            bottomWallSize - ledWallCutout,
+            i * fieldSize + bottomWallSize + tolerance + fieldSize / 2 - ledWidth / 2,
+            bottomHeight -
+            ledHeight
+        ]) cube([ ledLength, ledWidth, ledHeight + c0 ]);
+
+        // Wires for the strips.
+        translate(
+            [ bottomWallSize - ledWallCutout, bottomWallSize, bottomWallSize ])
+            cube([ ledWallCutout + c0, gridOuter + 2 * tolerance, boxHeight / 2 ]);
+
+        translate([
+            gridOuter + bottomWallSize + tolerance + tolerance - c0,
+            bottomWallSize,
+            bottomWallSize
+        ])
+            cube([
+                ledWallCutout + tolerance + c0,
+                gridOuter + 2 * tolerance,
+                boxHeight / 2
+            ]);
+    }
+
+    // Add hole for the wires of the reeds
     translate([
-      bottomWallSize - ledWallCutout,
-      i * fieldSize + bottomWallSize + tolerance + fieldSize / 2 - ledWidth / 2,
-      bottomHeight -       ledHeight
-    ]) cube([ ledLength, ledWidth, ledHeight  + c0 ]);
-
-    // Wires for the strips.
-    translate(
-        [ bottomWallSize - ledWallCutout, bottomWallSize, bottomWallSize ])
-        cube([ ledWallCutout + c0, gridOuter + 2 * tolerance, boxHeight / 2 ]);
-
-    translate([
-      gridOuter + bottomWallSize + tolerance + tolerance - c0, bottomWallSize,
-      bottomWallSize
+        gridOuter - fieldSize + tolerance,
+        bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + fieldSize * (size - 1),
+        bottomHeight -
+        ledHeight
     ])
         cube([
-          ledWallCutout + tolerance + c0, gridOuter + 2 * tolerance,
-          boxHeight / 2
+            fieldSize + bottomWallSize * 3 + tolerance + c0,
+            wireRadius * 4,
+            ledHeight +
+            c0
         ]);
-  }
-
-  // Add hole for the wires of the reeds
-  translate([
-    gridOuter - fieldSize + tolerance,
-    bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder +
-        fieldSize * (size - 1),
-    bottomHeight - 
-    ledHeight
-  ])
-      cube([
-        fieldSize + bottomWallSize * 3 + tolerance + c0, wireRadius*4, ledHeight +
-        c0
-      ]);
 }
 
-module Bottom() {
-  difference() {
-    cube([ fullOuterBoard, fullOuterBoard, bottomHeight + boxHeight ]);
-    translate(
-        [ bottomWallSize, bottomWallSize, bottomHeight ])
-        cube([
-          gridOuter + 2 * tolerance, gridOuter + 2 * tolerance, boxHeight +
-          c0
-        ]);
+module
+Bottom()
+{
+    difference()
+    {
+        cube([ fullOuterBoard, fullOuterBoard, bottomHeight + boxHeight ]);
+        translate([ bottomWallSize, bottomWallSize, bottomHeight ]) cube(
+            [ gridOuter + 2 * tolerance, gridOuter + 2 * tolerance, boxHeight + c0 ]);
 
-    BottomElectronic();
-  }
+        BottomElectronic();
+    }
 }
 
-module ElectronicCase() {
-  difference() {
-    cube(
-        [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ]);
-    translate([ 0, bottomWallSize, bottomWallSize ]) cube([
-      c0 + electronicCaseWidth - 1 * bottomWallSize, gridOuter + 2 * tolerance,
-      bottomHeight +
-      boxHeight
-    ]);
-    
-    translate([-fullOuterBoard, 0, 0])
-      BottomElectronic();
-  }
+module
+ElectronicCase()
+{
+    difference()
+    {
+        cube(
+            [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ]);
+        translate([ 0, bottomWallSize, bottomWallSize ]) cube([
+            c0 + electronicCaseWidth - 1 * bottomWallSize,
+            gridOuter + 2 * tolerance,
+            bottomHeight +
+            boxHeight
+        ]);
+
+        translate([ -fullOuterBoard, 0, 0 ]) BottomElectronic();
+    }
 }
 
-module ElectronicCaseCover() {
-  translate([
-    tolerance, bottomWallSize + tolerance, bottomHeight + boxHeight -
-    electronicCaseCover
-  ]) {
-    cube([ coverWidth, gridOuter, electronicCaseCover ]);
+module
+ElectronicCaseCover()
+{
+    translate([
+        tolerance,
+        bottomWallSize + tolerance,
+        bottomHeight + boxHeight -
+        electronicCaseCover
+    ])
+    {
+        cube([ coverWidth, gridOuter, electronicCaseCover ]);
 
-    // Magnets
-    translate([
-      -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-      electronicCaseCoverMagnetThickness,
-      -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
-    ])
-        cube([
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover -
-          bottomWallSize
-        ]);
-    translate([
-      -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-      gridOuter - electronicCaseCoverMagnetHolderThickness -
-          electronicCaseCoverMagnetThickness,
-      -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
-    ])
-        cube([
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover -
-          bottomWallSize
-        ]);
+        // Magnets
+        translate([
+            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
+            electronicCaseCoverMagnetThickness,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverMagnetDiameter,
+                electronicCaseCoverMagnetHolderThickness,
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
+            ]);
+        translate([
+            -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
+            gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverMagnetDiameter,
+                electronicCaseCoverMagnetHolderThickness,
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
+            ]);
 
-    // Stamps at the center
-    translate([
-      0, gridOuter / 2 - electronicCaseCoverStamp / 2,
-      -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
-    ])
-        cube([
-          electronicCaseCoverStamp, electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover -
-          bottomWallSize
-        ]);
-    translate([
-      coverWidth - electronicCaseCoverStamp,
-      gridOuter / 2 - electronicCaseCoverStamp / 2,
-      -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
-    ])
-        cube([
-          electronicCaseCoverStamp, electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover -
-          bottomWallSize
-        ]);
-  }
+        // Stamps at the center
+        translate([
+            0,
+            gridOuter / 2 - electronicCaseCoverStamp / 2,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverStamp,
+                electronicCaseCoverStamp,
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
+            ]);
+        translate([
+            coverWidth - electronicCaseCoverStamp,
+            gridOuter / 2 - electronicCaseCoverStamp / 2,
+            -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize)
+        ])
+            cube([
+                electronicCaseCoverStamp,
+                electronicCaseCoverStamp,
+                bottomHeight + boxHeight - electronicCaseCover -
+                bottomWallSize
+            ]);
+    }
+}
+
+module
+ReedPin()
+{
+
+    cutoutWidth = reedPinWidth - 2 * reedPinBorder;
+    cutoutHeight = reedPinHeight - reedThickness - reedPinBorder;
+
+    difference()
+    {
+        // Reed boxHeight - metalPlateThicknesspin
+        cube([ reedPinWidth, reedPinWidth, reedPinHeight ]);
+
+        // Reed
+        translate(
+            [
+                -reedOffset,
+                reedPinWidth / 2 - reedThickness / 2,
+                reedPinHeight -
+                reedThickness
+            ])
+            cube([ reedPinWidth, reedThickness, reedThickness + c0 ]);
+
+        // Wire
+        translate(
+            [
+                0,
+                reedPinWidth / 2 - reedWireThickness / 2,
+                reedPinHeight -
+                reedThickness
+            ])
+            cube([ reedPinWidth + c0, reedWireThickness, reedThickness + c0 ]);
+
+        // Cutouts
+        translate([ reedPinBorder, -c0, -c0 ])
+            cube([ cutoutWidth, reedPinWidth + 2 * c0, cutoutHeight + c0 ]);
+        translate([ -c0, reedPinBorder, -c0 ])
+            cube([ reedPinWidth + 2 * c0, cutoutWidth, cutoutHeight + c0 ]);
+    }
 }
 
 if (!renderPrintable) {
-  if (renderTopBoard) {
-    translate([
-      fieldBorder + tolerance + bottomWallSize + tolerance,
-      fieldBorder + tolerance + bottomWallSize + tolerance,
-      boxHeight + bottomHeight - top - topBoardHeight
-    ])
-        cut4(
-            [
-              fieldSize * size + 2 * fieldBorder,
-              fieldSize * size + 2 * fieldBorder, bottomHeight +
-              boxHeight
-            ],
-            cutPartsSize) TopBoard();
-  }
-
-  if (renderTopGrid) {
-    translate([ bottomWallSize + tolerance, bottomWallSize + tolerance, 0 ])
-        cut4(
-            [
-              fieldSize * size + 4 * fieldBorder + tolerance * 2,
-              fieldSize * size + 4 * fieldBorder + tolerance * 2, bottomHeight +
-              boxHeight
-            ],
-            cutPartsSize) TopGrid();
-  }
-
-  if (renderGrid) {
-    // Grid, including the wiring for the reed contacts.
-    // Open at the bottom, to allow easy wiring.
-    translate([
-      bottomWallSize + tolerance, bottomWallSize + tolerance, bottomHeight
-    ]) cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
-        Grid();
-  }
-
-  if (renderBottom) {
-    // The bottom embeds the led strip.
-    cut4(
-        [
-          gridOuter + bottomWallSize * 2 + tolerance * 2,
-          gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
-          boxHeight
-        ],
-        cutPartsSize) Bottom();
-  }
-
-  translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase) {
-    translate([ fullOuterBoard - c0, 0, 0 ]) cut2(
-        [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ],
-        cutPartsSize) ElectronicCase();
-  };
-
-  translate(
-      [ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCaseCover) {
-    if (flipElectronicCaseCover) {
-      translate([
-        tolerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2, 0,
-        bottomHeight +
-        boxHeight
-      ]) rotate([ 0, 180, 0 ])
-          cut2(
-              [
-                coverWidth, gridOuter, electronicCaseCover + bottomHeight +
-                boxHeight
-              ],
-              cutPartsSize, [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
-    } else {
-      translate([ fullOuterBoard, 0, 0 ]) cut2(
-          [
-            coverWidth, gridOuter, electronicCaseCover + bottomHeight +
-            boxHeight
-          ],
-          cutPartsSize, [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
+    if (renderTopBoard) {
+        translate([
+            fieldBorder + tolerance + bottomWallSize + tolerance,
+            fieldBorder + tolerance + bottomWallSize + tolerance,
+            boxHeight + bottomHeight - top -
+            topBoardHeight
+        ])
+            cut4(
+                [
+                    fieldSize * size + 2 * fieldBorder,
+                    fieldSize * size + 2 * fieldBorder,
+                    bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize) TopBoard();
     }
-  }
-} else {
-  if (renderTopBoard) {
-    translate([
-      fieldBorder + tolerance + bottomWallSize + tolerance,
-      fieldBorder + tolerance + bottomWallSize + tolerance + 20 + gridOuter,
-      boxHeight + bottomHeight - boxHeight -
-      bottomHeight
-    ])
+
+    if (renderTopGrid) {
+        translate([ bottomWallSize + tolerance, bottomWallSize + tolerance, 0 ])
+            cut4(
+                [
+                    fieldSize * size + 4 * fieldBorder + tolerance * 2,
+                    fieldSize * size + 4 * fieldBorder + tolerance * 2,
+                    bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize) TopGrid();
+    }
+
+    if (renderGrid) {
+        // Grid, including the wiring for the reed contacts.
+        // Open at the bottom, to allow easy wiring.
+        translate(
+            [ bottomWallSize + tolerance, bottomWallSize + tolerance, bottomHeight ])
+            cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
+                Grid();
+    }
+
+    if (renderBottom) {
+        // The bottom embeds the led strip.
         cut4(
             [
-              fieldSize * size + 2 * fieldBorder,
-              fieldSize * size + 2 * fieldBorder, bottomHeight +
-              boxHeight
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                bottomHeight +
+                boxHeight
             ],
-            cutPartsSize) TopBoard();
-  }
+            cutPartsSize) Bottom();
+    }
 
-  if (renderTopGrid) {
-    topGridSize = fieldSize * size + 4 * fieldBorder + tolerance * 2;
-    translate([
-      fullOuterBoard + 40, topGridSize + cutPartsSize + 40 + fullOuterBoard,
-      boxHeight +
-      bottomHeight
-    ]) rotate([ 180, 0, 0 ])
-        cut4([ topGridSize, topGridSize, bottomHeight + boxHeight ],
-             cutPartsSize) TopGrid();
-  }
-
-  if (renderGrid) {
-    // Grid, including the wiring for the reed contacts.
-    // Open at the bottom, to allow easy wiring.
-    translate([
-      bottomWallSize + tolerance,
-      bottomWallSize + tolerance + 40 + gridOuter * 2,
-      bottomHeight - 
-      bottomHeight
-    ]) cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
-        Grid();
-  }
-
-  if (renderBottom) {
-    // The bottom embeds the led strip.
-    cut4(
-        [
-          gridOuter + bottomWallSize * 2 + tolerance * 2,
-          gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
-          boxHeight
-        ],
-        cutPartsSize) Bottom();
-  }
-
-  translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase) {
-    translate([ fullOuterBoard - c0, 0, 0 ]) cut2(
-        [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ],
-        cutPartsSize) ElectronicCase();
-  };
-
-  translate(
-      [ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCaseCover) {
-    translate([
-      tolerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2, 0,
-      bottomHeight +
-      boxHeight
-    ]) rotate([ 0, 180, 0 ])
-        cut2(
+    if (renderReedPins) {
+        cut4(
             [
-              coverWidth, gridOuter, electronicCaseCover + bottomHeight +
-              boxHeight
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                bottomHeight +
+                boxHeight
             ],
-            cutPartsSize, [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
-  }
+            cutPartsSize)
+            translate([
+                bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
+                bottomWallSize + tolerance,
+                bottomHeight
+            ])
+        {
+            eachGrid()
+            {
+                translate([
+                    fieldSize / 2 - reedPinWidth / 2,
+                    fieldSize / 2 - reedPinWidth / 2,
+                    0
+                ]) ReedPin();
+            }
+        }
+    }
+
+    translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase)
+    {
+        translate([ fullOuterBoard - c0, 0, 0 ]) cut2(
+            [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ],
+            cutPartsSize) ElectronicCase();
+    };
+
+    translate(
+        [ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCaseCover)
+    {
+        if (flipElectronicCaseCover) {
+            translate([
+                tolerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2,
+                0,
+                bottomHeight +
+                boxHeight
+            ]) rotate([ 0, 180, 0 ])
+                cut2(
+                    [
+                        coverWidth,
+                        gridOuter,
+                        electronicCaseCover + bottomHeight +
+                        boxHeight
+                    ],
+                    cutPartsSize,
+                    [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
+        } else {
+            translate([ fullOuterBoard, 0, 0 ]) cut2(
+                [
+                    coverWidth,
+                    gridOuter,
+                    electronicCaseCover + bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize,
+                [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
+        }
+    }
+} else {
+    if (renderTopBoard) {
+        translate([
+            fieldBorder + tolerance + bottomWallSize + tolerance,
+            fieldBorder + tolerance + bottomWallSize + tolerance + 20 + gridOuter,
+            boxHeight + bottomHeight - boxHeight -
+            bottomHeight
+        ])
+            cut4(
+                [
+                    fieldSize * size + 2 * fieldBorder,
+                    fieldSize * size + 2 * fieldBorder,
+                    bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize) TopBoard();
+    }
+
+    if (renderTopGrid) {
+        topGridSize = fieldSize * size + 4 * fieldBorder + tolerance * 2;
+        translate([
+            fullOuterBoard + 40,
+            topGridSize + cutPartsSize + 40 + fullOuterBoard,
+            boxHeight +
+            bottomHeight
+        ]) rotate([ 180, 0, 0 ])
+            cut4([ topGridSize, topGridSize, bottomHeight + boxHeight ], cutPartsSize)
+                TopGrid();
+    }
+
+    if (renderGrid) {
+        // Grid, including the wiring for the reed contacts.
+        // Open at the bottom, to allow easy wiring.
+        translate([
+            bottomWallSize + tolerance,
+            bottomWallSize + tolerance + 40 + gridOuter * 2,
+            bottomHeight -
+            bottomHeight
+        ]) cut4([ gridOuter, gridOuter, bottomHeight + boxHeight ], cutPartsSize)
+            Grid();
+    }
+
+    if (renderBottom) {
+        // The bottom embeds the led strip.
+        cut4(
+            [
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                gridOuter + bottomWallSize * 2 + tolerance * 2,
+                bottomHeight +
+                boxHeight
+            ],
+            cutPartsSize) Bottom();
+    }
+
+    if (renderReedPins) {
+        translate([ fullOuterBoard + electronicCaseWidth + 50, 0, 0 ])
+            cut4(
+                [
+                    gridOuter + bottomWallSize * 2 + tolerance * 2,
+                    gridOuter + bottomWallSize * 2 + tolerance * 2,
+                    bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize)
+                translate([
+                    bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
+                    bottomWallSize + tolerance,
+                    0
+                ])
+        {
+            eachGrid()
+            {
+                translate([
+                    fieldSize / 2 - reedPinWidth / 2,
+                    fieldSize / 2 - reedPinWidth / 2,
+                    0
+                ]) ReedPin();
+            }
+        }
+    }
+
+    translate([ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCase)
+    {
+        translate([ fullOuterBoard - c0, 0, 0 ]) cut2(
+            [ electronicCaseWidth + c0, fullOuterBoard, bottomHeight + boxHeight ],
+            cutPartsSize) ElectronicCase();
+    };
+
+    translate(
+        [ cutParts ? cutPartsSize : 0, 0, 0 ]) if (renderElectronicCaseCover)
+    {
+        translate([
+            tolerance + gridOuter + 2 * bottomWallSize + electronicCaseWidth * 2,
+            0,
+            bottomHeight +
+            boxHeight
+        ]) rotate([ 0, 180, 0 ])
+            cut2(
+                [
+                    coverWidth,
+                    gridOuter,
+                    electronicCaseCover + bottomHeight +
+                    boxHeight
+                ],
+                cutPartsSize,
+                [ 0, bottomWallSize, 0 ]) ElectronicCaseCover();
+    }
 }
