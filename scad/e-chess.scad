@@ -131,8 +131,12 @@ module Field(height)
 
 module TopBoard()
 {
-    translate([ tolerance + fieldBorder, tolerance + fieldBorder, 0 ]) cube(
-        [ gridInner - tolerance * 2, gridInner - tolerance * 2, topBoardHeight ]);
+    translate([ fieldBorder, fieldBorder, 0 ])
+        cube([
+            gridInner - tolerance * 2 - fieldBorder * 2,
+            gridInner - tolerance * 2 - fieldBorder * 2,
+            topBoardHeight
+        ]);
 }
 
 module TopGrid()
@@ -170,9 +174,8 @@ module Grid()
     {
         // Base cube, cuts away the outer border
         translate([
-            fieldBorder * 2 + tolerance, fieldBorder * 2 + tolerance,
-            // tolerance + c0,
-            // tolerance + c0,
+            fieldBorder * 2 + tolerance,
+            fieldBorder * 2 + tolerance,
             0
         ])
             // Note we make the grid even smaller (by tolerance) to make sure it
@@ -426,11 +429,8 @@ if (!renderPrintable) {
             ],
             cutPartsSize)
             translate([
-                bottomWallSize + tolerance + fieldBorder,
-                bottomWallSize + tolerance + fieldBorder,
-
-                // bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
-                // bottomWallSize + tolerance,
+                bottomWallSize + tolerance + 3 * fieldBorder + tolerance,
+                bottomWallSize + tolerance,
                 bottomHeight
             ])
         {
@@ -440,7 +440,7 @@ if (!renderPrintable) {
                     0, // fieldSize / 2 - reedPinWidth / 2,
                     0, // fieldSize / 2 - reedPinWidth / 2,
                     0
-                ]) #cube([ fieldSize, fieldSize, 2 ]); // ReedPin();
+                ]) ReedPin();
             }
         }
     }
