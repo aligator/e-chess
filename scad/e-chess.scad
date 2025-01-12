@@ -64,7 +64,7 @@ $fa = 12;
 $fs = 1;
 
 gridInner = size * fieldSize;
-gridOuter = gridInner + 4 * fieldBorder + 2 * tolerance;
+gridOuter = gridInner + 2 * fieldBorder;
 cutPartsSize = cutParts ? 10 : 0;
 
 fullOuterBoard = gridOuter + 2 * bottomWallSize + 2 * tolerance;
@@ -223,18 +223,22 @@ module BottomElectronic()
         // Led strips
         translate([
             bottomWallSize - ledWallCutout,
-            i * fieldSize + bottomWallSize + tolerance + fieldSize / 2 - ledWidth / 2,
+            i * fieldSize + bottomWallSize + tolerance + fieldBorder + fieldSize / 2 - ledWidth / 2,
             bottomHeight -
             ledHeight
         ]) cube([ ledLength, ledWidth, ledHeight + c0 ]);
 
         // Wires for the strips.
-        translate(
-            [ bottomWallSize - ledWallCutout, bottomWallSize, bottomWallSize ])
+        translate([
+            bottomWallSize - ledWallCutout,
+            bottomWallSize,
+            bottomWallSize
+        ])
             cube([ ledWallCutout + c0, gridOuter + 2 * tolerance, boxHeight / 2 ]);
 
         translate([
-            gridOuter + bottomWallSize + tolerance + tolerance - c0, bottomWallSize,
+            gridOuter + bottomWallSize + 2 * tolerance - c0,
+            bottomWallSize,
             bottomWallSize
         ])
             cube([
@@ -246,12 +250,13 @@ module BottomElectronic()
     // Add hole for the wires of the reeds
     translate([
         gridOuter - fieldSize + tolerance,
-        bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + fieldSize * (size - 1),
+        bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + wireRadius + fieldSize * (size - 1),
         bottomHeight -
         ledHeight
     ])
         cube([
-            fieldSize + bottomWallSize * 3 + tolerance + c0, wireRadius * 4,
+            fieldSize + bottomWallSize * 3 + tolerance + c0,
+            wireRadius * 4,
             ledHeight +
             c0
         ]);
@@ -262,9 +267,13 @@ module Bottom()
     difference()
     {
         cube([ fullOuterBoard, fullOuterBoard, bottomHeight + boxHeight ]);
-        translate([ bottomWallSize, bottomWallSize, bottomHeight ]) cube([
-            gridOuter + 2 * tolerance, gridOuter + 2 * tolerance, boxHeight + c0
-        ]);
+        translate([ bottomWallSize, bottomWallSize, bottomHeight ])
+            cube([
+                gridOuter + 2 * tolerance,
+                gridOuter + 2 * tolerance,
+                boxHeight +
+                c0
+            ]);
 
         BottomElectronic();
     }
