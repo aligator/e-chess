@@ -32,7 +32,7 @@ wireRadius = 1.5;
 boxHeight = 30;
 
 ledWidth = 11;
-ledHeight = 3;
+ledHeight = 4;
 bottomHeight = 5;
 
 // Additional bottomWallSize to the size of the grid.
@@ -203,7 +203,7 @@ module Grid()
 module BottomElectronic()
 {
     for (i = [0:1:size - 1]) {
-        ledLength = i == size - 1 ? gridOuter + bottomWallSize * 2 + c0
+        ledLength = i == size - 1 ? gridOuter + tolerance * 2 + ledWallCutout + electronicCaseWidth
                                   : gridOuter + tolerance * 3 + ledWallCutout * 2;
 
         // Led strips
@@ -270,7 +270,7 @@ module BottomElectronic()
         ledHeight
     ])
         cube([
-            fieldSize + bottomWallSize * 3 + tolerance + c0,
+            fieldSize + bottomWallSize * 2 + tolerance + electronicCaseWidth,
             wireRadius * 4,
             ledHeight +
             c0
