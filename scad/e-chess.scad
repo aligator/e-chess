@@ -215,12 +215,17 @@ module BottomElectronic()
         ]) cube([ ledLength, ledWidth, ledHeight + c0 ]);
 
         // Wires for the strips.
+        cutoutHeight = boxHeight * 0.9;
         translate([
             bottomWallSize - ledWallCutout,
             bottomWallSize,
             bottomWallSize
         ])
-            cube([ ledWallCutout + c0, gridOuter + 2 * tolerance, boxHeight / 2 ]);
+            cube([
+                ledWallCutout + c0,
+                gridOuter + 2 * tolerance,
+                cutoutHeight
+            ]);
 
         translate([
             gridOuter + bottomWallSize + 2 * tolerance - c0,
@@ -228,8 +233,9 @@ module BottomElectronic()
             bottomWallSize
         ])
             cube([
-                ledWallCutout + tolerance + c0, gridOuter + 2 * tolerance,
-                boxHeight / 2
+                ledWallCutout + tolerance + c0,
+                gridOuter + 2 * tolerance,
+                cutoutHeight
             ]);
     }
 
@@ -265,7 +271,7 @@ module BottomElectronic()
     // Add hole for the wires of the reeds
     translate([
         gridOuter - fieldSize + tolerance,
-        bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + wireRadius + fieldSize * (size - 1),
+        bottomWallSize + tolerance + fieldSize / 2 + ledWidth / 2 + fieldBorder + reedPinBorder + fieldSize * (size - 1),
         bottomHeight -
         ledHeight
     ])
