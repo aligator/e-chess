@@ -6,4 +6,8 @@ edition = "2021"
 [dependencies]
 chess = { git = "https://github.com/funnsam/chess" }
 thiserror = "2.0.9"
-colored = "2.2.0"
+colored = { version = "3.0", optional = true }
+
+[features]
+default = ["colored-debug"]
+colored-debug = ["colored"]

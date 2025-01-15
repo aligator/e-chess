@@ -1,5 +1,6 @@
 use game::ChessGame;
 use std::io::{self, Write};
+mod bitboard_extensions;
 mod game;
 
 fn main() {
@@ -9,11 +10,11 @@ fn main() {
     println!("Initial game state: {:?}", game);
 
     let mut physical_board = game.physical();
-    
+
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
-        
+
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         let input = input.trim().to_lowercase();
@@ -30,11 +31,11 @@ fn main() {
             // Convert algebraic notation (e.g. "b5") to board position
             if let Some(pos) = parse_square(square) {
                 let mask = 1u64 << pos;
-                
+
                 match parts[0] {
-                    "take" => physical_board &= !mask, // Clear the bit
-                    "put" => physical_board |= mask,   // Set the bit
-                    _ => unreachable!()
+                    "take" => physical_board.0 &= !mask, // Clear the bit
+                    "put" => physical_board.0 |= mask,   // Set the bit
+                    _ => unreachable!(),
                 }
 
                 // Update the game state based on the physical board
@@ -48,7 +49,9 @@ fn main() {
         } else if input == "quit" || input == "exit" {
             break;
         } else {
-            println!("Unknown command. Valid commands are: 'take <square>', 'put <square>', 'quit'");
+            println!(
+                "Unknown command. Valid commands are: 'take <square>', 'put <square>', 'quit'"
+            );
         }
     }
 }
