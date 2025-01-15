@@ -45,6 +45,9 @@ electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
 
+usbCutoutWidth = 10;
+usbCutoutHeight = 5;
+
 reedPinBorder = 3;
 metalPlateThickness = 0.3;
 metalPlateRadius = 7.5;
@@ -338,6 +341,18 @@ module ElectronicCase()
         ]);
 
         translate([ -fullOuterBoard, 0, 0 ]) BottomElectronic();
+
+        // Hole for cable.
+        translate([
+            electronicCaseWidth / 2 - usbCutoutWidth / 2,
+            fullOuterBoard - bottomWallSize - c0,
+            bottomHeight
+        ])
+            cube([
+                usbCutoutWidth,
+                bottomWallSize + 2 * c0,
+                usbCutoutHeight
+            ]);
     }
 }
 
