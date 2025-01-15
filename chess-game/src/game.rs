@@ -83,14 +83,13 @@ impl fmt::Debug for ChessGame {
                         Some(Piece::King) => "♚",
                         None => " ",
                     }
-                }
-                .bold();
+                };
 
                 #[cfg(feature = "colored-debug")]
                 let symbol = if board.color_on(square) == Some(Color::White) {
-                    symbol.truecolor(255, 255, 255)
+                    symbol.bold().truecolor(255, 255, 255)
                 } else {
-                    symbol.truecolor(0, 0, 0)
+                    symbol.bold().truecolor(0, 0, 0)
                 };
 
                 // Apply background color based on square and moving state

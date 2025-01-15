@@ -1,9 +1,8 @@
+use chess::BitBoard;
 use esp_idf_hal::{
     gpio::{AnyIOPin, Level, PinDriver, Pull},
     peripheral::Peripheral,
 };
-
-use crate::bitboard::set_bit;
 
 pub struct Board<'a, const N: usize> {
     column_pins: [PinDriver<'a, AnyIOPin, esp_idf_hal::gpio::Output>; N],
@@ -69,8 +68,8 @@ impl<'a, const N: usize> Board<'a, N> {
     /// 00000111
     /// 00000111 lsb
     /// ```
-    pub fn bitboard(&self) -> u32 {
-        let mut bit_board: u32 = 0;
+    pub fn bitboard(&self) -> BitBoard {
+        let mut bit_board = BitBoard::new(0);
 
         for (row, columns) in self.field.iter().enumerate() {
             for (column, is_set) in columns.iter().enumerate() {
@@ -78,9 +77,12 @@ impl<'a, const N: usize> Board<'a, N> {
                     continue;
                 }
 
-                //                                                    + Padding to the bigger u32 chess board
+                //                                                    + Padding to the bigger 64 chess board
                 let pos = (N - row - 1) * N + (N - column - 1) + (N - row - 1) * (8 - N);
-                bit_board = set_bit(bit_board, pos);
+
+                // TODO:
+                bit_board &= BitBoard::set(chess::Rank::Eighth, chess::File::A);
+                //  bit_board = set_bit(bit_board, pos);
             }
         }
 
