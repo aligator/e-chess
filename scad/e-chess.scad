@@ -1,4 +1,5 @@
 renderTopBoard = true;
+renderMultiColorBoard = false;
 renderTopGrid = true;
 renderGrid = true;
 renderBottom = true;
@@ -22,10 +23,13 @@ size = 8;
 top = 2.0;
 
 topBoardHeight = 0.4;
+topBoardMultiColorHeight = 0.2;
+topBoardMultiColorEven = false;
 
 // Border on each field.
 // Note that two borders side by side lead to an effective *2 border.
-fieldBorder = 1;
+fieldBorder
+    = 1;
 
 wireRadius = 1.5;
 
@@ -138,11 +142,35 @@ module Field(height)
 module TopBoard()
 {
     translate([ fieldBorder, fieldBorder, 0 ])
+    {
         cube([
             gridInner - tolerance * 2 - fieldBorder * 2,
             gridInner - tolerance * 2 - fieldBorder * 2,
             topBoardHeight
         ]);
+
+        if (renderMultiColorBoard) {
+            for (i = [0:1:size - 1]) {
+                for (j = [0:1:size - 1]) {
+                    if ((i + j) % 2 == (topBoardMultiColorEven ? 0 : 1)) {
+
+                        translate([
+                            i * fieldSize,
+                            j * fieldSize,
+                            topBoardHeight
+                        ])
+                        {
+                            cube([
+                                fieldSize - tolerance * 2 - fieldBorder * 2,
+                                fieldSize - tolerance * 2 - fieldBorder * 2,
+                                topBoardMultiColorHeight
+                            ]);
+                        };
+                    }
+                }
+            }
+        }
+    }
 }
 
 module TopGrid()
