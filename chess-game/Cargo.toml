@@ -1,0 +1,9 @@
+[package]
+name = "chess-game"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chess = { git = "https://github.com/funnsam/chess" }
+thiserror = "2.0.9"
+colored = "2.2.0"
