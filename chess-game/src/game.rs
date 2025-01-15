@@ -224,8 +224,40 @@ impl ChessGame {
     // Remove piece physically, but remember it, so that it can be placed again later at another position.
     fn remove_physical(&mut self, square: Square) {
         match self.state {
-            ChessState::MovingPiece { piece: _, from: _ } => {
-                // Do nothing. It is illegal to remove a piece while a piece is already moving.
+            ChessState::MovingPiece { piece: _, from } => {
+                // This is only allowed if a piece is removed because it gets destroyed.
+                // So if it is enemy and target of an attack by te moving piece.
+
+                // Check if the piece is an enemy.
+                if self.game.current_position().color_on(square) == Some(self.game.side_to_move()) {
+                    // Do nothing. It is illegal to remove a piece of the current player.
+                    return;
+                }
+
+                // Execute the move if it is successful - it is legal. If not, just do nothing.
+                let chess_move = ChessMove::new(from, square, None);
+                if !self.game.make_move(chess_move) {
+                    // Do nothing. It is illegal to place a piece on an illegal square.
+                    return;
+                }
+
+                // Update the state with the moving piece
+                self.state = ChessState::Idle;
+
+                // Update the expected physical board states.
+                // This includes any remove pieces.
+                // The player will have to place the pice on the enemies square to continue the game.
+                self.white_physical = self
+                    .game
+                    .current_position()
+                    .color_combined(Color::White)
+                    .clone();
+                self.black_physical = self
+                    .game
+                    .current_position()
+                    .color_combined(Color::Black)
+                    .clone();
+
                 return;
             }
             ChessState::Idle => {
@@ -294,7 +326,6 @@ impl ChessGame {
             return self.physical();
         } else {
             // If the same number of bits are set,
-            //
             return last_occupied;
         }
     }
