@@ -203,6 +203,31 @@ module Grid()
     }
 }
 
+module LedStripWiresInWalls(even)
+{
+    moduloNum = even ? 0 : 1;
+    startAt = even ? 1 : 0;
+
+    cutoutHeight = boxHeight * 0.9;
+
+    for (i = [startAt:1:size - 1]) {
+        if (i % 2 == moduloNum) {
+            translate([
+                0,
+                i * fieldSize + bottomWallSize + tolerance + fieldBorder + fieldSize / 2 - ledWidth - fieldSize,
+                bottomWallSize
+            ])
+            {
+                cube([
+                    ledWallCutout + c0,
+                    ledWidth + fieldSize + ledWidth,
+                    cutoutHeight
+                ]);
+            }
+        }
+    }
+}
+
 module BottomElectronic()
 {
     for (i = [0:1:size - 1]) {
@@ -217,29 +242,15 @@ module BottomElectronic()
             ledHeight
         ]) cube([ ledLength, ledWidth, ledHeight + c0 ]);
 
-        // Wires for the strips.
-        cutoutHeight = boxHeight * 0.9;
-        translate([
-            bottomWallSize - ledWallCutout,
-            bottomWallSize,
-            bottomWallSize
-        ])
-            cube([
-                ledWallCutout + c0,
-                gridOuter + 2 * tolerance,
-                cutoutHeight
-            ]);
+        // Wires for the strips at the sides.
+        translate([ bottomWallSize - ledWallCutout, 0, 0 ])
+            LedStripWiresInWalls(false);
 
         translate([
             gridOuter + bottomWallSize + 2 * tolerance - c0,
-            bottomWallSize,
-            bottomWallSize
+            0, 0
         ])
-            cube([
-                ledWallCutout + tolerance + c0,
-                gridOuter + 2 * tolerance,
-                cutoutHeight
-            ]);
+            LedStripWiresInWalls(true);
     }
 
     // Wires for the reeds. (vertical)
