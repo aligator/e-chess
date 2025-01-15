@@ -231,8 +231,11 @@ module Grid()
     }
 }
 
-module LedStripWiresInWalls(even)
+module LedStripWiresInWalls(type)
 {
+    // It is based on the field size if it is even or odd.
+    even = size % 2 == 0 ? type : !type;
+
     moduloNum = even ? 0 : 1;
     startAt = even ? 1 : 0;
 
