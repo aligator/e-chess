@@ -57,7 +57,7 @@ metalPlateThickness = 0.3;
 metalPlateRadius = 7.5;
 reedThickness = 3.3;
 reedWireThickness = 2;
-reedOffset = 3;
+reedOffset = 5;
 
 tolerance = 0.3;
 
