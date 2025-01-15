@@ -1,9 +1,9 @@
-use std::{fmt, str::FromStr};
-
 use crate::bitboard_extensions::*;
-use chess::{BitBoard, ChessMove, Color, Game, Piece, Square};
+use chess::{BitBoard, Board, ChessMove, Color, File, Game, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
+use std::fmt::{Error, Write};
+use std::{fmt, str::FromStr};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -12,6 +12,7 @@ pub enum ChessGameError {
     LoadingFen(#[from] chess::InvalidError),
 }
 
+#[derive(Clone, Copy)]
 pub enum ChessState {
     Idle,
     MovingPiece { piece: Piece, from: Square },
@@ -20,18 +21,115 @@ pub enum ChessState {
 pub struct ChessGame {
     pub game: Game,
 
-    pub white_physical: u64, // Tracks physical pieces for white
-    pub black_physical: u64, // Tracks physical pieces for black
+    pub white_physical: BitBoard, // Tracks physical pieces for white
+    pub black_physical: BitBoard, // Tracks physical pieces for black
 
     pub state: ChessState,
 }
 
+fn board_as_str(board: Board, board_state: Option<ChessState>) -> Result<String, Error> {
+    // Create string writer
+    let mut f = String::new();
+
+    if let Some(state) = board_state {
+        match state {
+            ChessState::MovingPiece { piece, from } => {
+                writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
+            }
+            ChessState::Idle => {
+                writeln!(f, "No action in progress")?;
+            }
+        }
+    }
+
+    #[cfg(not(feature = "colored-debug"))]
+    writeln!(f, "\n♙ = white\n♟ = black\n")?;
+
+    // Add file labels at the top
+    writeln!(f, "\n   a  b  c  d  e  f  g  h ")?;
+    writeln!(f, "  ------------------------")?;
+
+    // Print board rows from top (rank 8) to bottom (rank 1)
+    for rank in (0..8).rev() {
+        write!(f, "{} ", rank + 1)?; // Rank number
+        for file in 0..8 {
+            let square = Square::make_square(Rank::from_index(rank), File::from_index(file));
+            let piece = board.piece_on(square);
+
+            let symbol = if board.color_on(square) == Some(Color::White) {
+                match piece {
+                    Some(Piece::Pawn) => "♙",
+                    Some(Piece::Knight) => "♘",
+                    Some(Piece::Bishop) => "♗",
+                    Some(Piece::Rook) => "♖",
+                    Some(Piece::Queen) => "♕",
+                    Some(Piece::King) => "♔",
+                    None => " ",
+                }
+            } else {
+                match piece {
+                    Some(Piece::Pawn) => "♟",
+                    Some(Piece::Knight) => "♞",
+                    Some(Piece::Bishop) => "♝",
+                    Some(Piece::Rook) => "♜",
+                    Some(Piece::Queen) => "♛",
+                    Some(Piece::King) => "♚",
+                    None => " ",
+                }
+            };
+
+            #[cfg(feature = "colored-debug")]
+            let symbol = if board.color_on(square) == Some(Color::White) {
+                symbol.bold().truecolor(255, 255, 255)
+            } else {
+                symbol.bold().truecolor(0, 0, 0)
+            };
+
+            // Apply background color based on square and moving state
+            #[cfg(feature = "colored-debug")]
+            let colored_symbol = {
+                let colored_symbol = {
+                    let is_light_square = (rank + file) % 2 == 0;
+                    if is_light_square {
+                        format!(" {} ", symbol).on_truecolor(110, 110, 110)
+                    } else {
+                        format!(" {} ", symbol).on_truecolor(130, 130, 130)
+                    }
+                };
+
+                // Colorize the moving piece.
+                let colored_symbol = if let ChessState::MovingPiece { piece: _, from } =
+                    board_state.unwrap_or(ChessState::Idle)
+                {
+                    if square == from {
+                        // Highlight moving square in green
+                        format!(" {} ", symbol).on_green()
+                    } else {
+                        colored_symbol
+                    }
+                } else {
+                    colored_symbol
+                };
+
+                colored_symbol
+            };
+
+            #[cfg(not(feature = "colored-debug"))]
+            let colored_symbol = format!(" {} ", symbol);
+
+            write!(f, "{}", colored_symbol)?;
+        }
+        writeln!(f)?;
+    }
+    writeln!(f, "  ------------------------")?;
+    writeln!(f, "   a  b  c  d  e  f  g  h ")?;
+
+    Ok(f)
+}
+
 impl fmt::Debug for ChessGame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use chess::{Board, File, Piece, Rank, Square};
-
         let board: Board = self.game.current_position();
-
         // Add header showing whose turn it is
         let turn = if self.game.side_to_move() == Color::White {
             "White to move"
@@ -40,95 +138,7 @@ impl fmt::Debug for ChessGame {
         };
         writeln!(f, "{}", turn)?;
 
-        match self.state {
-            ChessState::MovingPiece { piece, from } => {
-                writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
-            }
-            ChessState::Idle => {
-                writeln!(f, "No action in progress")?;
-            }
-        }
-
-        #[cfg(not(feature = "colored-debug"))]
-        writeln!(f, "\n♙ = white\n♟ = black\n")?;
-
-        // Add file labels at the top
-        writeln!(f, "\n   a  b  c  d  e  f  g  h ")?;
-        writeln!(f, "  ------------------------")?;
-
-        // Print board rows from top (rank 8) to bottom (rank 1)
-        for rank in (0..8).rev() {
-            write!(f, "{} ", rank + 1)?; // Rank number
-            for file in 0..8 {
-                let square = Square::make_square(Rank::from_index(rank), File::from_index(file));
-                let piece = board.piece_on(square);
-
-                let symbol = if board.color_on(square) == Some(Color::White) {
-                    match piece {
-                        Some(Piece::Pawn) => "♙",
-                        Some(Piece::Knight) => "♘",
-                        Some(Piece::Bishop) => "♗",
-                        Some(Piece::Rook) => "♖",
-                        Some(Piece::Queen) => "♕",
-                        Some(Piece::King) => "♔",
-                        None => " ",
-                    }
-                } else {
-                    match piece {
-                        Some(Piece::Pawn) => "♟",
-                        Some(Piece::Knight) => "♞",
-                        Some(Piece::Bishop) => "♝",
-                        Some(Piece::Rook) => "♜",
-                        Some(Piece::Queen) => "♛",
-                        Some(Piece::King) => "♚",
-                        None => " ",
-                    }
-                };
-
-                #[cfg(feature = "colored-debug")]
-                let symbol = if board.color_on(square) == Some(Color::White) {
-                    symbol.bold().truecolor(255, 255, 255)
-                } else {
-                    symbol.bold().truecolor(0, 0, 0)
-                };
-
-                // Apply background color based on square and moving state
-                #[cfg(feature = "colored-debug")]
-                let colored_symbol = {
-                    let colored_symbol = {
-                        let is_light_square = (rank + file) % 2 == 0;
-                        if is_light_square {
-                            format!(" {} ", symbol).on_truecolor(110, 110, 110)
-                        } else {
-                            format!(" {} ", symbol).on_truecolor(130, 130, 130)
-                        }
-                    };
-
-                    // Colorize the moving piece.
-                    let colored_symbol =
-                        if let ChessState::MovingPiece { piece: _, from } = self.state {
-                            if square == from {
-                                // Highlight moving square in green
-                                format!(" {} ", symbol).on_green()
-                            } else {
-                                colored_symbol
-                            }
-                        } else {
-                            colored_symbol
-                        };
-
-                    colored_symbol
-                };
-
-                #[cfg(not(feature = "colored-debug"))]
-                let colored_symbol = format!(" {} ", symbol);
-
-                write!(f, "{}", colored_symbol)?;
-            }
-            writeln!(f)?;
-        }
-        writeln!(f, "  ------------------------")?;
-        writeln!(f, "   a  b  c  d  e  f  g  h ")
+        writeln!(f, "{}", board_as_str(board, Some(self.state))?)
     }
 }
 
@@ -139,11 +149,11 @@ impl ChessGame {
         let white = initial_game
             .current_position()
             .color_combined(Color::White)
-            .0;
+            .clone();
         let black = initial_game
             .current_position()
             .color_combined(Color::Black)
-            .0;
+            .clone();
 
         ChessGame {
             game: initial_game,
@@ -157,13 +167,21 @@ impl ChessGame {
         self.game = Game::from_str(fen).map_err(ChessGameError::LoadingFen)?;
 
         // Reset expected physical board state based on the loaded game.
-        self.white_physical = self.game.current_position().color_combined(Color::White).0;
-        self.black_physical = self.game.current_position().color_combined(Color::Black).0;
+        self.white_physical = self
+            .game
+            .current_position()
+            .color_combined(Color::White)
+            .clone();
+        self.black_physical = self
+            .game
+            .current_position()
+            .color_combined(Color::Black)
+            .clone();
         Ok(())
     }
 
     pub fn physical(&self) -> BitBoard {
-        self.game().current_position().combined().clone()
+        return self.white_physical | self.black_physical;
     }
 
     /// A new pice got placed.
@@ -171,24 +189,27 @@ impl ChessGame {
     fn place_physical(&mut self, to: Square) {
         match self.state {
             ChessState::MovingPiece { piece: _, from } => {
-                let chess_move = ChessMove::new(from, to, None);
+                // Allow just replacing it on the same square.
+                if from != to {
+                    let chess_move = ChessMove::new(from, to, None);
 
-                // Execute move. If it is illegal do not proceed.
-                // TODO: test this on the micro controller. It may be slow!
-                if !self.game.make_move(chess_move) {
-                    // Do nothing. It is illegal to place a piece on an illegal square.
-                    return;
+                    // Execute move. If it is illegal do not proceed.
+                    // TODO: test this on the micro controller. It may be slow!
+                    if !self.game.make_move(chess_move) {
+                        // Do nothing. It is illegal to place a piece on an illegal square.
+                        return;
+                    }
                 }
 
                 // Update the state with the moving piece
                 self.state = ChessState::Idle;
 
                 // Place the piece on the physical board.
-                // Just do both at once - it is easier and still correct.
+                let bit = BitBoard::from_square(to);
                 if self.game.side_to_move() == Color::White {
-                    self.white_physical ^= to.to_int() as u64;
+                    self.white_physical |= bit;
                 } else {
-                    self.black_physical ^= to.to_int() as u64;
+                    self.black_physical |= bit;
                 }
             }
             ChessState::Idle => {
@@ -221,8 +242,13 @@ impl ChessGame {
 
                 // Remove the piece from the physical board.
                 // Just do both at once - it is easier and still correct.
-                self.white_physical ^= square.to_int() as u64;
-                self.black_physical ^= square.to_int() as u64;
+                let bit = BitBoard::from_square(square);
+
+                if self.game.side_to_move() == Color::White {
+                    self.white_physical ^= bit;
+                } else {
+                    self.black_physical ^= bit;
+                }
             }
         }
     }
@@ -256,13 +282,13 @@ impl ChessGame {
             self.place_physical(Square::new(
                 last_occupied.get_different_bits(physical_board).first_one(),
             ));
-            return BitBoard::new(self.white_physical | self.black_physical);
+            return self.physical();
         } else if physical_board.0 < last_occupied.0 {
             // If less bits are set than a piece must have been removed.
             self.remove_physical(Square::new(
                 last_occupied.get_different_bits(physical_board).first_one(),
             ));
-            return BitBoard::new(self.white_physical | self.black_physical);
+            return self.physical();
         } else {
             // If the same number of bits are set, nothing has changed.
             return last_occupied;
@@ -281,7 +307,7 @@ mod tests {
     #[test]
     fn test_new_game() {
         let chess = ChessGame::new();
-        assert_eq!(chess.white_physical, 65535);
+        assert_eq!(chess.white_physical, BitBoard::new(65535));
 
         // 11111111
         // 11111111
@@ -291,7 +317,7 @@ mod tests {
         // 00000000
         // 00000000
         // 00000000
-        assert_eq!(chess.black_physical, 18446462598732840960);
+        assert_eq!(chess.black_physical, BitBoard::new(18446462598732840960));
 
         // 00000000
         // 00000000

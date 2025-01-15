@@ -20,7 +20,11 @@ fn main() {
         let input = input.trim().to_lowercase();
 
         // Parse commands
-        if input.starts_with("take ") || input.starts_with("put ") {
+        if input.starts_with("take ")
+            || input.starts_with("put ")
+            || input.starts_with("t ")
+            || input.starts_with("p ")
+        {
             let parts: Vec<&str> = input.split_whitespace().collect();
             if parts.len() != 2 {
                 println!("Invalid command format. Use 'take b5' or 'put b5'");
@@ -34,7 +38,9 @@ fn main() {
 
                 match parts[0] {
                     "take" => physical_board.0 &= !mask, // Clear the bit
+                    "t" => physical_board.0 &= !mask,    // Clear the bit
                     "put" => physical_board.0 |= mask,   // Set the bit
+                    "p" => physical_board.0 |= mask,     // Set the bit
                     _ => unreachable!(),
                 }
 
