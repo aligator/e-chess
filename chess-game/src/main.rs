@@ -10,9 +10,11 @@ fn main() {
     game.reset("r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1")
         .unwrap();
 
-    println!("Initial game state: {:?}", game);
+    let mut physical_board = game.expected_physical();
+    // Start with all set correctly.
+    game.physical = physical_board;
 
-    let mut physical_board = game.physical();
+    println!("{:?}", game);
 
     loop {
         print!("> ");
@@ -47,11 +49,10 @@ fn main() {
                     _ => unreachable!(),
                 }
 
-                // Update the game state based on the physical board
-                physical_board = game.tick(physical_board);
+                game.tick(physical_board);
 
                 // Print the game state
-                println!("Game state: {:?}", game);
+                println!("{:?}", game);
             } else {
                 println!("Invalid square notation. Use a1-h8");
             }

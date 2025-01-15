@@ -2,7 +2,6 @@ use crate::bitboard_extensions::*;
 use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
-use std::fmt::{Error, Write};
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
@@ -21,8 +20,10 @@ pub enum ChessState {
 pub struct ChessGame {
     pub game: Game,
 
-    pub white_physical: BitBoard, // Tracks physical pieces for white
-    pub black_physical: BitBoard, // Tracks physical pieces for black
+    pub expected_white: BitBoard, // Tracks the expected physical pieces for white
+    pub expected_black: BitBoard, // Tracks the expected physical pieces for black
+
+    pub physical: BitBoard,
 
     pub state: ChessState,
 }
@@ -125,6 +126,25 @@ impl fmt::Debug for ChessGame {
                             colored_symbol
                         };
 
+                    // Colorize pieces that should be set but aren't set with blue.
+                    let colored_symbol = if (self.expected_white | self.expected_black).get(square)
+                        == 1
+                        && self.physical.get(square) == 0
+                    {
+                        format!(" {} ", symbol).on_blue()
+                    } else {
+                        colored_symbol
+                    };
+
+                    // Colorize pieces that are set but shouldn't be with red.
+                    let colored_symbol = if self.physical.get(square) == 1
+                        && (self.expected_white | self.expected_black).get(square) == 0
+                    {
+                        format!(" {} ", symbol).on_red()
+                    } else {
+                        colored_symbol
+                    };
+
                     colored_symbol
                 };
 
@@ -155,8 +175,9 @@ impl ChessGame {
 
         ChessGame {
             game: initial_game,
-            white_physical: white,
-            black_physical: black,
+            expected_white: white,
+            expected_black: black,
+            physical: BitBoard::new(0),
             state: ChessState::Idle,
         }
     }
@@ -165,12 +186,12 @@ impl ChessGame {
         self.game = Game::from_str(fen).map_err(ChessGameError::LoadingFen)?;
 
         // Reset expected physical board state based on the loaded game.
-        self.white_physical = self
+        self.expected_white = self
             .game
             .current_position()
             .color_combined(Color::White)
             .clone();
-        self.black_physical = self
+        self.expected_black = self
             .game
             .current_position()
             .color_combined(Color::Black)
@@ -178,8 +199,8 @@ impl ChessGame {
         Ok(())
     }
 
-    pub fn physical(&self) -> BitBoard {
-        return self.white_physical | self.black_physical;
+    pub fn expected_physical(&self) -> BitBoard {
+        return self.expected_white | self.expected_black;
     }
 
     /// A new pice got placed.
@@ -204,12 +225,12 @@ impl ChessGame {
 
                 // Update the expected physical board states.
                 // This includes any remove or castled pieces.
-                self.white_physical = self
+                self.expected_white = self
                     .game
                     .current_position()
                     .color_combined(Color::White)
                     .clone();
-                self.black_physical = self
+                self.expected_black = self
                     .game
                     .current_position()
                     .color_combined(Color::Black)
@@ -247,12 +268,12 @@ impl ChessGame {
                 // Update the expected physical board states.
                 // This includes any remove pieces.
                 // The player will have to place the pice on the enemies square to continue the game.
-                self.white_physical = self
+                self.expected_white = self
                     .game
                     .current_position()
                     .color_combined(Color::White)
                     .clone();
-                self.black_physical = self
+                self.expected_black = self
                     .game
                     .current_position()
                     .color_combined(Color::Black)
@@ -280,9 +301,9 @@ impl ChessGame {
                 let bit = BitBoard::from_square(square);
 
                 if self.game.side_to_move() == Color::White {
-                    self.white_physical ^= bit;
+                    self.expected_white ^= bit;
                 } else {
-                    self.black_physical ^= bit;
+                    self.expected_black ^= bit;
                 }
             }
         }
@@ -292,8 +313,11 @@ impl ChessGame {
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
     pub fn tick(&mut self, physical_board: BitBoard) -> BitBoard {
+        // Save current physical board for visualization.
+        self.physical = physical_board;
+
         // Update the game state based on the physical board
-        let last_occupied = self.physical();
+        let last_occupied = self.expected_physical();
 
         // If there is already a winner, just do nothing.
         if self.game.result().is_some() {
@@ -317,15 +341,15 @@ impl ChessGame {
             self.place_physical(Square::new(
                 last_occupied.get_different_bits(physical_board).first_one(),
             ));
-            return self.physical();
+            return self.expected_physical();
         } else if physical_board.0 < last_occupied.0 {
             // If less bits are set than a piece must have been removed.
             self.remove_physical(Square::new(
                 last_occupied.get_different_bits(physical_board).first_one(),
             ));
-            return self.physical();
+            return self.expected_physical();
         } else {
-            // If the same number of bits are set,
+            // If the same number of bits are set do nothing
             return last_occupied;
         }
     }
@@ -342,7 +366,7 @@ mod tests {
     #[test]
     fn test_new_game() {
         let chess = ChessGame::new();
-        assert_eq!(chess.white_physical, BitBoard::new(65535));
+        assert_eq!(chess.expected_white, BitBoard::new(65535));
 
         // 11111111
         // 11111111
@@ -352,7 +376,7 @@ mod tests {
         // 00000000
         // 00000000
         // 00000000
-        assert_eq!(chess.black_physical, BitBoard::new(18446462598732840960));
+        assert_eq!(chess.expected_black, BitBoard::new(18446462598732840960));
 
         // 00000000
         // 00000000
