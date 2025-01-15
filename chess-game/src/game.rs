@@ -1,7 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use crate::bitboard_extensions::*;
-use chess::{BitBoard, Color, Game, Piece, Square};
+use chess::{BitBoard, ChessMove, Color, Game, Piece, Square};
 #[cfg(feature = "colored")]
 use colored::*;
 use thiserror::Error;
@@ -12,14 +12,18 @@ pub enum ChessGameError {
     LoadingFen(#[from] chess::InvalidError),
 }
 
+pub enum ChessState {
+    Idle,
+    MovingPiece { piece: Piece, from: Square },
+}
+
 pub struct ChessGame {
     pub game: Game,
 
     pub white_physical: u64, // Tracks physical pieces for white
     pub black_physical: u64, // Tracks physical pieces for black
 
-    pub piece_moving_square: Option<Square>, // The square that the piece is moving from
-    pub piece_moving: Option<Piece>,         // The piece that is currently moving
+    pub state: ChessState,
 }
 
 impl fmt::Debug for ChessGame {
@@ -35,14 +39,14 @@ impl fmt::Debug for ChessGame {
             "Black to move"
         };
         writeln!(f, "{}", turn)?;
-        if self.piece_moving.is_some() {
-            writeln!(
-                f,
-                "Moving piece: {:?} at {:?}",
-                self.piece_moving, self.piece_moving_square
-            )?;
-        } else {
-            writeln!(f, "No piece moving")?;
+
+        match self.state {
+            ChessState::MovingPiece { piece, from } => {
+                writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
+            }
+            ChessState::Idle => {
+                writeln!(f, "No action in progress")?;
+            }
         }
 
         #[cfg(not(feature = "colored-debug"))]
@@ -92,15 +96,29 @@ impl fmt::Debug for ChessGame {
                 // Apply background color based on square and moving state
                 #[cfg(feature = "colored-debug")]
                 let colored_symbol = {
-                    let is_light_square = (rank + file) % 2 == 0;
-                    if Some(square) == self.piece_moving_square {
-                        // Highlight moving square in green
-                        format!(" {} ", symbol).on_green()
-                    } else if is_light_square {
-                        format!(" {} ", symbol).on_truecolor(110, 110, 110)
-                    } else {
-                        format!(" {} ", symbol).on_truecolor(130, 130, 130)
-                    }
+                    let colored_symbol = {
+                        let is_light_square = (rank + file) % 2 == 0;
+                        if is_light_square {
+                            format!(" {} ", symbol).on_truecolor(110, 110, 110)
+                        } else {
+                            format!(" {} ", symbol).on_truecolor(130, 130, 130)
+                        }
+                    };
+
+                    // Colorize the moving piece.
+                    let colored_symbol =
+                        if let ChessState::MovingPiece { piece: _, from } = self.state {
+                            if square == from {
+                                // Highlight moving square in green
+                                format!(" {} ", symbol).on_green()
+                            } else {
+                                colored_symbol
+                            }
+                        } else {
+                            colored_symbol
+                        };
+
+                    colored_symbol
                 };
 
                 #[cfg(not(feature = "colored-debug"))]
@@ -132,9 +150,7 @@ impl ChessGame {
             game: initial_game,
             white_physical: white,
             black_physical: black,
-
-            piece_moving_square: None,
-            piece_moving: None,
+            state: ChessState::Idle,
         }
     }
 
@@ -153,31 +169,63 @@ impl ChessGame {
 
     /// A new pice got placed.
     /// This move is only possible, if one pice was removed before (to make a move).
-    fn place_physical(&mut self, square: Square) {}
+    fn place_physical(&mut self, to: Square) {
+        match self.state {
+            ChessState::MovingPiece { piece: _, from } => {
+                let chess_move = ChessMove::new(from, to, None);
 
+                // Execute move. If it is illegal do not proceed.
+                // TODO: test this on the micro controller. It may be slow!
+                if !self.game.make_move(chess_move) {
+                    // Do nothing. It is illegal to place a piece on an illegal square.
+                    return;
+                }
+
+                // Update the state with the moving piece
+                self.state = ChessState::Idle;
+
+                // Place the piece on the physical board.
+                // Just do both at once - it is easier and still correct.
+                if self.game.side_to_move() == Color::White {
+                    self.white_physical ^= to.to_int() as u64;
+                } else {
+                    self.black_physical ^= to.to_int() as u64;
+                }
+            }
+            ChessState::Idle => {
+                // Do nothing. It is illegal to place a piece without removing one first.
+            }
+        }
+    }
+
+    // Remove piece physically, but remember it, so that it can be placed again later at another position.
     fn remove_physical(&mut self, square: Square) {
-        // Remove piece, but remember it.
+        match self.state {
+            ChessState::MovingPiece { piece: _, from: _ } => {
+                // Do nothing. It is illegal to remove a piece while a piece is already moving.
+                return;
+            }
+            ChessState::Idle => {
+                // Check if it is a piece of the current player.
+                if self.game.current_position().color_on(square) != Some(self.game.side_to_move()) {
+                    // Do nothing. It is illegal to move pieces of the opponent.
+                    return;
+                }
 
-        // Check if a "move" is not already in progress.
-        if self.piece_moving.is_some() {
-            // Do nothing. It is illegal to remove a piece while a piece is already moving.
-            return;
+                // Update the state with the moving piece
+                if let Some(piece) = self.game.current_position().piece_on(square) {
+                    self.state = ChessState::MovingPiece {
+                        piece,
+                        from: square,
+                    };
+                }
+
+                // Remove the piece from the physical board.
+                // Just do both at once - it is easier and still correct.
+                self.white_physical ^= square.to_int() as u64;
+                self.black_physical ^= square.to_int() as u64;
+            }
         }
-
-        // Check if it is a piece of the current player.
-        if self.game.current_position().color_on(square) != Some(self.game.side_to_move()) {
-            // Do nothing. It is illegal to move pieces of the opponent.
-            return;
-        }
-
-        // Remember the piece that is moving.
-        self.piece_moving_square = Some(square);
-        self.piece_moving = self.game.current_position().piece_on(square);
-
-        // Remove the piece from the physical board.
-        // Just do both at once - it is easier and still correct.
-        self.white_physical ^= square.to_int() as u64;
-        self.black_physical ^= square.to_int() as u64;
     }
 
     /// Updates the game state based on the current board state
