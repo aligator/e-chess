@@ -1,5 +1,5 @@
 use crate::bitboard_extensions::*;
-use chess::{BitBoard, Board, ChessMove, Color, File, Game, Piece, Rank, Square};
+use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
 use std::fmt::{Error, Write};
@@ -27,106 +27,6 @@ pub struct ChessGame {
     pub state: ChessState,
 }
 
-fn board_as_str(board: Board, board_state: Option<ChessState>) -> Result<String, Error> {
-    // Create string writer
-    let mut f = String::new();
-
-    if let Some(state) = board_state {
-        match state {
-            ChessState::MovingPiece { piece, from } => {
-                writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
-            }
-            ChessState::Idle => {
-                writeln!(f, "No action in progress")?;
-            }
-        }
-    }
-
-    #[cfg(not(feature = "colored-debug"))]
-    writeln!(f, "\n♙ = white\n♟ = black\n")?;
-
-    // Add file labels at the top
-    writeln!(f, "\n   a  b  c  d  e  f  g  h ")?;
-    writeln!(f, "  ------------------------")?;
-
-    // Print board rows from top (rank 8) to bottom (rank 1)
-    for rank in (0..8).rev() {
-        write!(f, "{} ", rank + 1)?; // Rank number
-        for file in 0..8 {
-            let square = Square::make_square(Rank::from_index(rank), File::from_index(file));
-            let piece = board.piece_on(square);
-
-            let symbol = if board.color_on(square) == Some(Color::White) {
-                match piece {
-                    Some(Piece::Pawn) => "♙",
-                    Some(Piece::Knight) => "♘",
-                    Some(Piece::Bishop) => "♗",
-                    Some(Piece::Rook) => "♖",
-                    Some(Piece::Queen) => "♕",
-                    Some(Piece::King) => "♔",
-                    None => " ",
-                }
-            } else {
-                match piece {
-                    Some(Piece::Pawn) => "♟",
-                    Some(Piece::Knight) => "♞",
-                    Some(Piece::Bishop) => "♝",
-                    Some(Piece::Rook) => "♜",
-                    Some(Piece::Queen) => "♛",
-                    Some(Piece::King) => "♚",
-                    None => " ",
-                }
-            };
-
-            #[cfg(feature = "colored-debug")]
-            let symbol = if board.color_on(square) == Some(Color::White) {
-                symbol.bold().truecolor(255, 255, 255)
-            } else {
-                symbol.bold().truecolor(0, 0, 0)
-            };
-
-            // Apply background color based on square and moving state
-            #[cfg(feature = "colored-debug")]
-            let colored_symbol = {
-                let colored_symbol = {
-                    let is_light_square = (rank + file) % 2 == 0;
-                    if is_light_square {
-                        format!(" {} ", symbol).on_truecolor(110, 110, 110)
-                    } else {
-                        format!(" {} ", symbol).on_truecolor(130, 130, 130)
-                    }
-                };
-
-                // Colorize the moving piece.
-                let colored_symbol = if let ChessState::MovingPiece { piece: _, from } =
-                    board_state.unwrap_or(ChessState::Idle)
-                {
-                    if square == from {
-                        // Highlight moving square in green
-                        format!(" {} ", symbol).on_green()
-                    } else {
-                        colored_symbol
-                    }
-                } else {
-                    colored_symbol
-                };
-
-                colored_symbol
-            };
-
-            #[cfg(not(feature = "colored-debug"))]
-            let colored_symbol = format!(" {} ", symbol);
-
-            write!(f, "{}", colored_symbol)?;
-        }
-        writeln!(f)?;
-    }
-    writeln!(f, "  ------------------------")?;
-    writeln!(f, "   a  b  c  d  e  f  g  h ")?;
-
-    Ok(f)
-}
-
 impl fmt::Debug for ChessGame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let board: Board = self.game.current_position();
@@ -138,7 +38,105 @@ impl fmt::Debug for ChessGame {
         };
         writeln!(f, "{}", turn)?;
 
-        writeln!(f, "{}", board_as_str(board, Some(self.state))?)
+        match self.state {
+            ChessState::MovingPiece { piece, from } => {
+                writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
+            }
+            ChessState::Idle => {
+                writeln!(f, "No action in progress")?;
+            }
+        }
+
+        writeln!(f, "\nFEN: {}\n", self.game.current_position().to_string())?;
+
+        #[cfg(not(feature = "colored-debug"))]
+        writeln!(f, "\n♙ = white\n♟ = black\n")?;
+
+        // Add file labels at the top
+        writeln!(f, "\n   a  b  c  d  e  f  g  h ")?;
+        writeln!(f, "  ------------------------")?;
+
+        // Print board rows from top (rank 8) to bottom (rank 1)
+        for rank in (0..8).rev() {
+            write!(f, "{} ", rank + 1)?; // Rank number
+            for file in 0..8 {
+                let square = Square::make_square(Rank::from_index(rank), File::from_index(file));
+                let piece = board.piece_on(square);
+
+                let symbol = if board.color_on(square) == Some(Color::White) {
+                    match piece {
+                        Some(Piece::Pawn) => "♙",
+                        Some(Piece::Knight) => "♘",
+                        Some(Piece::Bishop) => "♗",
+                        Some(Piece::Rook) => "♖",
+                        Some(Piece::Queen) => "♕",
+                        Some(Piece::King) => "♔",
+                        None => " ",
+                    }
+                } else {
+                    match piece {
+                        Some(Piece::Pawn) => "♟",
+                        Some(Piece::Knight) => "♞",
+                        Some(Piece::Bishop) => "♝",
+                        Some(Piece::Rook) => "♜",
+                        Some(Piece::Queen) => "♛",
+                        Some(Piece::King) => "♚",
+                        None => " ",
+                    }
+                };
+
+                #[cfg(feature = "colored-debug")]
+                let symbol = if board.color_on(square) == Some(Color::White) {
+                    symbol.bold().truecolor(255, 255, 255)
+                } else {
+                    symbol.bold().truecolor(0, 0, 0)
+                };
+
+                // Apply background color based on square and moving state
+                #[cfg(feature = "colored-debug")]
+                let colored_symbol = {
+                    let colored_symbol = {
+                        let is_light_square = (rank + file) % 2 == 0;
+                        if is_light_square {
+                            format!(" {} ", symbol).on_truecolor(110, 110, 110)
+                        } else {
+                            format!(" {} ", symbol).on_truecolor(130, 130, 130)
+                        }
+                    };
+
+                    // Colorize the moving piece.
+                    let colored_symbol =
+                        if let ChessState::MovingPiece { piece: _, from } = self.state {
+                            if square == from {
+                                // Highlight moving square in green
+                                format!(" {} ", symbol).on_green()
+                            } else {
+                                // TODO: is it performant to call this multiple times?
+                                if MoveGen::new_legal(&self.game.current_position())
+                                    .filter(|m| m.get_source() == from)
+                                    .any(|m| m.get_dest() == square)
+                                {
+                                    format!(" {} ", symbol).on_blue()
+                                } else {
+                                    colored_symbol
+                                }
+                            }
+                        } else {
+                            colored_symbol
+                        };
+
+                    colored_symbol
+                };
+
+                #[cfg(not(feature = "colored-debug"))]
+                let colored_symbol = format!(" {} ", symbol);
+
+                write!(f, "{}", colored_symbol)?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "  ------------------------")?;
+        writeln!(f, "   a  b  c  d  e  f  g  h ")
     }
 }
 
@@ -204,13 +202,18 @@ impl ChessGame {
                 // Update the state with the moving piece
                 self.state = ChessState::Idle;
 
-                // Place the piece on the physical board.
-                let bit = BitBoard::from_square(to);
-                if self.game.side_to_move() == Color::White {
-                    self.white_physical |= bit;
-                } else {
-                    self.black_physical |= bit;
-                }
+                // Update the expected physical board states.
+                // This includes any remove or castled pieces.
+                self.white_physical = self
+                    .game
+                    .current_position()
+                    .color_combined(Color::White)
+                    .clone();
+                self.black_physical = self
+                    .game
+                    .current_position()
+                    .color_combined(Color::Black)
+                    .clone();
             }
             ChessState::Idle => {
                 // Do nothing. It is illegal to place a piece without removing one first.
@@ -290,7 +293,8 @@ impl ChessGame {
             ));
             return self.physical();
         } else {
-            // If the same number of bits are set, nothing has changed.
+            // If the same number of bits are set,
+            //
             return last_occupied;
         }
     }

@@ -7,6 +7,9 @@ fn main() {
     println!("Chess board simulator");
 
     let mut game = ChessGame::new();
+    game.reset("r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1")
+        .unwrap();
+
     println!("Initial game state: {:?}", game);
 
     let mut physical_board = game.physical();
