@@ -345,19 +345,11 @@ module Bottom()
     }
 
     if (renderReedPins) {
-        cut4(
-            [
-                gridOuter + bottomWallSize * 2 + tolerance * 2,
-                gridOuter + bottomWallSize * 2 + tolerance * 2, bottomHeight +
-                boxHeight
-            ],
-            cutPartsSize)
-            translate([
+        translate([
                 bottomWallSize + tolerance + fieldBorder,
                 bottomWallSize + tolerance + fieldBorder,
                 bottomHeight
-            ])
-        {
+            ]){
             eachGrid()
             {
                 translate([
