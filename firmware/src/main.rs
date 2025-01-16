@@ -16,7 +16,7 @@ use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 mod board;
 mod wifi;
 
-const FIELD_SIZE: usize = 3;
+const FIELD_SIZE: usize = 8;
 
 struct AppParams<'a, const N: usize> {
     board: Board<'a, N>,
@@ -45,6 +45,7 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
         let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
 
         println!("Board   {:032b}", board.bitboard().0);
+        println!("{:?}", board.bitboard());
         // println!("Player1 {:032b}", game.board.players[0]);
         // println!("Player2 {:032b}", game.board.players[1]);
         //
@@ -121,14 +122,24 @@ fn main() -> Result<()> {
 
     let mut board = Board::new(
         [
-            AnyIOPin::from(peripherals.pins.gpio26),
+            AnyIOPin::from(peripherals.pins.gpio12),
+            AnyIOPin::from(peripherals.pins.gpio14),
             AnyIOPin::from(peripherals.pins.gpio27),
-            AnyIOPin::from(peripherals.pins.gpio4),
+            AnyIOPin::from(peripherals.pins.gpio26),
+            AnyIOPin::from(peripherals.pins.gpio25),
+            AnyIOPin::from(peripherals.pins.gpio33),
+            AnyIOPin::from(peripherals.pins.gpio32),
+            AnyIOPin::from(peripherals.pins.gpio22),
         ],
         [
-            AnyIOPin::from(peripherals.pins.gpio32),
-            AnyIOPin::from(peripherals.pins.gpio33),
-            AnyIOPin::from(peripherals.pins.gpio25),
+            AnyIOPin::from(peripherals.pins.gpio1),
+            AnyIOPin::from(peripherals.pins.gpio3),
+            AnyIOPin::from(peripherals.pins.gpio21),
+            AnyIOPin::from(peripherals.pins.gpio19),
+            AnyIOPin::from(peripherals.pins.gpio18),
+            AnyIOPin::from(peripherals.pins.gpio5),
+            AnyIOPin::from(peripherals.pins.gpio17),
+            AnyIOPin::from(peripherals.pins.gpio16),
         ],
     );
     board.setup();

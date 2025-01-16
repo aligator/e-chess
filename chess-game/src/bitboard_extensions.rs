@@ -5,6 +5,7 @@ pub trait BitBoardExtensions {
     fn get_different_bits(self, other: BitBoard) -> BitBoard;
     fn first_one(&self) -> u8;
     fn get(self, square: Square) -> u8;
+    fn set(&mut self, square: Square, value: bool);
 
     /// Print the bitboard as a chess board for debugging
     fn _print(&self);
@@ -25,6 +26,14 @@ impl BitBoardExtensions for BitBoard {
 
     fn get(self, square: Square) -> u8 {
         ((self.0 >> square.to_int()) & 1) as u8
+    }
+
+    fn set(&mut self, square: Square, value: bool) {
+        if value {
+            self.0 |= 1u64 << square.to_int();
+        } else {
+            self.0 &= !(1u64 << square.to_int());
+        }
     }
 
     fn _print(&self) {
