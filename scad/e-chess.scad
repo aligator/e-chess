@@ -483,9 +483,9 @@ module ReedPin()
         translate([ -c0, reedPinBorder, -c0 ])
             cube([ reedPinWidth + 2 * c0, cutoutWidthV, cutoutHeight + c0 ]);
         translate([ reedPinBorder, -c0, -c0 ])
-            cube([ cutoutWidthH, reedPinBorder + c0, reedPinHeight + 2 * c0 ]);
-        translate([ reedPinBorder, reedPinWidth - reedPinBorder + c0, -c0 ])
-            cube([ cutoutWidthH, reedPinBorder + c0, reedPinHeight + 2 * c0 ]);
+            cube([ cutoutWidthH, reedPinBorder / 2 + c0, reedPinHeight + 2 * c0 ]);
+        translate([ reedPinBorder, reedPinWidth - reedPinBorder / 2 + c0, -c0 ])
+            cube([ cutoutWidthH, reedPinBorder / 2 + c0, reedPinHeight + 2 * c0 ]);
     }
 
     if (renderMetalPlate) {
