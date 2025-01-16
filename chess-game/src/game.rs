@@ -112,7 +112,7 @@ impl fmt::Debug for ChessGame {
                                 // Highlight moving square in green
                                 format!(" {} ", symbol).on_green()
                             } else {
-                                // TODO: is it performant to call this multiple times?
+                                // TODO: is it performant enough to call this multiple times?
                                 if MoveGen::new_legal(&self.game.current_position())
                                     .filter(|m| m.get_source() == from)
                                     .any(|m| m.get_dest() == square)
