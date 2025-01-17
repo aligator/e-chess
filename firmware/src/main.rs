@@ -45,7 +45,8 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
         let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
 
         println!("Board   {:032b}", board.bitboard().0);
-        println!("{:?}", board.bitboard());
+        println!("{:?}", chess);
+
         // println!("Player1 {:032b}", game.board.players[0]);
         // println!("Player2 {:032b}", game.board.players[1]);
         //
@@ -109,16 +110,16 @@ extern "C" fn app_loop_receiver(_: *mut c_void) {
 
 /// Entry point to our application.
 fn main() -> Result<()> {
-    // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
-    // or else some patches to the runtime implemented by esp-idf-sys might not link properly.
-    esp_idf_sys::link_patches();
+    // It is necessary to call this function once. Otherwise some patches to the runtime
+    // implemented by esp-idf-sys might not link properly. See https://github.com/esp-rs/esp-idf-template/issues/71
+    esp_idf_svc::sys::link_patches();
 
     // Bind the log crate to the ESP Logging facilities
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
 
-    info!("Starting TicTacToe!");
+    info!("Starting Chess!");
 
     let mut board = Board::new(
         [
@@ -129,21 +130,21 @@ fn main() -> Result<()> {
             AnyIOPin::from(peripherals.pins.gpio25),
             AnyIOPin::from(peripherals.pins.gpio33),
             AnyIOPin::from(peripherals.pins.gpio32),
-            AnyIOPin::from(peripherals.pins.gpio22),
+            AnyIOPin::from(peripherals.pins.gpio16),
         ],
         [
-            AnyIOPin::from(peripherals.pins.gpio1),
+            AnyIOPin::from(peripherals.pins.gpio17),
             AnyIOPin::from(peripherals.pins.gpio3),
             AnyIOPin::from(peripherals.pins.gpio21),
             AnyIOPin::from(peripherals.pins.gpio19),
             AnyIOPin::from(peripherals.pins.gpio18),
             AnyIOPin::from(peripherals.pins.gpio5),
-            AnyIOPin::from(peripherals.pins.gpio17),
-            AnyIOPin::from(peripherals.pins.gpio16),
+            AnyIOPin::from(peripherals.pins.gpio0),
+            AnyIOPin::from(peripherals.pins.gpio2),
         ],
     );
     board.setup();
-
+    info!("Setup done!");
     // To avoid interference with the wifi thread (on core0) all other app-logic is running on core 1.
     // Especially the LED strip may blink when wifi is used.
     // It doesn't seem to fix the problem fully, as with high wifi-load it still does flicker.
