@@ -1,112 +1,11 @@
 use anyhow::Result;
-use board::Board;
-use chess_game::game::ChessGame;
-use esp_idf_hal::gpio::AnyIOPin;
+use esp_idf_hal::delay::BLOCK;
+use esp_idf_hal::i2c::*;
 use esp_idf_hal::peripherals::Peripherals;
-use esp_idf_sys::xTaskCreatePinnedToCore;
+use esp_idf_hal::prelude::*;
 use log::*;
-use std::cell::RefCell;
-use std::ffi::{c_void, CString};
-use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
-use wifi::{wifi_loop_receiver, WifiParams, WIFI_PARAMS};
-use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
-
-mod board;
-mod wifi;
-
-const FIELD_SIZE: usize = 8;
-
-struct AppParams<'a, const N: usize> {
-    board: Board<'a, N>,
-    led_pin: AnyIOPin,
-    channel: esp_idf_hal::rmt::CHANNEL0, // For now only channel0 - don't know how to type this to support any channel...
-}
-static APP_PARAMS: Mutex<RefCell<Option<AppParams<FIELD_SIZE>>>> = Mutex::new(RefCell::new(None));
-
-extern "C" fn app_loop_receiver(_: *mut c_void) {
-    // Fetch the app params and remove it afterwards.
-    let app_mu = APP_PARAMS.lock().unwrap();
-    let app_mu_ref = app_mu.replace(None);
-    drop(app_mu);
-
-    let app = app_mu_ref.expect("app params not");
-    let mut ws2812 = Ws2812Esp32Rmt::new(app.channel, app.led_pin).unwrap();
-    let mut board = app.board;
-
-    let mut chess: ChessGame = ChessGame::new();
-
-    loop {
-        board.tick();
-        let game = chess.tick(board.bitboard());
-
-        // make black
-        let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
-
-        println!("Board   {:032b}", board.bitboard().0);
-        println!("{:?}", chess);
-
-        // println!("Player1 {:032b}", game.board.players[0]);
-        // println!("Player2 {:032b}", game.board.players[1]);
-        //
-        // for (row, columns) in board.field.iter().enumerate() {
-        //     for (column, value) in columns.iter().enumerate() {
-        //         let mut pixel = row * board.size() + column;
-        //         if row % 2 == 0 {
-        //             pixel = row * board.size() + (board.size() - column - 1);
-        //         }
-        //
-        //         let pos = (board.size() - row - 1) * board.size()
-        //             + (board.size() - column - 1)
-        //             + (board.size() - row - 1) * (8 - board.size()); // Padding to the bigger u32 chess board
-        //         let player1: bool = bitboard::get(game.board.players[0], pos);
-        //         let player2: bool = bitboard::get(game.board.players[1], pos);
-        //
-        //         debug!(
-        //             "POS {} p1: {:?} p2: {:?} v: {:?}",
-        //             pos, player1, player2, *value
-        //         );
-        //
-        //         if player1 {
-        //             if game.board.winner == Some(1) {
-        //                 pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 10 }
-        //             } else {
-        //                 pixels[pixel] = smart_leds::RGB { r: 0, g: 0, b: 255 }
-        //             }
-        //         } else if player2 {
-        //             if game.board.winner == Some(0) {
-        //                 pixels[pixel] = smart_leds::RGB { r: 0, g: 10, b: 0 }
-        //             } else {
-        //                 pixels[pixel] = smart_leds::RGB { r: 0, g: 255, b: 0 }
-        //             }
-        //         } else if *value {
-        //             // Something is wrong because the field should not be occupied.
-        //             // Can happen if the program starts while there are still parts on the
-        //             // board.
-        //             pixels[pixel] = smart_leds::RGB { r: 100, g: 0, b: 0 }
-        //         }
-        //
-        //         if !*value && (player1 || player2) {
-        //             // Something is wrong, because the field should be occupied.
-        //             // This may happen if a part got removed which should not be done.
-        //             pixels[pixel] = smart_leds::RGB {
-        //                 r: 100,
-        //                 g: 100,
-        //                 b: 0,
-        //             }
-        //         }
-        //     }
-        // }
-
-        ws2812.write_nocopy(pixels).unwrap();
-
-        sleep(Duration::from_millis(100));
-
-        // Uncomment for debugging
-        // sleep(Duration::from_secs(1));
-    }
-}
 
 /// Entry point to our application.
 fn main() -> Result<()> {
@@ -119,81 +18,58 @@ fn main() -> Result<()> {
 
     let peripherals = Peripherals::take().unwrap();
 
-    info!("Starting Chess!");
+    info!("Starting io expander mcp23017 test!");
 
-    let mut board = Board::new(
-        [
-            AnyIOPin::from(peripherals.pins.gpio12),
-            AnyIOPin::from(peripherals.pins.gpio14),
-            AnyIOPin::from(peripherals.pins.gpio27),
-            AnyIOPin::from(peripherals.pins.gpio26),
-            AnyIOPin::from(peripherals.pins.gpio25),
-            AnyIOPin::from(peripherals.pins.gpio33),
-            AnyIOPin::from(peripherals.pins.gpio32),
-            AnyIOPin::from(peripherals.pins.gpio16),
-        ],
-        [
-            AnyIOPin::from(peripherals.pins.gpio17),
-            AnyIOPin::from(peripherals.pins.gpio3),
-            AnyIOPin::from(peripherals.pins.gpio21),
-            AnyIOPin::from(peripherals.pins.gpio19),
-            AnyIOPin::from(peripherals.pins.gpio18),
-            AnyIOPin::from(peripherals.pins.gpio5),
-            AnyIOPin::from(peripherals.pins.gpio0),
-            AnyIOPin::from(peripherals.pins.gpio2),
-        ],
-    );
-    board.setup();
-    info!("Setup done!");
-    // To avoid interference with the wifi thread (on core0) all other app-logic is running on core 1.
-    // Especially the LED strip may blink when wifi is used.
-    // It doesn't seem to fix the problem fully, as with high wifi-load it still does flicker.
-    // https://github.com/cat-in-136/ws2812-esp32-rmt-driver/issues/33
-    //
-    // Note that I did not get it working to pass the parameters as pvParameters.
-    // So I now pre-fill a mutex which is read inside the thread.
-    let app_params = APP_PARAMS.lock().unwrap();
-    app_params.replace(Some(AppParams {
-        board: board,
-        led_pin: AnyIOPin::from(peripherals.pins.gpio23),
-        channel: peripherals.rmt.channel0,
-    }));
-    drop(app_params);
+    let sda = peripherals.pins.gpio21;
+    let scl = peripherals.pins.gpio22;
 
-    unsafe {
-        let name = CString::new("app-thread").unwrap();
+    let config = I2cConfig::new().baudrate(100.kHz().into());
+    let mut mcp23017 = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
 
-        xTaskCreatePinnedToCore(
-            Some(app_loop_receiver),
-            name.as_ptr(),
-            10000,
-            std::ptr::null_mut(),
-            24,
-            std::ptr::null_mut(),
-            1,
-        );
+    info!("configured i2c");
+    sleep(Duration::from_millis(1000));
+
+    info!("Start configuring mcp23017");
+    let addr: u8 = 0x20;
+    // Configure GPA = input
+    // Configure GPB = output
+    let msg = &[0x00, 0xFF, 0x00];
+    match mcp23017.write(addr, msg, BLOCK) {
+        Ok(_) => info!("Successfully configured input/output ports"),
+        Err(e) => {
+            error!("Failed to configure I/O directions: {:?}", e);
+            return Err(e.into());
+        }
     };
 
-    let wifi_params = WIFI_PARAMS.lock().unwrap();
-    wifi_params.replace(Some(WifiParams {
-        modem: peripherals.modem,
-    }));
-    drop(wifi_params);
-
-    unsafe {
-        let name = CString::new("wifi-thread").unwrap();
-        xTaskCreatePinnedToCore(
-            Some(wifi_loop_receiver),
-            name.as_ptr(),
-            10000,
-            std::ptr::null_mut(),
-            1,
-            std::ptr::null_mut(),
-            0,
-        );
+    // Enable Pull ups for the inputs
+    let pullup_msg = &[0x0C, 0xFF]; // 0x0D is GPPUB register, 0xFF enables pull-ups for all pins
+    match mcp23017.write(addr, pullup_msg, BLOCK) {
+        Ok(_) => info!("Successfully enabled pullups"),
+        Err(e) => {
+            error!("Failed to configure pullups: {:?}", e);
+            return Err(e.into());
+        }
     };
 
     loop {
-        sleep(Duration::new(10, 0));
+        info!("Looping");
+
+        // Set register pointer to GPIOA (0x12)
+        mcp23017.write(addr, &[0x12], BLOCK)?;
+
+        // Read from Port A (inputs)
+        let mut input_data = [0u8; 1];
+        mcp23017.read(addr, &mut input_data, BLOCK)?;
+
+        // Invert the input data
+        let inverted_data = !input_data[0];
+        info!("Inverted data: 0x{:02X}", inverted_data);
+
+        // Write the inverted input value to Port B (outputs)
+        let write_msg = &[0x13, inverted_data]; // 0x13 is GPIOB register
+        mcp23017.write(addr, write_msg, BLOCK)?;
+
+        sleep(Duration::from_millis(100));
     }
 }
