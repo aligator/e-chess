@@ -17,7 +17,7 @@ impl BitBoardExtensions for BitBoard {
     }
 
     fn get_different_bits(self, other: BitBoard) -> BitBoard {
-        return self ^ other;
+        self ^ other
     }
 
     fn first_one(&self) -> u8 {

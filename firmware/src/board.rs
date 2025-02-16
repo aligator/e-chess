@@ -1,67 +1,51 @@
-use chess::{BitBoard, Square};
-use chess_game::bitboard_extensions::BitBoardExtensions;
-use esp_idf_hal::{
-    gpio::{AnyIOPin, Level, PinDriver, Pull},
-    peripheral::Peripheral,
-};
+use anyhow::Result;
+use chess::BitBoard;
+use esp_idf_hal::{delay::BLOCK, i2c::*};
 
-pub struct Board<'a, const N: usize> {
-    column_pins: [PinDriver<'a, AnyIOPin, esp_idf_hal::gpio::Output>; N],
-    row_pins: [PinDriver<'a, AnyIOPin, esp_idf_hal::gpio::Input>; N],
+const BOARD_SIZE: usize = 8;
 
-    field: BitBoard,
+pub struct Board<'a> {
+    i2c: I2cDriver<'a>,
+    addr: u8,
 }
 
-impl<'a, const N: usize> Board<'a, N> {
-    pub fn new(
-        column_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
-        row_pins: [impl Peripheral<P = AnyIOPin> + 'a; N],
-    ) -> Self {
-        Board {
-            column_pins: column_pins.map(|pin| PinDriver::output(pin).unwrap()),
-            row_pins: row_pins.map(|pin| PinDriver::input(pin).unwrap()),
-
-            field: BitBoard::new(0),
-        }
+impl<'a> Board<'a> {
+    pub fn new(i2c: I2cDriver<'a>, addr: u8) -> Self {
+        Self { i2c, addr }
     }
 
-    pub fn size(&self) -> usize {
-        N
+    pub fn setup(&mut self) -> Result<()> {
+        // Configure GPA = input
+        // Configure GPB = output
+        let msg = &[0x00, 0xFF, 0x00];
+        self.i2c.write(self.addr, msg, BLOCK)?;
+        // Enable Pull ups for the inputs
+        let pullup_msg = &[0x0C, 0xFF]; // 0x0D is GPPUB register, 0xFF enables pull-ups for all pins
+        self.i2c.write(self.addr, pullup_msg, BLOCK)?;
+        Ok(())
     }
 
-    pub fn setup(&mut self) {
-        // Set up the pullup.
-        for pin in &mut self.row_pins {
-            pin.set_pull(Pull::Up).unwrap();
+    pub fn tick(&mut self) -> Result<BitBoard> {
+        let mut board: u64 = 0;
+
+        for col in 0..BOARD_SIZE {
+            // Set the col LOW that should be read.
+            // Set all other cols HIGH.
+            let enable_col = &[0x13, !(0x1 << col)];
+            self.i2c.write(self.addr, enable_col, BLOCK)?;
+
+            // Set register pointer to GPIOA (0x12)
+            self.i2c.write(self.addr, &[0x12], BLOCK)?;
+
+            // Read from Port A (inputs)
+            let mut row_data = [0u8; 1];
+            self.i2c.read(self.addr, &mut row_data, BLOCK)?;
+
+            // Add row to the board.
+            // Move row data to the correct position using bitshift.
+            board |= (!row_data[0] as u64) << (col * BOARD_SIZE);
         }
 
-        // Set all columns high.
-        for pin in &mut self.column_pins {
-            pin.set_high().unwrap();
-        }
-    }
-
-    pub fn tick(&mut self) {
-        // Check each field
-        for (col, col_pin) in &mut self.column_pins.iter_mut().enumerate() {
-            // The pin needs to be set to low to read the values.
-            col_pin.set_low().unwrap();
-
-            for (row, row_pin) in &mut self.row_pins.iter().enumerate() {
-                let set = row_pin.get_level() == Level::Low;
-                self.field.set(
-                    Square::make_square(chess::Rank::from_index(row), chess::File::from_index(col)),
-                    set,
-                );
-            }
-
-            // Afterwards set it high again.
-            col_pin.set_high().unwrap();
-        }
-    }
-
-    /// Returns the current state as bitboard representation.
-    pub fn bitboard(&self) -> BitBoard {
-        self.field
+        Ok(BitBoard::new(board))
     }
 }
