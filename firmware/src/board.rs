@@ -2,7 +2,7 @@ use anyhow::Result;
 use chess::BitBoard;
 use esp_idf_hal::{delay::BLOCK, i2c::*};
 
-const BOARD_SIZE: usize = 8;
+use crate::constants::BOARD_SIZE;
 
 pub struct Board<'a> {
     i2c: I2cDriver<'a>,
@@ -27,6 +27,9 @@ impl<'a> Board<'a> {
 
     pub fn tick(&mut self) -> Result<BitBoard> {
         let mut board: u64 = 0;
+
+        // make black
+        let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
 
         for col in 0..BOARD_SIZE {
             // Set the col LOW that should be read.

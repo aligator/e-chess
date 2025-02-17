@@ -1,14 +1,18 @@
 use anyhow::Result;
 use board::Board;
 use chess_game::bitboard_extensions::*;
+use chess_game::game::ChessGame;
 use esp_idf_hal::i2c::*;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
 use log::*;
 use std::thread::sleep;
 use std::time::Duration;
+use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod board;
+mod constants;
+mod display;
 
 /// Entry point to our application.
 fn main() -> Result<()> {
@@ -29,8 +33,15 @@ fn main() -> Result<()> {
     let config = I2cConfig::new().baudrate(100.kHz().into());
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
 
+    let mut chess: ChessGame = ChessGame::new();
+
+    let mut ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
+
     let mut board = Board::new(mcp23017, 0x20);
     board.setup()?;
+
+    let mut display = display::Display::new(ws2812);
+    display.setup()?;
 
     loop {
         info!("Looping");
@@ -38,6 +49,8 @@ fn main() -> Result<()> {
         match board.tick() {
             Ok(physical) => {
                 physical._print();
+                let _expected = chess.tick(physical);
+                display.tick(physical, &chess)?;
             }
             Err(e) => {
                 error!("Error: {:?}", e);
