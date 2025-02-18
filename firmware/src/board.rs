@@ -28,9 +28,6 @@ impl<'a> Board<'a> {
     pub fn tick(&mut self) -> Result<BitBoard> {
         let mut board: u64 = 0;
 
-        // make black
-        let mut pixels = [smart_leds::RGB { r: 0, g: 0, b: 0 }; 9];
-
         for col in 0..BOARD_SIZE {
             // Set the col LOW that should be read.
             // Set all other cols HIGH.

@@ -8,7 +8,7 @@ pub trait BitBoardExtensions {
     fn set(&mut self, square: Square, value: bool);
 
     /// Print the bitboard as a chess board for debugging
-    fn _print(&self);
+    fn print(&self);
 }
 
 impl BitBoardExtensions for BitBoard {
@@ -36,7 +36,7 @@ impl BitBoardExtensions for BitBoard {
         }
     }
 
-    fn _print(&self) {
+    fn print(&self) {
         println!("\n   a b c d e f g h");
         println!("  ---------------");
 

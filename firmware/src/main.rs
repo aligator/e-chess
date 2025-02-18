@@ -25,7 +25,7 @@ fn main() -> Result<()> {
 
     let peripherals = Peripherals::take().unwrap();
 
-    info!("Starting io expander mcp23017 test!");
+    info!("Starting E-Chess!");
 
     let sda = peripherals.pins.gpio21;
     let scl = peripherals.pins.gpio22;
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
 
     let mut chess: ChessGame = ChessGame::new();
 
-    let mut ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
+    let ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
 
     let mut board = Board::new(mcp23017, 0x20);
     board.setup()?;
@@ -44,12 +44,9 @@ fn main() -> Result<()> {
     display.setup()?;
 
     loop {
-        info!("Looping");
-
         match board.tick() {
             Ok(physical) => {
-                physical._print();
-                let _expected = chess.tick(physical);
+                let expected = chess.tick(physical);
                 display.tick(physical, &chess)?;
             }
             Err(e) => {
@@ -57,6 +54,6 @@ fn main() -> Result<()> {
             }
         }
 
-        sleep(Duration::from_millis(1000));
+        sleep(Duration::from_millis(100));
     }
 }
