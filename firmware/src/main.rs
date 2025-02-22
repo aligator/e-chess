@@ -1,6 +1,5 @@
 use anyhow::Result;
 use board::Board;
-use chess_game::bitboard_extensions::*;
 use chess_game::game::ChessGame;
 use esp_idf_hal::i2c::*;
 use esp_idf_hal::peripherals::Peripherals;
@@ -8,11 +7,13 @@ use esp_idf_hal::prelude::*;
 use log::*;
 use std::thread::sleep;
 use std::time::Duration;
+use wifi::start_wifi;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod board;
 mod constants;
 mod display;
+mod wifi;
 
 /// Entry point to our application.
 fn main() -> Result<()> {
@@ -24,6 +25,8 @@ fn main() -> Result<()> {
     esp_idf_svc::log::EspLogger::initialize_default();
 
     let peripherals = Peripherals::take().unwrap();
+
+    start_wifi();
 
     info!("Starting E-Chess!");
 

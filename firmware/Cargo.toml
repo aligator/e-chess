@@ -32,9 +32,12 @@ esp-idf-sys = { version = "0.36", default-features = false, features = [
 
 anyhow = { version = "1.0.86", features = ["backtrace"] }
 smart-leds = "0.4.0"
-ws2812-esp32-rmt-driver = { version = "*", features = ["smart-leds-trait"], git = "https://github.com/aligator/ws2812-esp32-rmt-driver.git", branch = "hal-v0_45" }
+ws2812-esp32-rmt-driver = { version = "0.11.0", features = ["smart-leds-trait"]}
+#ws2812-esp32-rmt-driver = { version = "*", features = ["smart-leds-trait"], git = "https://github.com/aligator/ws2812-esp32-rmt-driver.git", branch = "hal-v0_45" }
 chess = { git = "https://github.com/funnsam/chess" }
 chess-game = { version = "0.1.0", path = "../chess-game" }
+urlencoding = "2.1.3"
+heapless = "0.8.0"
 
 [build-dependencies]
 embuild = "0.33"
