@@ -1,6 +1,10 @@
+use std::thread;
+
 use anyhow::Result;
 use chess::BitBoard;
+use chess_game::bitboard_extensions::BitBoardExtensions;
 use esp_idf_hal::{delay::BLOCK, i2c::*};
+use log::info;
 
 use crate::constants::BOARD_SIZE;
 
@@ -38,12 +42,19 @@ impl<'a> Board<'a> {
             self.i2c.write(self.addr, &[0x12], BLOCK)?;
 
             // Read from Port A (inputs)
-            let mut row_data = [0u8; 1];
-            self.i2c.read(self.addr, &mut row_data, BLOCK)?;
-
-            // Add row to the board.
-            // Move row data to the correct position using bitshift.
-            board |= (!row_data[0] as u64) << (col * BOARD_SIZE);
+            let mut col_data = [0u8; 1];
+            self.i2c.read(self.addr, &mut col_data, BLOCK)?;
+            let column = !col_data[0] as u64;
+            // Shift the column data to the correct position.
+            board |= ((column & 0b00000001)
+                | ((column & 0b00000010) << 7)
+                | ((column & 0b00000100) << 14)
+                | ((column & 0b00001000) << 21)
+                | ((column & 0b00010000) << 28)
+                | ((column & 0b00100000) << 35)
+                | ((column & 0b01000000) << 42)
+                | ((column & 0b10000000) << 49))
+                << (col);
         }
 
         Ok(BitBoard::new(board))
