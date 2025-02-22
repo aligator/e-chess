@@ -13,6 +13,10 @@
             "name": "Rust firmware"
         },
         {
+            "path": "./chess-game",
+            "name": "Rust Chess game"
+        },
+        {
             "path": "./scad",
             "name": "OpenSCAD 3D model"
         }
