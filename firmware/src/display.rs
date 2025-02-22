@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use anyhow::{Ok, Result};
 use chess::{BitBoard, Square};
-use chess_game::{bitboard_extensions::*, game::ChessGame};
+use chess_game::{
+    bitboard_extensions::*,
+    game::{ChessGame, ChessState},
+};
 use log::*;
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -67,6 +70,10 @@ impl<'a> Display<'a> {
 
         diff.added.for_each(|square| {
             pixels[Self::get_pixel(square)] = RGB { r: 20, g: 0, b: 0 };
+        });
+
+        game.get_possible_moves().for_each(|square| {
+            pixels[Self::get_pixel(square)] = RGB { r: 0, g: 20, b: 0 };
         });
 
         self.leds.write_nocopy(pixels)?;

@@ -309,6 +309,20 @@ impl ChessGame {
         }
     }
 
+    pub fn get_possible_moves(&self) -> BitBoard {
+        let mut moves = BitBoard::new(0);
+
+        if let ChessState::MovingPiece { piece: _, from } = self.state {
+            for m in
+                MoveGen::new_legal(&self.game.current_position()).filter(|m| m.get_source() == from)
+            {
+                moves |= BitBoard::from_square(m.get_dest());
+            }
+        };
+
+        moves
+    }
+
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
