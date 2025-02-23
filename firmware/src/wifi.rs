@@ -1,117 +1,221 @@
-use anyhow::{Ok, Result};
-use esp_idf_hal::{io::Write, modem};
-use esp_idf_svc::wifi;
+use anyhow::Result;
+use esp_idf_hal::io::Write;
+use esp_idf_svc::ipv4::ClientConfiguration;
+use esp_idf_svc::wifi::{self, NonBlocking};
 use esp_idf_svc::{
-    eventloop::EspSystemEventLoop,
     http::{
         server::{self, EspHttpServer},
         Method,
     },
-    nvs::EspDefaultNvsPartition,
-    wifi::{BlockingWifi, EspWifi},
+    wifi::EspWifi,
 };
 use log::*;
+use maud::html;
 use std::thread::sleep;
-use std::{cell::RefCell, os::raw::c_void, sync::Mutex, time::Duration};
+use std::time::Duration;
 
-pub(crate) struct WifiParams {
-    pub(crate) modem: modem::Modem,
-    pub(crate) static WIFI_PARAMS: Mutex<RefCell<Option<WifiParams>>> = Mutex::new(RefCell::new(None));
+struct WifiSettings {
+    ssid: String,
+    password: String,
 }
 
-const WIFI_SSID: &str = "Freifunk";
-const WIFI_PASS: &str = "";
-
-fn connect_wifi(wifi: &mut BlockingWifi<EspWifi<'static>>) -> anyhow::Result<()> {
-    info!("Connect to SSID: {}", WIFI_SSID);
-    sleep(Duration::from_secs(1));
-
-    let wifi_configuration: wifi::Configuration =
-        wifi::Configuration::Client(wifi::ClientConfiguration {
-            ssid: WIFI_SSID.try_into().expect("ssid could not be read"),
-            bssid: None,
-            auth_method: esp_idf_svc::wifi::AuthMethod::None,
-            password: WIFI_PASS.try_into().expect("password could not be read"),
-            channel: None,
-            ..Default::default()
-        });
-
-    wifi.set_configuration(&wifi_configuration)?;
-
-    wifi.start()?;
-    info!("Wifi started");
-
-    wifi.connect().expect("could not connect");
-    info!("Wifi connected");
-
-    wifi.wait_netif_up()?;
-    info!("Wifi netif up");
-
-    let ip_info = wifi.wifi().sta_netif().get_ip_info()?;
-    info!(
-        "IP: \n{}\n{}\n{:?}\n{:?}",
-        ip_info.ip, ip_info.subnet, ip_info.dns, ip_info.secondary_dns
-    );
-
-    return Ok(());
-}
-
-fn index_html() -> String {
-    format!(
-        r#"
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>E-Chess</title>
-        </head>
-        <body>
-           Hello World!
-        </body>
-        </html>
-        "#
+fn page(body: String) -> String {
+    html!(
+        html {
+            head {
+                meta charset="UTF-8";
+                meta name="viewport" content="width=device-width, initial-scale=1.0";
+                title { "E-Chess" }
+            }
+            body { (body) }
+        }
     )
+    .into_string()
 }
 
-pub(crate) extern "C" fn wifi_loop_receiver(_: *mut c_void) {
-    wifi_loop().unwrap()
-}
+fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
+    let mut server = EspHttpServer::new(&server::Configuration::default())?;
+    server.fn_handler("/", Method::Get, |request| {
+        let html: String = page(
+            html!(
+                h1 { "E-Chess" }
+                p { "Please enter the SSID and password of the network you want to connect to." }
+                form action="/connect" method="POST" {
+                    label for="ssid" { "SSID:" }
+                    input type="text" id="ssid" name="ssid" {}
+                    br {}
+                    label for="password" { "Password:" }
+                    input type="password" id="password" name="password" {}
+                    br {}
+                    input type="submit" value="Connect" {}
+                }
+            )
+            .into_string(),
+        );
+        request.into_ok_response()?.write_all(html.as_bytes())
+    })?;
 
-fn wifi_loop() -> Result<()> {
-    // Fetch the wifi params and remove it afterwards.
-    let wifi_mu = WIFI_PARAMS.lock().unwrap();
-    let wifi_mu_ref = wifi_mu.replace(None);
-    drop(wifi_mu);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let tx_clone = tx.clone();
 
-    let wifi_param = wifi_mu_ref.expect("wifi params not");
+    server.fn_handler("/connect", Method::Post, move |mut request| {
+        // Read POST body
+        let mut buf = [0u8; 1024];
+        let size = request.read(&mut buf)?;
+        let body = std::str::from_utf8(&buf[..size]).expect("invalid body on /connect");
 
-    let sysloop = EspSystemEventLoop::take().unwrap();
-    let nvs = EspDefaultNvsPartition::take().unwrap();
+        // Parse form data
+        let params: Vec<(&str, &str)> = body
+            .split('&')
+            .filter_map(|pair| {
+                let mut parts = pair.split('=');
+                match (parts.next(), parts.next()) {
+                    (Some(key), Some(value)) => Some((key, value)),
+                    _ => None,
+                }
+            })
+            .collect();
 
-    let mut wifi = BlockingWifi::wrap(
-        EspWifi::new(wifi_param.modem, sysloop.clone(), Some(nvs)).unwrap(),
-        sysloop,
-    )
-    .unwrap();
+        let mut ssid = String::new();
+        let mut password = String::new();
 
-    connect_wifi(&mut wifi).unwrap();
+        for (key, value) in params {
+            match key {
+                "ssid" => {
+                    ssid = urlencoding::decode(value)
+                        .map(|s| s.into_owned())
+                        .unwrap_or_default()
+                }
+                "password" => {
+                    password = urlencoding::decode(value)
+                        .map(|s| s.into_owned())
+                        .unwrap_or_default()
+                }
+                _ => {}
+            }
+        }
 
-    info!("WIFI connection done");
+        if !ssid.is_empty() && !password.is_empty() {
+            // Send credentials through channel
+            let _ = tx_clone.send(WifiSettings { ssid, password });
 
-    // Set the HTTP server
-    let mut server = EspHttpServer::new(&server::Configuration::default()).unwrap();
-    // http://<sta ip>/ handler
-    server
-        .fn_handler("/", Method::Get, |request| {
-            let html = index_html();
-            let mut response = request.into_ok_response()?;
-            response.write_all(html.as_bytes())?;
-            Ok(())
-        })
-        .unwrap();
+            // Return success page
+            let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Success</title>
+            </head>
+            <body>
+                <h1>WiFi Settings Saved</h1>
+                <p>Your device will now attempt to connect to the network.</p>
+            </body>
+            </html>
+            "#;
+            request.into_ok_response()?.write_all(html.as_bytes())
+        } else {
+            // Return error page
+            let html = r#"
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Error</title>
+            </head>
+            <body>
+                <h1>Error</h1>
+                <p>Both SSID and password are required.</p>
+                <a href="/">Go back</a>
+            </body>
+            </html>
+            "#;
+            request.into_ok_response()?.write_all(html.as_bytes())
+        }
+    })?;
+    // Wait for credentials from the handler
+    match rx.recv() {
+        Ok(settings) => {
+            let config = wifi::Configuration::Client(wifi::ClientConfiguration {
+                ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
+                password: heapless::String::try_from(settings.password.as_str()).unwrap(),
+                ..Default::default()
+            });
 
-    loop {
-        sleep(Duration::from_millis(100));
+            wifi_driver.stop()?;
+            wifi_driver.set_configuration(&config)?;
+            wifi_driver.start()?;
+
+            try_connect(wifi_driver)?;
+        }
+        Err(_) => {
+            info!("No credentials received");
+        }
     }
+    Ok(())
+}
+
+fn ap_config() -> wifi::Configuration {
+    wifi::Configuration::AccessPoint(wifi::AccessPointConfiguration {
+        ssid: heapless::String::try_from("E-Chess").unwrap(),
+        password: heapless::String::try_from("1337_e-chess").unwrap(),
+        channel: 1,
+        max_connections: 4,
+        ..Default::default()
+    })
+}
+
+fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
+    info!("Trying to connect to Wifi");
+    wifi_driver.connect()?;
+
+    let mut count = 0;
+    while !wifi_driver.is_connected()? {
+        if count > 30 {
+            info!("Failed to connect to Wifi");
+            info!("Starting Access Point");
+            let config = ap_config();
+            wifi_driver.set_configuration(&config)?;
+
+            start_chess_server(wifi_driver)?;
+            break;
+        }
+
+        sleep(Duration::from_secs(1));
+        count += 1;
+    }
+
+    if wifi_driver.is_connected()? {
+        info!("Connected to Wifi");
+    }
+
+    Ok(())
+}
+
+pub fn start_wifi(mut wifi_driver: EspWifi) -> Result<()> {
+    let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
+        Ok(config) => {
+            info!("Current Configuration: {:?}", config);
+            config
+        }
+        Err(_) => {
+            info!("No Configuration found, creating new one");
+            let config = ap_config();
+            wifi_driver.set_configuration(&config)?;
+            config
+        }
+    };
+
+    wifi_driver.start()?;
+
+    if let Some(client_config) = wifi_configuration.as_client_conf_ref() {
+        info!("Starting Client {}", client_config.ssid);
+        try_connect(&mut wifi_driver)?;
+    } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
+        info!("Starting Access Point {}", ap_config.ssid);
+        info!("IP info: {:?}", wifi_driver.ap_netif().get_ip_info());
+        start_chess_server(&mut wifi_driver)?;
+    } else {
+        info!("Unknown Wifi Configuration");
+    }
+
+    Ok(())
 }
