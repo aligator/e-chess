@@ -1,7 +1,7 @@
 use anyhow::Result;
 use esp_idf_hal::io::Write;
-use esp_idf_svc::ipv4::ClientConfiguration;
-use esp_idf_svc::wifi::{self, NonBlocking};
+use esp_idf_hal::reset;
+use esp_idf_svc::wifi::{self};
 use esp_idf_svc::{
     http::{
         server::{self, EspHttpServer},
@@ -10,7 +10,7 @@ use esp_idf_svc::{
     wifi::EspWifi,
 };
 use log::*;
-use maud::html;
+use maud::{html, PreEscaped};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -27,13 +27,13 @@ fn page(body: String) -> String {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "E-Chess" }
             }
-            body { (body) }
+            body { (PreEscaped(body)) }
         }
     )
     .into_string()
 }
 
-fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
+pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
     let mut server = EspHttpServer::new(&server::Configuration::default())?;
     server.fn_handler("/", Method::Get, |request| {
         let html: String = page(
@@ -140,11 +140,11 @@ fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
                 ..Default::default()
             });
 
+            info!("Received new config - restart wifi");
+
             wifi_driver.stop()?;
             wifi_driver.set_configuration(&config)?;
-            wifi_driver.start()?;
-
-            try_connect(wifi_driver)?;
+            reset::restart();
         }
         Err(_) => {
             info!("No credentials received");
@@ -175,16 +175,18 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
             let config = ap_config();
             wifi_driver.set_configuration(&config)?;
 
-            start_chess_server(wifi_driver)?;
-            break;
+            reset::restart();
         }
 
+        info!("Waiting for Wifi connection...");
         sleep(Duration::from_secs(1));
         count += 1;
     }
 
     if wifi_driver.is_connected()? {
         info!("Connected to Wifi");
+    } else {
+        info!("Failed to connect to Wifi, enabled Accesspoint instead");
     }
 
     Ok(())
@@ -212,10 +214,10 @@ pub fn start_wifi(mut wifi_driver: EspWifi) -> Result<()> {
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
         info!("Starting Access Point {}", ap_config.ssid);
         info!("IP info: {:?}", wifi_driver.ap_netif().get_ip_info());
-        start_chess_server(&mut wifi_driver)?;
     } else {
         info!("Unknown Wifi Configuration");
     }
+    start_chess_server(&mut wifi_driver)?;
 
     Ok(())
 }
