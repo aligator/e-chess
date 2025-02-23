@@ -16,8 +16,8 @@ use std::{cell::RefCell, os::raw::c_void, sync::Mutex, time::Duration};
 
 pub(crate) struct WifiParams {
     pub(crate) modem: modem::Modem,
+    pub(crate) static WIFI_PARAMS: Mutex<RefCell<Option<WifiParams>>> = Mutex::new(RefCell::new(None));
 }
-pub(crate) static WIFI_PARAMS: Mutex<RefCell<Option<WifiParams>>> = Mutex::new(RefCell::new(None));
 
 const WIFI_SSID: &str = "Freifunk";
 const WIFI_PASS: &str = "";
