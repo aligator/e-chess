@@ -23,20 +23,20 @@ default = []
 experimental = ["esp-idf-svc/experimental"]
 
 [dependencies]
-log = "0.4"
+log = { version = "0.4" }
 esp-idf-svc = { version = "0.51", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
 esp-idf-hal = { version = "0.45", default-features = false, features = ["rmt-legacy"] }
 esp-idf-sys = { version = "0.36", default-features = false, features = [
     "binstart",
 ] }
 
-anyhow = { version = "1.0.86", features = ["backtrace"] }
-smart-leds = "0.4.0"
-ws2812-esp32-rmt-driver = { version = "*", features = ["smart-leds-trait"], git = "https://github.com/aligator/ws2812-esp32-rmt-driver.git", branch = "fix-flickering-by-using-2-mem-blocks" }
-chess = { git = "https://github.com/funnsam/chess" }
-chess-game = { version = "0.1.0", path = "../chess-game" }
+anyhow = { version = "1.0.86" }
+smart-leds = { version = "0.4.0", default-features = false }
+ws2812-esp32-rmt-driver = { version = "*", default-features = false, features = ["smart-leds-trait"], git = "https://github.com/aligator/ws2812-esp32-rmt-driver.git", branch = "fix-flickering-by-using-2-mem-blocks" }
+chess = { default-features = false, git = "https://github.com/funnsam/chess" }
+chess-game = { version = "0.1.0", default-features = false, path = "../chess-game" }
 heapless = {version = "0.8.0", default-features = false }
-urlencoding = "2.1.3"
+urlencoding = {version = "2.1.3", default-features = false}
 maud = "0.27.0"
 
 [build-dependencies]

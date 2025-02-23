@@ -1,11 +1,9 @@
 use anyhow::Result;
 use board::Board;
 use chess_game::game::ChessGame;
-use esp_idf_hal::cpu::Core;
 use esp_idf_hal::i2c::*;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
-use esp_idf_hal::task::thread::ThreadSpawnConfiguration;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;

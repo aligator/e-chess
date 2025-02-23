@@ -1,19 +1,13 @@
-use std::str::FromStr;
-
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use chess::{BitBoard, Square};
-use chess_game::{
-    bitboard_extensions::*,
-    game::{ChessGame, ChessState},
-};
-use log::*;
+use chess_game::game::ChessGame;
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 use crate::constants::BOARD_SIZE;
 
 struct DiffResult {
-    same: BitBoard,
+    _same: BitBoard,
     missing: BitBoard,
     added: BitBoard,
 }
@@ -28,7 +22,7 @@ impl BitBoardDiff for BitBoard {
         let missing = self & !other;
         let added = !self & other;
         DiffResult {
-            same,
+            _same: same,
             missing,
             added,
         }

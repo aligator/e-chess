@@ -100,34 +100,26 @@ pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
             let _ = tx_clone.send(WifiSettings { ssid, password });
 
             // Return success page
-            let html = r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Success</title>
-            </head>
-            <body>
-                <h1>WiFi Settings Saved</h1>
-                <p>Your device will now attempt to connect to the network.</p>
-            </body>
-            </html>
-            "#;
+            let html = page(
+                html!(
+                    h1 { "Success" }
+                    p { "WiFi Settings Saved" }
+                    p { "Your device will now attempt to connect to the network." }
+                )
+                .into_string(),
+            );
+
             request.into_ok_response()?.write_all(html.as_bytes())
         } else {
             // Return error page
-            let html = r#"
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Error</title>
-            </head>
-            <body>
-                <h1>Error</h1>
-                <p>Both SSID and password are required.</p>
-                <a href="/">Go back</a>
-            </body>
-            </html>
-            "#;
+            let html = page(
+                html!(
+                    h1 { "Error" }
+                    p { "Both SSID and password are required." }
+                    a href="/" { "Go back" }
+                )
+                .into_string(),
+            );
             request.into_ok_response()?.write_all(html.as_bytes())
         }
     })?;

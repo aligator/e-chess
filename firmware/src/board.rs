@@ -1,10 +1,6 @@
-use std::thread;
-
 use anyhow::Result;
 use chess::BitBoard;
-use chess_game::bitboard_extensions::BitBoardExtensions;
 use esp_idf_hal::{delay::BLOCK, i2c::*};
-use log::info;
 
 use crate::constants::BOARD_SIZE;
 
