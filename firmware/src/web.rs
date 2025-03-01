@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Ok, Result};
 use chess::{BoardStatus, File, Game, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
@@ -155,7 +155,7 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
                             if (document.getElementById('autoRefresh').checked) {
                                 setTimeout(function() {
                                     location.reload();
-                                }, 5000);
+                                }, 1000);
                             }
                         }
                         
@@ -183,6 +183,18 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
     Ok(())
 }
 
+unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/favicon.ico", Method::Get, move |request| {
+        // Include the favicon file at compile time
+        const FAVICON: &[u8] = include_bytes!("../assets/favicon.ico");
+
+        let mut response = request.into_ok_response()?;
+        response.write_all(FAVICON)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
 impl Web {
     pub fn new() -> Web {
         Web {
@@ -192,7 +204,10 @@ impl Web {
 
     pub fn register(&self, server: &mut EspHttpServer) -> Result<()> {
         println!("Registering Web");
-        unsafe { handle_game(server, self.game.clone())? };
+        unsafe { 
+            handle_favicon(server)?;
+            handle_game(server, self.game.clone())?;
+        };
         Ok(())
     }
 

@@ -1,0 +1,1 @@
+https://openclipart.org/detail/344466/dg-ra-style-chess-pieces-set
