@@ -2,6 +2,7 @@ use crate::bitboard_extensions::*;
 use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
+use std::cmp::Ordering::*;
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
@@ -28,6 +29,23 @@ pub struct ChessGame {
     pub state: ChessState,
 }
 
+impl Default for ChessGame {
+    fn default() -> Self {
+        let initial_game =
+            Game::from_str("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+        let white = *initial_game.current_position().color_combined(Color::White);
+        let black = *initial_game.current_position().color_combined(Color::Black);
+
+        ChessGame {
+            game: initial_game,
+            expected_white: white,
+            expected_black: black,
+            physical: BitBoard::new(0),
+            state: ChessState::Idle,
+        }
+    }
+}
+
 impl fmt::Debug for ChessGame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let board: Board = self.game.current_position();
@@ -48,7 +66,7 @@ impl fmt::Debug for ChessGame {
             }
         }
 
-        writeln!(f, "\nFEN: {}\n", self.game.current_position().to_string())?;
+        writeln!(f, "\nFEN: {}\n", self.game.current_position())?;
 
         #[cfg(not(feature = "colored-debug"))]
         writeln!(f, "\n♙ = white\n♟ = black\n")?;
@@ -137,15 +155,13 @@ impl fmt::Debug for ChessGame {
                     };
 
                     // Colorize pieces that are set but shouldn't be with red.
-                    let colored_symbol = if self.physical.get(square) == 1
+                    if self.physical.get(square) == 1
                         && (self.expected_white | self.expected_black).get(square) == 0
                     {
                         format!(" {} ", symbol).on_red()
                     } else {
                         colored_symbol
-                    };
-
-                    colored_symbol
+                    }
                 };
 
                 #[cfg(not(feature = "colored-debug"))]
@@ -161,46 +177,18 @@ impl fmt::Debug for ChessGame {
 }
 
 impl ChessGame {
-    pub fn new() -> Self {
-        let initial_game =
-            Game::from_str("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
-        let white = initial_game
-            .current_position()
-            .color_combined(Color::White)
-            .clone();
-        let black = initial_game
-            .current_position()
-            .color_combined(Color::Black)
-            .clone();
-
-        ChessGame {
-            game: initial_game,
-            expected_white: white,
-            expected_black: black,
-            physical: BitBoard::new(0),
-            state: ChessState::Idle,
-        }
-    }
-
     pub fn reset(&mut self, fen: &str) -> Result<(), ChessGameError> {
         self.game = Game::from_str(fen).map_err(ChessGameError::LoadingFen)?;
 
         // Reset expected physical board state based on the loaded game.
-        self.expected_white = self
-            .game
-            .current_position()
-            .color_combined(Color::White)
-            .clone();
-        self.expected_black = self
-            .game
-            .current_position()
-            .color_combined(Color::Black)
-            .clone();
+        self.expected_white = *self.game.current_position().color_combined(Color::White);
+        self.expected_black = *self.game.current_position().color_combined(Color::Black);
+
         Ok(())
     }
 
     pub fn expected_physical(&self) -> BitBoard {
-        return self.expected_white | self.expected_black;
+        self.expected_white | self.expected_black
     }
 
     /// A new pice got placed.
@@ -225,16 +213,8 @@ impl ChessGame {
 
                 // Update the expected physical board states.
                 // This includes any remove or castled pieces.
-                self.expected_white = self
-                    .game
-                    .current_position()
-                    .color_combined(Color::White)
-                    .clone();
-                self.expected_black = self
-                    .game
-                    .current_position()
-                    .color_combined(Color::Black)
-                    .clone();
+                self.expected_white = *self.game.current_position().color_combined(Color::White);
+                self.expected_black = *self.game.current_position().color_combined(Color::Black);
             }
             ChessState::Idle => {
                 // Do nothing. It is illegal to place a piece without removing one first.
@@ -268,18 +248,8 @@ impl ChessGame {
                 // Update the expected physical board states.
                 // This includes any remove pieces.
                 // The player will have to place the pice on the enemies square to continue the game.
-                self.expected_white = self
-                    .game
-                    .current_position()
-                    .color_combined(Color::White)
-                    .clone();
-                self.expected_black = self
-                    .game
-                    .current_position()
-                    .color_combined(Color::Black)
-                    .clone();
-
-                return;
+                self.expected_white = *self.game.current_position().color_combined(Color::White);
+                self.expected_black = *self.game.current_position().color_combined(Color::Black);
             }
             ChessState::Idle => {
                 // Check if it is a piece of the current player.
@@ -350,26 +320,26 @@ impl ChessGame {
             return last_occupied;
         }
 
-        if physical_board.0 > last_occupied.0 {
-            // If more bits are set than a piece must have been placed.
-            self.place_physical(Square::new(
-                last_occupied.get_different_bits(physical_board).first_one(),
-            ));
-            return self.expected_physical();
-        } else if physical_board.0 < last_occupied.0 {
-            // If less bits are set than a piece must have been removed.
-            self.remove_physical(Square::new(
-                last_occupied.get_different_bits(physical_board).first_one(),
-            ));
-            return self.expected_physical();
-        } else {
-            // If the same number of bits are set do nothing
-            return last_occupied;
+        match physical_board.0.cmp(&last_occupied.0) {
+            Greater => {
+                // If more bits are set, a piece must have been placed.
+                self.place_physical(Square::new(
+                    last_occupied.get_different_bits(physical_board).first_one(),
+                ));
+                self.expected_physical()
+            }
+            Less => {
+                // If fewer bits are set, a piece must have been removed.
+                self.remove_physical(Square::new(
+                    last_occupied.get_different_bits(physical_board).first_one(),
+                ));
+                self.expected_physical()
+            }
+            Equal => {
+                // If the same number of bits are set, do nothing.
+                last_occupied
+            }
         }
-    }
-
-    pub fn game(&self) -> &Game {
-        &self.game
     }
 }
 
@@ -379,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_new_game() {
-        let chess = ChessGame::new();
+        let chess = ChessGame::default();
         assert_eq!(chess.expected_white, BitBoard::new(65535));
 
         // 11111111
@@ -400,6 +370,6 @@ mod tests {
         // 00000000
         // 11111111
         // 11111111
-        assert_eq!(chess.game().side_to_move(), Color::White);
+        assert_eq!(chess.game.side_to_move(), Color::White);
     }
 }

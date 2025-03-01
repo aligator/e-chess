@@ -11,7 +11,7 @@ use esp_idf_svc::{
 };
 use log::*;
 use maud::{html, PreEscaped};
-use std::thread::sleep;
+use std::thread::{self, sleep};
 use std::time::Duration;
 
 struct WifiSettings {
@@ -19,7 +19,7 @@ struct WifiSettings {
     password: String,
 }
 
-fn page(body: String) -> String {
+pub fn page(body: String) -> String {
     html!(
         html {
             head {
@@ -33,9 +33,11 @@ fn page(body: String) -> String {
     .into_string()
 }
 
-pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
-    let mut server = EspHttpServer::new(&server::Configuration::default())?;
-    server.fn_handler("/", Method::Get, |request| {
+pub fn register_wifi_settings(
+    server: &mut EspHttpServer,
+    mut wifi_driver: EspWifi<'static>,
+) -> Result<()> {
+    server.fn_handler("/settings", Method::Get, |request| {
         let html: String = page(
             html!(
                 h1 { "E-Chess" }
@@ -56,7 +58,6 @@ pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
     })?;
 
     let (tx, rx) = std::sync::mpsc::channel();
-    let tx_clone = tx.clone();
 
     server.fn_handler("/connect", Method::Post, move |mut request| {
         // Read POST body
@@ -97,7 +98,7 @@ pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
 
         if !ssid.is_empty() && !password.is_empty() {
             // Send credentials through channel
-            let _ = tx_clone.send(WifiSettings { ssid, password });
+            let _ = tx.send(WifiSettings { ssid, password });
 
             // Return success page
             let html = page(
@@ -123,25 +124,30 @@ pub fn start_chess_server(wifi_driver: &mut EspWifi) -> Result<()> {
             request.into_ok_response()?.write_all(html.as_bytes())
         }
     })?;
-    // Wait for credentials from the handler
-    match rx.recv() {
-        Ok(settings) => {
-            let config = wifi::Configuration::Client(wifi::ClientConfiguration {
-                ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
-                password: heapless::String::try_from(settings.password.as_str()).unwrap(),
-                ..Default::default()
-            });
 
-            info!("Received new config - restart wifi");
+    thread::spawn(move || {
+        // Wait for events from the handler
+        match rx.recv() {
+            Ok(settings) => {
+                let config = wifi::Configuration::Client(wifi::ClientConfiguration {
+                    ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
+                    password: heapless::String::try_from(settings.password.as_str()).unwrap(),
+                    ..Default::default()
+                });
 
-            wifi_driver.stop()?;
-            wifi_driver.set_configuration(&config)?;
-            reset::restart();
+                info!("Received new config - restart wifi");
+
+                wifi_driver
+                    .set_configuration(&config)
+                    .expect("Failed to set configuration");
+                reset::restart();
+            }
+            Err(_) => {
+                info!("No credentials received");
+            }
         }
-        Err(_) => {
-            info!("No credentials received");
-        }
-    }
+    });
+
     Ok(())
 }
 
@@ -184,7 +190,7 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
     Ok(())
 }
 
-pub fn start_wifi(mut wifi_driver: EspWifi) -> Result<()> {
+pub fn start_wifi(mut wifi_driver: EspWifi<'static>) -> Result<EspHttpServer<'static>> {
     let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
         Ok(config) => {
             info!("Current Configuration: {:?}", config);
@@ -209,7 +215,10 @@ pub fn start_wifi(mut wifi_driver: EspWifi) -> Result<()> {
     } else {
         info!("Unknown Wifi Configuration");
     }
-    start_chess_server(&mut wifi_driver)?;
 
-    Ok(())
+    let mut server = EspHttpServer::new(&server::Configuration::default())?;
+
+    register_wifi_settings(&mut server, wifi_driver)?;
+
+    Ok(server)
 }
