@@ -11,7 +11,6 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
 use log::*;
 use maud::html;
-use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -19,6 +18,7 @@ use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 mod board;
 mod constants;
 mod display;
+mod web;
 mod wifi;
 
 /// Entry point to our application.
@@ -52,35 +52,29 @@ fn main() -> Result<()> {
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    let (game_tx, game_rx) = mpsc::channel::<chess::Game>();
+    let mut web = web::Web::new();
 
-    info!("Spawn wifi thread");
-    std::thread::spawn(|| -> anyhow::Result<()> {
-        let nvs = EspDefaultNvsPartition::take()?;
-        let sys_loop = EspSystemEventLoop::take()?;
-        let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs))?;
-        let mut server = wifi::start_wifi(wifi_driver)?;
+    let nvs = EspDefaultNvsPartition::take()?;
+    let sys_loop = EspSystemEventLoop::take()?;
+    let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs))?;
 
-        server.fn_handler("/", Method::Get, |request| {
-            let html = wifi::page(
-                html!(
-                    h1 { "E-Chess" }
-                    p { "Welcome to E-Chess!" }
-                    p { "Please click the button below to configure the WiFi settings." }
-                    form action="/settings" method="GET" {
-                input type="submit" value="Configure WiFi" {}
-                    }
-                )
-                .into_string(),
-            );
+    let mut server = wifi::start_wifi(wifi_driver)?;
 
-            request.into_ok_response()?.write_all(html.as_bytes())
-        })?;
+    server.fn_handler("/", Method::Get, |request| {
+        let html = wifi::page(
+            html!(
+                h1 { "E-Chess" }
+                p { "Welcome to E-Chess!" }
+                a href="/settings" { "Connect to WiFi" }
+                a href="/game" { "Game" }
+            )
+            .into_string(),
+        );
 
-        loop {
-            sleep(Duration::from_secs(1));
-        }
-    });
+        request.into_ok_response()?.write_all(html.as_bytes())
+    })?;
+
+    web.register(&mut server)?;
 
     info!("Start app loop");
     loop {
@@ -88,12 +82,20 @@ fn main() -> Result<()> {
         match board.tick() {
             Ok(physical) => {
                 let _ = chess.tick(physical);
-                game_tx.send(chess.game.clone())?;
+                web.tick(chess.game.clone());
                 display.tick(physical, &chess)?;
             }
             Err(e) => {
                 error!("Error: {:?}", e);
             }
+        }
+
+        // #[cfg(feature = "no_board")]
+        {
+            let game = chess::Game::default();
+            let _ = chess.tick(*game.current_position().combined());
+            web.tick(chess.game.clone());
+            display.tick(*game.current_position().combined(), &chess)?;
         }
 
         sleep(Duration::from_millis(100));
