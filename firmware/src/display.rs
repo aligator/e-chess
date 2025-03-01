@@ -31,11 +31,15 @@ impl BitBoardDiff for BitBoard {
 
 pub struct Display<'a> {
     leds: Ws2812Esp32Rmt<'a>,
+    previous_state: Option<(BitBoard, BitBoard)>,
 }
 
 impl<'a> Display<'a> {
     pub fn new(leds: Ws2812Esp32Rmt<'a>) -> Self {
-        Self { leds }
+        Self {
+            leds,
+            previous_state: None,
+        }
     }
 
     pub fn setup(&self) -> Result<()> {
@@ -55,22 +59,30 @@ impl<'a> Display<'a> {
     }
 
     pub fn tick(&mut self, physical: BitBoard, game: &ChessGame) -> Result<()> {
-        let diff = game.expected_physical().diff(physical);
-        let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
+        let expected = game.expected_physical();
 
-        diff.missing.for_each(|square| {
-            pixels[Self::get_pixel(square)] = RGB { r: 20, g: 20, b: 0 };
-        });
+        if self
+            .previous_state
+            .map_or(true, |prev| prev != (physical, expected))
+        {
+            let diff = expected.diff(physical);
+            let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
 
-        diff.added.for_each(|square| {
-            pixels[Self::get_pixel(square)] = RGB { r: 20, g: 0, b: 0 };
-        });
+            diff.missing.for_each(|square| {
+                pixels[Self::get_pixel(square)] = RGB { r: 20, g: 20, b: 0 };
+            });
 
-        game.get_possible_moves().for_each(|square| {
-            pixels[Self::get_pixel(square)] = RGB { r: 0, g: 20, b: 0 };
-        });
+            diff.added.for_each(|square| {
+                pixels[Self::get_pixel(square)] = RGB { r: 20, g: 0, b: 0 };
+            });
 
-        self.leds.write_nocopy(pixels)?;
+            game.get_possible_moves().for_each(|square| {
+                pixels[Self::get_pixel(square)] = RGB { r: 0, g: 20, b: 0 };
+            });
+
+            self.leds.write_nocopy(pixels)?;
+            self.previous_state = Some((physical, expected));
+        }
 
         Ok(())
     }
