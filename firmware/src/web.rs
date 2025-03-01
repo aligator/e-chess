@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess::{BitBoard, File, Game, Rank, Square};
+use chess::{BoardStatus, File, Game, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::{html, PreEscaped};
@@ -16,17 +16,23 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
         let game = game.lock().unwrap();
 
         let html = if let Some(game) = &*game {
-            let pieces = game.current_position();
+            let game_state = game.current_position();
+            let active_color = game.side_to_move();
+            let status = match game_state.status() {
+                BoardStatus::Checkmate => "Checkmate!",
+                BoardStatus::Stalemate => "Stalemate",
+                BoardStatus::Ongoing => "In progress",
+            };
 
             let mut table: String = String::new();
 
             for rank in (0..8).rev() {
-                table += &format!("<tr><td>{}</td>", rank + 1);
+                table += &format!("<tr><td class='coord'>{}</td>", rank + 1);
                 for file in 0..8 {
                     let square =
                         Square::make_square(Rank::from_index(rank), File::from_index(file));
-                    let piece = pieces.piece_on(square);
-                    let color = pieces.color_on(square);
+                    let piece = game_state.piece_on(square);
+                    let color = game_state.color_on(square);
                     let piece = match piece {
                         Some(chess::Piece::Pawn) => "♟",
                         Some(chess::Piece::Rook) => "♜",
@@ -39,30 +45,125 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
 
                     let piece = match color {
                         Some(chess::Color::White) => {
-                            format!("<span style='color: gray'>{}</span>", piece)
+                            format!("<span class='white-piece'>{}</span>", piece)
                         }
                         Some(chess::Color::Black) => {
-                            format!("<span style='color: black'>{}</span>", piece)
+                            format!("<span class='black-piece'>{}</span>", piece)
                         }
                         None => piece.to_string(),
                     };
 
-                    table += &format!("<td>{}</td>", piece);
+                    let is_dark = (rank + file) % 2 == 0;
+                    let cell_class = if is_dark { "dark-square" } else { "light-square" };
+                    table += &format!("<td class='{}'>{}</td>", cell_class, piece);
                 }
                 table += "</tr>";
             }
-            table += "<tr><td/><td>a</td><td>b</td><td>c</d><td>d</td><td>e</td><td>f</td><td>g</td><td>h</td></tr>";
+            table += "<tr><td></td><td class='coord'>a</td><td class='coord'>b</td><td class='coord'>c</td><td class='coord'>d</td><td class='coord'>e</td><td class='coord'>f</td><td class='coord'>g</td><td class='coord'>h</td></tr>";
             
             page(
                 html!(
+                    style { r#"
+                        body { 
+                            font-family: Arial, sans-serif;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            background-color: #f0f0f0;
+                        }
+                        h1 { 
+                            color: #333;
+                            margin-bottom: 1em;
+                        }
+                        table {
+                            border-collapse: collapse;
+                            margin: 20px;
+                        }
+                        td {
+                            width: 50px;
+                            height: 50px;
+                            text-align: center;
+                            font-size: 2em;
+                        }
+                        .coord {
+                            font-size: 1em;
+                            padding: 5px;
+                            color: #666;
+                        }
+                        .dark-square {
+                            background-color: #b58863;
+                        }
+                        .light-square {
+                            background-color: #f0d9b5;
+                        }
+                        .white-piece {
+                            color: #fff;
+                            text-shadow: 0 0 2px #000;
+                        }
+                        .black-piece {
+                            color: #000;
+                            text-shadow: 0 0 2px #fff;
+                        }
+                        .refresh-control {
+                            margin: 20px;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            font-family: Arial, sans-serif;
+                        }
+                        .refresh-control input {
+                            width: 20px;
+                            height: 20px;
+                        }
+                        .game-info {
+                            margin: 20px;
+                            padding: 15px;
+                            background-color: white;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }
+                        .game-info p {
+                            margin: 5px 0;
+                            font-size: 1.1em;
+                        }
+                        .status {
+                            font-weight: bold;
+                            color: #d63031;
+                        }
+                        .active-player {
+                            color: #2d3436;
+                        }
+                    "# }
                     h1 { "E-Chess" }
-                    p {"Current game state"}
+                    div class="game-info" {
+                        p class="status" { (status) }
+                        p class="active-player" { 
+                            "Active player: " 
+                            (match active_color {
+                                chess::Color::White => "White",
+                                chess::Color::Black => "Black",
+                            })
+                        }
+                    }
                     table { (PreEscaped(table)) }
-                    // small js to autoreload the page every 5 seconds
+                    div class="refresh-control" {
+                        input type="checkbox" id="autoRefresh" checked="checked" {}
+                        label for="autoRefresh" { "Auto refresh" }
+                    }
                     script { r#"
-                        setTimeout(function() {
-                            location.reload();
-                        }, 5000);
+                        function scheduleRefresh() {
+                            if (document.getElementById('autoRefresh').checked) {
+                                setTimeout(function() {
+                                    location.reload();
+                                }, 5000);
+                            }
+                        }
+                        
+                        scheduleRefresh();
+                        
+                        document.getElementById('autoRefresh').addEventListener('change', function() {
+                            scheduleRefresh();
+                        });
                     "# }
                 )
                 .into_string(),

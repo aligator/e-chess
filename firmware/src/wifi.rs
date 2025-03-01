@@ -26,6 +26,78 @@ pub fn page(body: String) -> String {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "E-Chess" }
+                style { r#"
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        background-color: #f0f0f0;
+                        margin: 0;
+                        padding: 20px;
+                    }
+                    h1 {
+                        color: #333;
+                        margin-bottom: 1em;
+                    }
+                    .container {
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        max-width: 400px;
+                        width: 100%;
+                    }
+                    form {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 15px;
+                    }
+                    .form-group {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 5px;
+                    }
+                    label {
+                        color: #2d3436;
+                        font-weight: bold;
+                    }
+                    input[type="text"],
+                    input[type="password"] {
+                        padding: 10px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        font-size: 16px;
+                    }
+                    input[type="submit"] {
+                        background-color: #b58863;
+                        color: white;
+                        border: none;
+                        padding: 12px;
+                        border-radius: 4px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin-top: 10px;
+                    }
+                    input[type="submit"]:hover {
+                        background-color: #9e7657;
+                    }
+                    .message {
+                        text-align: center;
+                        margin-bottom: 20px;
+                        line-height: 1.5;
+                    }
+                    .error {
+                        color: #d63031;
+                    }
+                    a {
+                        color: #b58863;
+                        text-decoration: none;
+                    }
+                    a:hover {
+                        text-decoration: underline;
+                    }
+                "# }
             }
             body { (PreEscaped(body)) }
         }
@@ -41,15 +113,21 @@ pub fn register_wifi_settings(
         let html: String = page(
             html!(
                 h1 { "E-Chess" }
-                p { "Please enter the SSID and password of the network you want to connect to." }
-                form action="/connect" method="POST" {
-                    label for="ssid" { "SSID:" }
-                    input type="text" id="ssid" name="ssid" {}
-                    br {}
-                    label for="password" { "Password:" }
-                    input type="password" id="password" name="password" {}
-                    br {}
-                    input type="submit" value="Connect" {}
+                div class="container" {
+                    p class="message" { 
+                        "Please enter the SSID and password of the network you want to connect to." 
+                    }
+                    form action="/connect" method="POST" {
+                        div class="form-group" {
+                            label for="ssid" { "SSID:" }
+                            input type="text" id="ssid" name="ssid" placeholder="Network name" {}
+                        }
+                        div class="form-group" {
+                            label for="password" { "Password:" }
+                            input type="password" id="password" name="password" placeholder="Network password" {}
+                        }
+                        input type="submit" value="Connect" {}
+                    }
                 }
             )
             .into_string(),
@@ -103,9 +181,13 @@ pub fn register_wifi_settings(
             // Return success page
             let html = page(
                 html!(
-                    h1 { "Success" }
-                    p { "WiFi Settings Saved" }
-                    p { "Your device will now attempt to connect to the network." }
+                    h1 { "E-Chess" }
+                    div class="container" {
+                        p class="message" { "WiFi Settings Saved" }
+                        p class="message" {
+                            "Your device will now attempt to connect to the network."
+                        }
+                    }
                 )
                 .into_string(),
             );
@@ -115,9 +197,11 @@ pub fn register_wifi_settings(
             // Return error page
             let html = page(
                 html!(
-                    h1 { "Error" }
-                    p { "Both SSID and password are required." }
-                    a href="/" { "Go back" }
+                    h1 { "E-Chess" }
+                    div class="container" {
+                        p class="message error" { "Both SSID and password are required." }
+                        a href="/settings" { "Go back" }
+                    }
                 )
                 .into_string(),
             );
