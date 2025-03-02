@@ -18,7 +18,7 @@ impl<'a> Board<'a> {
         // Configure GPA = input
         // Configure GPB = output
         let msg = &[0x00, 0xFF, 0x00];
-        self.i2c.write(self.addr, msg, BLOCK)?;
+        self.i2c.write(self.addr, msg, BLOCK).expect("Failed to write to MCP23017. You may use the feature 'no_board' for debugging the app without a real board");
         // Enable Pull ups for the inputs
         let pullup_msg = &[0x0C, 0xFF]; // 0x0D is GPPUB register, 0xFF enables pull-ups for all pins
         self.i2c.write(self.addr, pullup_msg, BLOCK)?;

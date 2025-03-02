@@ -1,6 +1,7 @@
 use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
+use esp_idf_svc::nvs::NvsPartitionId;
 use esp_idf_svc::wifi::{self};
 use esp_idf_svc::{
     http::{
@@ -14,9 +15,20 @@ use maud::{html, PreEscaped};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
+use crate::storage::Storage;
+
 struct WifiSettings {
     ssid: String,
     password: String,
+}
+
+struct AppSettings {
+    api_token: String,
+}
+
+enum Event {
+    WifiSettings(WifiSettings),
+    AppSettings(AppSettings),
 }
 
 pub fn page(body: String) -> String {
@@ -105,9 +117,10 @@ pub fn page(body: String) -> String {
     .into_string()
 }
 
-pub fn register_wifi_settings(
+pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
     server: &mut EspHttpServer,
     mut wifi_driver: EspWifi<'static>,
+    mut storage: Storage<T>,
 ) -> Result<()> {
     server.fn_handler("/settings", Method::Get, |request| {
         let html: String = page(
@@ -129,6 +142,18 @@ pub fn register_wifi_settings(
                         input type="submit" value="Connect" {}
                     }
                 }
+                div class="container" {
+                    p class="message" {
+                        "Set here the leechess api token." 
+                    }
+                    form action="/save_settings" method="POST" {
+                        div class="form-group" {
+                            label for="api_token" { "API Token:" }
+                            input type="text" id="api_token" name="api_token" placeholder="API Token" maxlength="24" {}
+                        }
+                            input type="submit" value="Save" {}
+                    }
+                }
             )
             .into_string(),
         );
@@ -137,6 +162,7 @@ pub fn register_wifi_settings(
 
     let (tx, rx) = std::sync::mpsc::channel();
 
+    let tx_wifi = tx.clone();
     server.fn_handler("/connect", Method::Post, move |mut request| {
         // Read POST body
         let mut buf = [0u8; 1024];
@@ -176,7 +202,7 @@ pub fn register_wifi_settings(
 
         if !ssid.is_empty() && !password.is_empty() {
             // Send credentials through channel
-            let _ = tx.send(WifiSettings { ssid, password });
+            let _ = tx_wifi.send(Event::WifiSettings(WifiSettings { ssid, password }));
 
             // Return success page
             let html = page(
@@ -209,23 +235,75 @@ pub fn register_wifi_settings(
         }
     })?;
 
+    let tx_settings = tx.clone();
+    server.fn_handler("/save_settings", Method::Post, move |mut request| {
+        // Read POST body
+        let mut buf = [0u8; 1024];
+        let size = request.read(&mut buf)?;
+        let body = std::str::from_utf8(&buf[..size]).expect("invalid body on /save_settings");
+        // Parse form data
+        let params: Vec<(&str, &str)> = body
+            .split('&')
+            .filter_map(|pair| {
+                let mut parts = pair.split('=');
+                match (parts.next(), parts.next()) {
+                    (Some(key), Some(value)) => Some((key, value)),
+                    _ => None,
+                }
+            })
+            .collect();
+        let mut api_token = String::new();
+        for (key, value) in params {
+            match key {
+                "api_token" => {
+                    api_token = urlencoding::decode(value)
+                        .map(|s| s.into_owned())
+                        .unwrap_or_default()
+                }
+                _ => {}
+            }
+        }
+        // Save api token
+        let _ = tx_settings.send(Event::AppSettings(AppSettings { api_token }));
+
+        // Return success page
+        let html = page(
+            html!(
+                h1 { "E-Chess" }
+                div class="container" {
+                    p class="message" { "App Settings Saved" }
+                }
+            )
+            .into_string(),
+        );
+
+        request.into_ok_response()?.write_all(html.as_bytes())
+    })?;
+
     thread::spawn(move || {
         // Wait for events from the handler
         match rx.recv() {
-            Ok(settings) => {
-                let config = wifi::Configuration::Client(wifi::ClientConfiguration {
-                    ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
-                    password: heapless::String::try_from(settings.password.as_str()).unwrap(),
-                    ..Default::default()
-                });
+            Ok(event) => match event {
+                Event::WifiSettings(settings) => {
+                    let config = wifi::Configuration::Client(wifi::ClientConfiguration {
+                        ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
+                        password: heapless::String::try_from(settings.password.as_str()).unwrap(),
+                        ..Default::default()
+                    });
 
-                info!("Received new config - restart wifi");
+                    info!("Received new config - restart wifi");
 
-                wifi_driver
-                    .set_configuration(&config)
-                    .expect("Failed to set configuration");
-                reset::restart();
-            }
+                    wifi_driver
+                        .set_configuration(&config)
+                        .expect("Failed to set configuration");
+                    reset::restart();
+                }
+                Event::AppSettings(settings) => {
+                    info!("Received new api token: {}", settings.api_token);
+                    storage.set_str("api_token", &settings.api_token).unwrap();
+                    reset::restart();
+                }
+            },
             Err(_) => {
                 info!("No credentials received");
             }
@@ -274,7 +352,10 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
     Ok(())
 }
 
-pub fn start_wifi(mut wifi_driver: EspWifi<'static>) -> Result<EspHttpServer<'static>> {
+pub fn start_wifi<T: NvsPartitionId + 'static>(
+    mut wifi_driver: EspWifi<'static>,
+    storage: Storage<T>,
+) -> Result<EspHttpServer<'static>> {
     let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
         Ok(config) => {
             info!("Current Configuration: {:?}", config);
@@ -302,7 +383,7 @@ pub fn start_wifi(mut wifi_driver: EspWifi<'static>) -> Result<EspHttpServer<'st
 
     let mut server = EspHttpServer::new(&server::Configuration::default())?;
 
-    register_wifi_settings(&mut server, wifi_driver)?;
+    register_wifi_settings(&mut server, wifi_driver, storage)?;
 
     Ok(server)
 }

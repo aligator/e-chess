@@ -13,11 +13,13 @@ use log::*;
 use maud::html;
 use std::thread::sleep;
 use std::time::Duration;
+use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod board;
 mod constants;
 mod display;
+mod storage;
 mod web;
 mod wifi;
 
@@ -56,16 +58,20 @@ fn main() -> Result<()> {
 
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
-    let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs))?;
+    let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs.clone()))?;
+    let storage = Storage::new(nvs.clone())?;
 
-    let mut server = wifi::start_wifi(wifi_driver)?;
+    let token = storage.get_str::<25>("api_token")?;
+    info!("API Token: {:?}", token);
+
+    let mut server = wifi::start_wifi(wifi_driver, storage)?;
 
     server.fn_handler("/", Method::Get, |request| {
         let html = wifi::page(
             html!(
                 h1 { "E-Chess" }
                 p { "Welcome to E-Chess!" }
-                a href="/settings" { "Connect to WiFi" }
+                a href="/settings" { "Settings" }
                 a href="/game" { "Game" }
             )
             .into_string(),
