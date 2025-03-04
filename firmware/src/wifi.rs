@@ -2,7 +2,7 @@ use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
 use esp_idf_svc::nvs::NvsPartitionId;
-use esp_idf_svc::wifi::{self};
+use esp_idf_svc::wifi::{self, Configuration};
 use esp_idf_svc::{
     http::{
         server::{self, EspHttpServer},
@@ -331,11 +331,29 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
     while !wifi_driver.is_connected()? {
         if count > 30 {
             info!("Failed to connect to Wifi");
-            info!("Starting Access Point");
-            let config = ap_config();
-            wifi_driver.set_configuration(&config)?;
+            info!("Starting Access Point while preserving settings");
 
-            reset::restart();
+            // Get current configuration and extract client config
+            let current_config = wifi_driver.get_configuration()?;
+            let client_config = if let Configuration::Client(conf) = current_config {
+                conf
+            } else {
+                return Ok(());
+            };
+
+            // Create mixed configuration
+            let ap_config = if let Configuration::AccessPoint(conf) = ap_config() {
+                conf
+            } else {
+                return Ok(());
+            };
+
+            // Set mixed configuration
+            let config = wifi::Configuration::Mixed(client_config, ap_config);
+            wifi_driver.set_configuration(&config)?;
+            wifi_driver.start()?;
+
+            return Ok(());
         }
 
         info!("Waiting for Wifi connection...");
@@ -346,7 +364,7 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
     if wifi_driver.is_connected()? {
         info!("Connected to Wifi");
     } else {
-        info!("Failed to connect to Wifi, enabled Accesspoint instead");
+        info!("Failed to connect to Wifi, enabled Access Point while preserving settings");
     }
 
     Ok(())
