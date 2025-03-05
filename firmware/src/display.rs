@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chess::{BitBoard, Square};
-use chess_game::game::ChessGame;
+use chess_game::{chess_connector::ChessConnector, game::ChessGame};
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
@@ -58,7 +58,11 @@ impl<'a> Display<'a> {
         pixel
     }
 
-    pub fn tick(&mut self, physical: BitBoard, game: &ChessGame) -> Result<()> {
+    pub fn tick<Connection: ChessConnector>(
+        &mut self,
+        physical: BitBoard,
+        game: &ChessGame<Connection>,
+    ) -> Result<()> {
         let expected = game.expected_physical();
 
         if self

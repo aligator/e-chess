@@ -1,5 +1,6 @@
 use anyhow::Result;
 use board::Board;
+use chess_game::chess_connector::LocalChessConnector;
 use chess_game::game::ChessGame;
 use esp_idf_hal::i2c::*;
 use esp_idf_hal::io::Write;
@@ -42,7 +43,7 @@ fn main() -> Result<()> {
     let config = I2cConfig::new().baudrate(100.kHz().into());
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
 
-    let mut chess: ChessGame = ChessGame::default();
+    let mut chess: ChessGame<LocalChessConnector> = ChessGame::new(LocalChessConnector::new(), "")?;
 
     let ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
 

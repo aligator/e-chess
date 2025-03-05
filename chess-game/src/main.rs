@@ -9,9 +9,11 @@ mod game;
 fn main() {
     println!("Chess board simulator");
 
-    let mut game = ChessGame::new(LocalChessConnector::new());
-    game.reset("r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1")
-        .unwrap();
+    let mut game = ChessGame::new(
+        LocalChessConnector::new(),
+        "r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1",
+    )
+    .unwrap();
 
     let mut physical_board = game.expected_physical();
     // Start with all set correctly.
