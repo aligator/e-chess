@@ -1,4 +1,5 @@
 use crate::bitboard_extensions::*;
+use crate::chess_connector::{ChessConnector, ChessConnectorError};
 use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
@@ -10,6 +11,9 @@ use thiserror::Error;
 pub enum ChessGameError {
     #[error("board could not be loaded by the given FEN")]
     LoadingFen(#[from] chess::InvalidError),
+
+    #[error("game could not be loaded")]
+    LoadingGame(#[from] ChessConnectorError),
 }
 
 #[derive(Clone, Copy)]
@@ -18,35 +22,36 @@ pub enum ChessState {
     MovingPiece { piece: Piece, from: Square },
 }
 
-pub struct ChessGame {
+pub struct ChessGame<Connection: ChessConnector> {
+    /// The local game representation.
+    /// It uses the chess lib that implements the rules of chess.
+    /// This makes it
+    /// 1. possible to run a fully local chess game
+    /// 2. possible to validate moves before they are sent to the server
     pub game: Game,
 
-    pub expected_white: BitBoard, // Tracks the expected physical pieces for white
-    pub expected_black: BitBoard, // Tracks the expected physical pieces for black
+    /// The connection to the server.
+    /// It is used to sync the game state with the server.
+    /// It also provides events the local game listens to.
+    /// For example if the opponent made a move, the local game will be notified.
+    pub connection: Connection,
 
+    /// The expected physical board state for white.
+    pub expected_white: BitBoard,
+
+    /// The expected physical board state for black.
+    pub expected_black: BitBoard,
+
+    /// The physical board state.
+    /// If it differs too much from the expected state, the game pauses until it matches again.
     pub physical: BitBoard,
 
+    /// The current physical state of the game.
+    /// It indicates if a pice is currently being moved physically.
     pub state: ChessState,
 }
 
-impl Default for ChessGame {
-    fn default() -> Self {
-        let initial_game =
-            Game::from_str("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
-        let white = *initial_game.current_position().color_combined(Color::White);
-        let black = *initial_game.current_position().color_combined(Color::Black);
-
-        ChessGame {
-            game: initial_game,
-            expected_white: white,
-            expected_black: black,
-            physical: BitBoard::new(0),
-            state: ChessState::Idle,
-        }
-    }
-}
-
-impl fmt::Debug for ChessGame {
+impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let board: Board = self.game.current_position();
         // Add header showing whose turn it is
@@ -176,9 +181,25 @@ impl fmt::Debug for ChessGame {
     }
 }
 
-impl ChessGame {
-    pub fn reset(&mut self, fen: &str) -> Result<(), ChessGameError> {
-        self.game = Game::from_str(fen).map_err(ChessGameError::LoadingFen)?;
+impl<Connection: ChessConnector> ChessGame<Connection> {
+    pub fn new(connection: Connection, id: &str) -> Result<Self, ChessGameError> {
+        let initial_game = Game::from_str(connection.load_game(id)?.as_str())?;
+        let white = *initial_game.current_position().color_combined(Color::White);
+        let black = *initial_game.current_position().color_combined(Color::Black);
+
+        Ok(ChessGame {
+            game: initial_game,
+            connection: connection,
+            expected_white: white,
+            expected_black: black,
+            physical: BitBoard::new(0),
+            state: ChessState::Idle,
+        })
+    }
+
+    pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
+        self.game = Game::from_str(self.connection.load_game(id)?.as_str())
+            .map_err(ChessGameError::LoadingFen)?;
 
         // Reset expected physical board state based on the loaded game.
         self.expected_white = *self.game.current_position().color_combined(Color::White);
@@ -198,13 +219,27 @@ impl ChessGame {
             ChessState::MovingPiece { piece: _, from } => {
                 // Allow just replacing it on the same square.
                 if from != to {
-                    let chess_move = ChessMove::new(from, to, None);
+                    // TODO: make promotion piece somehow configurable.
+                    let chess_move = ChessMove::new(from, to, Some(Piece::Queen));
 
-                    // Execute move. If it is illegal do not proceed.
-                    // TODO: test this on the micro controller. It may be slow!
-                    if !self.game.make_move(chess_move) {
-                        // Do nothing. It is illegal to place a piece on an illegal square.
+                    // First check if the move is legal.
+                    if !self.game.current_position().legal(chess_move) {
                         return;
+                    }
+
+                    // When move should be legal on our side, send it to the server.
+                    if !self.connection.make_move(chess_move) {
+                        // If it was not successful, abort.
+                        return;
+                    }
+
+                    // If it was successful, execute the move also locally
+                    // -> should not fail as it is legal.
+                    if !self.game.make_move(chess_move) {
+                        panic!(
+                            "Move was legal but could not be executed locally. Should not happen. {:?}",
+                            chess_move
+                        );
                     }
                 }
 
@@ -345,11 +380,13 @@ impl ChessGame {
 
 #[cfg(test)]
 mod tests {
+    use crate::chess_connector::LocalChessConnector;
+
     use super::*;
 
     #[test]
     fn test_new_game() {
-        let chess = ChessGame::default();
+        let chess = ChessGame::new(LocalChessConnector::new(), "").unwrap();
         assert_eq!(chess.expected_white, BitBoard::new(65535));
 
         // 11111111

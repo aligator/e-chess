@@ -1,13 +1,15 @@
+use chess_connector::LocalChessConnector;
 use game::ChessGame;
 use std::io::{self, Write};
 
 mod bitboard_extensions;
+mod chess_connector;
 mod game;
 
 fn main() {
     println!("Chess board simulator");
 
-    let mut game = ChessGame::default();
+    let mut game = ChessGame::new(LocalChessConnector::new());
     game.reset("r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1")
         .unwrap();
 
