@@ -1,10 +1,14 @@
 use chess::ChessMove;
 use thiserror::Error;
 
+use crate::request::RequestError;
+
 #[derive(Error, Debug)]
 pub enum ChessConnectorError {
     #[error("game not found")]
     GameNotFound,
+    #[error("request error")]
+    RequestError(#[from] RequestError),
 }
 
 pub trait ChessConnector {

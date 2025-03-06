@@ -5,6 +5,8 @@ use std::io::{self, Write};
 mod bitboard_extensions;
 mod chess_connector;
 mod game;
+mod lichess;
+mod request;
 
 fn main() {
     println!("Chess board simulator");
