@@ -8,6 +8,9 @@ chess = { git = "https://github.com/aligator/chess-rs" }
 thiserror = "2.0.9"
 colored = { version = "3.0", optional = true }
 serde_json = "1.0.140"
+reqwest = { version = "0.12.12", features = ["stream"] }
+tokio = { version = "1.43.0", features = ["full"] }
+futures-util = "0.3.31"
 
 [features]
 default = ["colored-debug"]

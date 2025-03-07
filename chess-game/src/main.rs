@@ -1,5 +1,7 @@
-use chess_connector::LocalChessConnector;
 use game::ChessGame;
+use lichess::LichessConnector;
+use request::Request;
+use std::future::Future;
 use std::io::{self, Write};
 
 mod bitboard_extensions;
@@ -7,15 +9,34 @@ mod chess_connector;
 mod game;
 mod lichess;
 mod request;
+mod requester;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("Chess board simulator");
 
-    let mut game = ChessGame::new(
-        LocalChessConnector::new(),
-        "r3kbnr/pbpqpppp/2np4/1p6/P7/4P3/1PPP1PPP/RNBQKBNR w KQkq - 0 1",
-    )
-    .unwrap();
+    let api_key = std::env::var("LICHESS_API_KEY").unwrap_or_else(|_| {
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() < 2 {
+            eprintln!(
+                "Please provide API key as argument or set LICHESS_API_KEY environment variable"
+            );
+            std::process::exit(1);
+        }
+        args[1].clone()
+    });
+
+    let id = std::env::var("GAME_ID").unwrap_or_else(|_| {
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() < 3 {
+            String::new()
+        } else {
+            args[2].clone()
+        }
+    });
+
+    let mut game =
+        ChessGame::new(LichessConnector::new(Request { api_key: api_key }), &id).unwrap();
 
     let mut physical_board = game.expected_physical();
     // Start with all set correctly.
