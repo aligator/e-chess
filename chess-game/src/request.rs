@@ -45,18 +45,14 @@ impl Requester for Request {
     }
 
     fn post(&self, url: &str, body: &str) -> Result<String, RequestError> {
-        println!("DEBUG: Making POST request to {}", url);
         // Using a channel to get the result from the async operation
         let (tx, rx) = std::sync::mpsc::channel();
         let api_key = self.api_key.clone();
         let url = url.to_string();
         let body = body.to_string();
 
-        println!("DEBUG: Request body: {}", body);
-
         // Spawn the async operation in the existing runtime
         tokio::spawn(async move {
-            println!("DEBUG: Sending request to {} with authorization", url);
             let client = reqwest::Client::new();
             let result = client
                 .post(&url)
@@ -66,26 +62,17 @@ impl Requester for Request {
                 .await;
 
             match result {
-                Ok(response) => {
-                    println!(
-                        "DEBUG: Received response with status: {}",
-                        response.status()
-                    );
-                    match response.text().await {
-                        Ok(text) => {
-                            println!("DEBUG: Received response text: {}", text);
-                            let _ = tx.send(Ok(text));
-                        }
-                        Err(e) => {
-                            println!("DEBUG: Error parsing response text: {}", e);
-                            let _ = tx.send(Err(RequestError::from(
-                                Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-                            )));
-                        }
+                Ok(response) => match response.text().await {
+                    Ok(text) => {
+                        let _ = tx.send(Ok(text));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Err(RequestError::from(
+                            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
+                        )));
+                    }
+                },
                 Err(e) => {
-                    println!("DEBUG: Error sending request: {}", e);
                     let _ = tx.send(Err(RequestError::from(
                         Box::new(e) as Box<dyn std::error::Error + Send + Sync>
                     )));
@@ -93,7 +80,6 @@ impl Requester for Request {
             }
         });
 
-        println!("DEBUG: Waiting for response");
         // Wait for the response
         let result = rx
             .recv()
@@ -102,11 +88,6 @@ impl Requester for Request {
                 "Request timeout",
             ))
                 as Box<dyn std::error::Error + Send + Sync>)));
-
-        match &result {
-            Ok(_) => println!("DEBUG: Received successful response"),
-            Err(e) => println!("DEBUG: Request failed with error: {}", e),
-        }
 
         result
     }

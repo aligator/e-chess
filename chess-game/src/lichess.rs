@@ -128,7 +128,6 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
             .recv()
             .map_err(|_| ChessConnectorError::GameNotFound)?;
 
-        println!("{}", first_response);
         let game = self.parse_game(first_response)?;
 
         self.id = Some(id.to_string());
@@ -159,8 +158,6 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
     fn tick(&self) -> Result<Option<String>, ChessConnectorError> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
-                println!("EVENT '{}'", event);
-
                 // parse_game now handles both game responses and game state updates
                 let game = self.parse_game(event)?;
 
@@ -181,7 +178,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
                             self.make_move(chess_move);
                         }
                         Err(e) => {
-                            println!("Error parsing move '{}': {:?}", last_move, e);
+                            return Err(ChessConnectorError::InvalidResponse(e.to_string()));
                         }
                     }
 
