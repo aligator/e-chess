@@ -182,8 +182,8 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
 }
 
 impl<Connection: ChessConnector> ChessGame<Connection> {
-    pub fn new(connection: Connection, id: &str) -> Result<Self, ChessGameError> {
-        let initial_game = Game::from_str(connection.load_game(id)?.as_str())?;
+    pub fn new(mut connection: Connection, id: &str) -> Result<Self, ChessGameError> {
+        let initial_game = connection.load_game(id)?;
         let white = *initial_game.current_position().color_combined(Color::White);
         let black = *initial_game.current_position().color_combined(Color::Black);
 
@@ -198,8 +198,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
-        self.game = Game::from_str(self.connection.load_game(id)?.as_str())
-            .map_err(ChessGameError::LoadingFen)?;
+        self.game = self.connection.load_game(id)?;
 
         // Reset expected physical board state based on the loaded game.
         self.expected_white = *self.game.current_position().color_combined(Color::White);
@@ -217,6 +216,11 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     fn place_physical(&mut self, to: Square) {
         match self.state {
             ChessState::MovingPiece { piece: _, from } => {
+                // Do the move on the connection.
+                if !self.connection.make_move(ChessMove::new(from, to, None)) {
+                    return;
+                }
+
                 // Allow just replacing it on the same square.
                 if from != to {
                     // TODO: make promotion piece somehow configurable.
@@ -331,7 +335,13 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
-    pub fn tick(&mut self, physical_board: BitBoard) -> BitBoard {
+    pub fn tick(&mut self, physical_board: BitBoard) -> Result<BitBoard, ChessGameError> {
+        // Tick the connection to get events until there is no more event.
+        while let Some(event) = self.connection.tick()? {
+            // event is the last move
+            self.game.make_move(ChessMove::from_str(&event).unwrap());
+        }
+
         // Save current physical board for visualization.
         self.physical = physical_board;
 
@@ -340,7 +350,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
         // If there is already a winner, just do nothing.
         if self.game.result().is_some() {
-            return last_occupied;
+            return Ok(last_occupied);
         }
 
         if last_occupied.only_one_bit_set_to_one() {
@@ -352,7 +362,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
             // That would be the case if the player moves the pice in a way that the reeds of both field change
             // their state at the same time.
             // However as I am not sure if that will be physically possible, I will leave it out for now.
-            return last_occupied;
+            return Ok(last_occupied);
         }
 
         match physical_board.0.cmp(&last_occupied.0) {
@@ -361,18 +371,18 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
                 self.place_physical(Square::new(
                     last_occupied.get_different_bits(physical_board).first_one(),
                 ));
-                self.expected_physical()
+                Ok(self.expected_physical())
             }
             Less => {
                 // If fewer bits are set, a piece must have been removed.
                 self.remove_physical(Square::new(
                     last_occupied.get_different_bits(physical_board).first_one(),
                 ));
-                self.expected_physical()
+                Ok(self.expected_physical())
             }
             Equal => {
                 // If the same number of bits are set, do nothing.
-                last_occupied
+                Ok(last_occupied)
             }
         }
     }
