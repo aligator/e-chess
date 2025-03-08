@@ -9,6 +9,8 @@ pub enum ChessConnectorError {
     GameNotFound,
     #[error("request error")]
     RequestError(#[from] RequestError),
+    #[error("invalid response: {0}")]
+    InvalidResponse(String),
 }
 
 pub trait ChessConnector {

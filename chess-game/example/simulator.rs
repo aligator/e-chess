@@ -1,19 +1,15 @@
-use game::ChessGame;
-use lichess::LichessConnector;
-use request::Request;
-use std::future::Future;
-use std::io::{self, Write};
+// This example requires the lichess-api feature
+// From the examples-crate directory, run:
+// cargo run --example lichess_game --features lichess-api
 
-mod bitboard_extensions;
-mod chess_connector;
-mod game;
-mod lichess;
-mod request;
-mod requester;
+use chess_game::game::ChessGame;
+use chess_game::request;
+use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() {
-    println!("Chess board simulator");
+    println!("Chess board simulator - Lichess Game");
+    println!("------------------------------------");
 
     let api_key = std::env::var("LICHESS_API_KEY").unwrap_or_else(|_| {
         let args: Vec<String> = std::env::args().collect();
@@ -35,8 +31,8 @@ async fn main() {
         }
     });
 
-    let mut game =
-        ChessGame::new(LichessConnector::new(Request { api_key: api_key }), &id).unwrap();
+    // Use the factory function from the request module
+    let mut game = ChessGame::new(request::create_lichess_connector(api_key), &id).unwrap();
 
     let mut physical_board = game.expected_physical();
     // Start with all set correctly.

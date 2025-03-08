@@ -25,3 +25,22 @@ The background color encodes the real chess color with black and grey for visual
 But if a piece is wrong it is color coded this way:
 * Blue - physical piece missing
 * Red - physical piece should be here but it isn't
+
+## Examples
+
+### Simulator
+
+The project includes a simulator example which can be run with:
+
+```
+cargo run --example simulator
+```
+
+This example requires the `reqwest` feature, which is enabled by default in the project configuration, so no additional flags are needed.
+
+## Features
+
+The project has the following features:
+
+- `colored-debug`: Enables colored output in debug mode (enabled by default)
+- `reqwest`: Enables a default implementation using reqwest and tokio

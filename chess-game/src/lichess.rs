@@ -1,10 +1,22 @@
-use std::sync::mpsc::{self, Receiver, Sender};
-
 use crate::{
     chess_connector::{ChessConnector, ChessConnectorError},
     requester::Requester,
 };
 use chess::ChessMove;
+use serde::{Deserialize, Serialize};
+use std::sync::mpsc::{self, Receiver, Sender};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LichessGameState {
+    moves: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct LichessGame {
+    id: String,
+    initial_fen: String,
+    state: LichessGameState,
+}
 
 pub struct LichessConnector<R: Requester> {
     request: R,
@@ -16,17 +28,25 @@ pub struct LichessConnector<R: Requester> {
 impl<R: Requester> LichessConnector<R> {
     pub fn new(request: R) -> Self {
         let (tx, rx) = mpsc::channel();
-
         Self {
             request,
             upstream_rx: rx,
             upstream_tx: tx,
         }
     }
-}
 
-impl<R: Requester> LichessConnector<R> {
-    fn response_to_fen(&self, response: String) -> Result<String, ChessConnectorError> {}
+    fn response_to_fen(&self, response: String) -> Result<String, ChessConnectorError> {
+        // Parse json to object
+        if response.is_empty() {
+            return Ok(String::new());
+        }
+
+        let game: LichessGame = serde_json::from_str(&response)
+            .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
+
+        // For now, return empty string but later you can implement FEN conversion
+        Ok(String::new())
+    }
 }
 
 impl<R: Requester> ChessConnector for LichessConnector<R> {
@@ -45,6 +65,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
 
         println!("{}", first_response);
 
+        // Parse json to object
         Ok(self.response_to_fen(first_response)?)
     }
 

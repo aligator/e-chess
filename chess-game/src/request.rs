@@ -1,7 +1,10 @@
+#![cfg(feature = "reqwest")]
+
 use futures_util::StreamExt;
 use reqwest;
 use std::sync::mpsc::Sender;
 
+use crate::lichess::LichessConnector;
 use crate::requester::{RequestError, Requester};
 
 pub struct Request {
@@ -60,4 +63,9 @@ impl Requester for Request {
             })
         })
     }
+}
+
+// Factory functions to create connectors
+pub fn create_lichess_connector(api_key: String) -> LichessConnector<Request> {
+    LichessConnector::new(Request { api_key })
 }
