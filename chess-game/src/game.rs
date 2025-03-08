@@ -214,48 +214,87 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     /// A new pice got placed.
     /// This move is only possible, if one pice was removed before (to make a move).
     fn place_physical(&mut self, to: Square) {
+        println!("DEBUG: place_physical called for square: {}", to);
+
         match self.state {
-            ChessState::MovingPiece { piece: _, from } => {
+            ChessState::MovingPiece { piece, from } => {
+                println!("DEBUG: Moving piece {:?} from {} to {}", piece, from, to);
+
+                // Only set promotion if it's a pawn moving to the last rank
+                let promotion = if piece == Piece::Pawn {
+                    let rank_idx = to.get_rank().to_index();
+                    // For white pawns, promotion happens on rank 8 (index 7)
+                    // For black pawns, promotion happens on rank 1 (index 0)
+                    if rank_idx == 0 || rank_idx == 7 {
+                        // TODO: make promotion piece somehow configurable.
+                        Some(Piece::Queen)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let chess_move = ChessMove::new(from, to, promotion);
+
                 // Do the move on the connection.
-                if !self.connection.make_move(ChessMove::new(from, to, None)) {
+                println!("DEBUG: Attempting to make move on connection");
+                if !self.connection.make_move(chess_move) {
+                    println!("DEBUG: Move rejected by connection");
                     return;
                 }
+                println!("DEBUG: Move accepted by connection");
 
                 // Allow just replacing it on the same square.
                 if from != to {
-                    // TODO: make promotion piece somehow configurable.
-                    let chess_move = ChessMove::new(from, to, Some(Piece::Queen));
+                    println!("DEBUG: Processing move from {} to {}", from, to);
 
                     // First check if the move is legal.
+                    println!("DEBUG: Checking if move is legal");
                     if !self.game.current_position().legal(chess_move) {
+                        println!("DEBUG: Move is illegal");
                         return;
                     }
+                    println!("DEBUG: Move is legal");
 
                     // When move should be legal on our side, send it to the server.
+                    println!("DEBUG: Sending move to server");
                     if !self.connection.make_move(chess_move) {
                         // If it was not successful, abort.
+                        println!("DEBUG: Move rejected by server");
                         return;
                     }
+                    println!("DEBUG: Move accepted by server");
 
                     // If it was successful, execute the move also locally
                     // -> should not fail as it is legal.
+                    println!("DEBUG: Executing move locally");
                     if !self.game.make_move(chess_move) {
+                        println!("DEBUG: Failed to execute move locally");
                         panic!(
                             "Move was legal but could not be executed locally. Should not happen. {:?}",
                             chess_move
                         );
                     }
+                    println!("DEBUG: Move executed locally");
+                } else {
+                    println!("DEBUG: Piece placed on the same square ({})", from);
                 }
 
                 // Update the state with the moving piece
+                println!("DEBUG: Updating state to Idle");
                 self.state = ChessState::Idle;
 
                 // Update the expected physical board states.
                 // This includes any remove or castled pieces.
+                println!("DEBUG: Updating expected board states");
                 self.expected_white = *self.game.current_position().color_combined(Color::White);
                 self.expected_black = *self.game.current_position().color_combined(Color::Black);
+                println!("DEBUG: Expected white: {:?}", self.expected_white);
+                println!("DEBUG: Expected black: {:?}", self.expected_black);
             }
             ChessState::Idle => {
+                println!("DEBUG: State is Idle, illegal to place piece without removing one first");
                 // Do nothing. It is illegal to place a piece without removing one first.
             }
         }

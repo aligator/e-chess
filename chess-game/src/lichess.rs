@@ -11,7 +11,14 @@ use std::{
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LichessGameState {
+    #[serde(rename = "type")]
+    event_type: String,
     moves: String,
+    wtime: u64,
+    btime: u64,
+    winc: u64,
+    binc: u64,
+    status: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,6 +27,11 @@ struct LichessGameResponse {
     #[serde(rename = "initialFen")]
     initial_fen: String,
     state: LichessGameState,
+}
+
+enum LichessEvent {
+    GameResponse(LichessGameResponse),
+    GameStateUpdate(LichessGameState),
 }
 
 pub struct LichessConnector<R: Requester> {
@@ -66,7 +78,39 @@ impl<R: Requester> LichessConnector<R> {
         &self,
         game_response: String,
     ) -> Result<LichessGameResponse, ChessConnectorError> {
-        let game: LichessGameResponse = serde_json::from_str(&game_response)
+        // First, try to parse the JSON to get the type field
+        let json_value: serde_json::Value = serde_json::from_str(&game_response)
+            .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
+
+        // Check if this is a game state update
+        if let Some(event_type) = json_value.get("type").and_then(|v| v.as_str()) {
+            if event_type == "gameState" {
+                // Parse as a game state update
+                let game_state: LichessGameState = serde_json::from_value(json_value)
+                    .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
+
+                // Create a GameResponse with the necessary fields
+                let game = LichessGameResponse {
+                    id: self.id.clone().unwrap_or_default(),
+                    initial_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                        .to_string(),
+                    state: LichessGameState {
+                        event_type: "gameState".to_string(),
+                        moves: game_state.moves,
+                        wtime: 0,
+                        btime: 0,
+                        winc: 0,
+                        binc: 0,
+                        status: "".to_string(),
+                    },
+                };
+
+                return Ok(game);
+            }
+        }
+
+        // Otherwise, try to parse as a regular game response
+        let game: LichessGameResponse = serde_json::from_value(json_value)
             .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
 
         Ok(game)
@@ -115,7 +159,11 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
     fn tick(&self) -> Result<Option<String>, ChessConnectorError> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
+                println!("EVENT '{}'", event);
+
+                // parse_game now handles both game responses and game state updates
                 let game = self.parse_game(event)?;
+
                 // Get the last move
                 let last_move = game
                     .state
@@ -123,13 +171,26 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
                     .split(" ")
                     .filter(|v| !v.is_empty())
                     .last()
-                    .unwrap();
-                // Make the move
-                self.make_move(ChessMove::from_str(last_move).unwrap());
+                    .unwrap_or_default();
 
-                // TODO validate if it was the only move since the last tick?
+                // Only make a move if we have one
+                if !last_move.is_empty() {
+                    // Make the move
+                    match ChessMove::from_str(last_move) {
+                        Ok(chess_move) => {
+                            self.make_move(chess_move);
+                        }
+                        Err(e) => {
+                            println!("Error parsing move '{}': {:?}", last_move, e);
+                        }
+                    }
 
-                Ok(Some(last_move.to_string()))
+                    // TODO validate if it was the only move since the last tick?
+
+                    Ok(Some(last_move.to_string()))
+                } else {
+                    Ok(None)
+                }
             }
             Err(_) => Ok(None),
         }

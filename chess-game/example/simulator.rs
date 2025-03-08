@@ -73,18 +73,41 @@ async fn main() {
                     _ => unreachable!(),
                 }
 
-                game.tick(physical_board);
-
-                // Print the game state
-                println!("{:?}", game);
+                // Use try-catch pattern to gracefully handle errors
+                match game.tick(physical_board) {
+                    Ok(new_board) => {
+                        physical_board = new_board;
+                        // Print the game state
+                        println!("{:?}", game);
+                    }
+                    Err(e) => {
+                        println!("Error updating game state: {:?}", e);
+                        println!(
+                            "This may be due to an API connection issue or invalid game state."
+                        );
+                        // Keep the physical board unchanged
+                    }
+                }
             } else {
                 println!("Invalid square notation. Use a1-h8");
             }
         } else if input == "quit" || input == "exit" {
             break;
+        } else if input == "r" || input == "refresh" {
+            // Refresh command - tick the game with the current physical board state
+            println!("Refreshing board...");
+            match game.tick(physical_board) {
+                Ok(new_board) => {
+                    physical_board = new_board;
+                    println!("{:?}", game);
+                }
+                Err(e) => {
+                    println!("Error refreshing game state: {:?}", e);
+                }
+            }
         } else {
             println!(
-                "Unknown command. Valid commands are: 'take <square>', 'put <square>', 'quit'"
+                "Unknown command. Valid commands are: 'take <square>', 'put <square>', 'refresh'/'r', 'quit'"
             );
         }
     }

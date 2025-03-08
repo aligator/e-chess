@@ -3,7 +3,7 @@ use std::str::FromStr;
 use chess::{ChessMove, Game};
 use thiserror::Error;
 
-use crate::{game, requester::RequestError};
+use crate::requester::RequestError;
 
 #[derive(Error, Debug)]
 pub enum ChessConnectorError {
