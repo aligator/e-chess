@@ -11,6 +11,7 @@ use log::*;
 use std::error::Error;
 use std::fmt;
 use std::sync::mpsc::{RecvError, Sender};
+use std::thread::{self};
 
 #[derive(Debug)]
 pub enum RequestError {
@@ -35,6 +36,20 @@ impl fmt::Display for RequestError {
     }
 }
 
+/// Helper to create a configured HTTP client
+///
+/// It is separately to make it more easy to use it inside a thread.
+fn create_client() -> Result<Client<EspHttpConnection>, RequestError> {
+    let mut config = Configuration::default();
+    config.use_global_ca_store = true;
+    config.crt_bundle_attach = Some(esp_idf_svc::sys::esp_crt_bundle_attach);
+
+    match EspHttpConnection::new(&config) {
+        Ok(connection) => Ok(Client::wrap(connection)),
+        Err(e) => Err(RequestError::Esp(e)),
+    }
+}
+
 // ESP implementation of the Requester trait
 #[derive(Debug)]
 pub struct EspRequester {
@@ -44,18 +59,6 @@ pub struct EspRequester {
 impl EspRequester {
     pub fn new(api_key: String) -> Self {
         Self { api_key }
-    }
-
-    // Helper to create a configured HTTP client
-    fn create_client() -> Result<Client<EspHttpConnection>, RequestError> {
-        let mut config = Configuration::default();
-        config.use_global_ca_store = true;
-        config.crt_bundle_attach = Some(esp_idf_svc::sys::esp_crt_bundle_attach);
-
-        match EspHttpConnection::new(&config) {
-            Ok(connection) => Ok(Client::wrap(connection)),
-            Err(e) => Err(RequestError::Esp(e)),
-        }
     }
 
     // Helper to process HTTP response to string
@@ -109,90 +112,103 @@ impl Requester for EspRequester {
     type RequestError = RequestError;
 
     fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), RequestError> {
-        // Get a new client
-        let mut client = Self::create_client()?;
+        let api_key = self.api_key.clone();
 
-        // Prepare headers with auth token
-        let headers = [
-            ("accept", "application/x-ndjson"),
-            ("Authorization", &format!("Bearer {}", self.api_key)),
-        ];
+        let url = url.to_string();
 
-        // Create the request
-        let request = match client.request(Method::Get, url, &headers) {
-            Ok(req) => req,
-            Err(e) => {
-                return Err(RequestError::EspIO(e));
-            }
-        };
+        let tx = tx.clone();
 
-        // Submit the request
-        let response = match request.submit() {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Err(RequestError::EspIO(e));
-            }
-        };
+        thread::spawn(move || {
+            // Get a new client
+            let mut client = create_client()?;
 
-        let status = response.status();
-        debug!("Stream response code: {}", status);
+            // Prepare headers with auth token
+            let headers = [
+                ("accept", "application/x-ndjson"),
+                ("Authorization", &format!("Bearer {}", api_key)),
+            ];
 
-        if !(200..=299).contains(&status) {
-            return Err(RequestError::Status(status));
-        }
-
-        // Process the streaming response
-        let mut buf = [0_u8; 256];
-        let mut offset = 0;
-        let mut reader = response;
-
-        loop {
-            match reader.read(&mut buf[offset..]) {
-                Ok(size) => {
-                    if size == 0 {
-                        break;
-                    }
-
-                    let size_plus_offset = size + offset;
-
-                    match str::from_utf8(&buf[..size_plus_offset]) {
-                        Ok(text) => {
-                            for line in text.lines() {
-                                if !line.is_empty() && tx.send(line.to_string()).is_err() {
-                                    return Ok(()); // Return if receiver is closed
-                                }
-                            }
-                            offset = 0;
-                        }
-                        Err(error) => {
-                            let valid_up_to = error.valid_up_to();
-                            if valid_up_to > 0 {
-                                unsafe {
-                                    let text = str::from_utf8_unchecked(&buf[..valid_up_to]);
-                                    for line in text.lines() {
-                                        if !line.is_empty() && tx.send(line.to_string()).is_err() {
-                                            return Ok(()); // Return if receiver is closed
-                                        }
-                                    }
-                                }
-                            }
-                            buf.copy_within(valid_up_to.., 0);
-                            offset = size_plus_offset - valid_up_to;
-                        }
-                    }
-                }
+            // Create the request
+            let request = match client.request(Method::Get, &url, &headers) {
+                Ok(req) => req,
                 Err(e) => {
                     return Err(RequestError::EspIO(e));
                 }
+            };
+
+            // Submit the request
+            let response = match request.submit() {
+                Ok(resp) => resp,
+                Err(e) => {
+                    return Err(RequestError::EspIO(e));
+                }
+            };
+
+            let status = response.status();
+            debug!("Stream response code: {}", status);
+
+            if !(200..=299).contains(&status) {
+                return Err(RequestError::Status(status));
             }
-        }
+
+            // Process the streaming response
+            let mut buf = [0_u8; 256];
+            let mut offset = 0;
+            let mut reader = response;
+
+            loop {
+                match reader.read(&mut buf[offset..]) {
+                    Ok(size) => {
+                        if size == 0 {
+                            break;
+                        }
+
+                        let size_plus_offset = size + offset;
+
+                        match str::from_utf8(&buf[..size_plus_offset]) {
+                            Ok(text) => {
+                                for line in text.lines() {
+                                    if !line.is_empty() && tx.send(line.to_string()).is_err() {
+                                        break; // Return if receiver is closed
+                                    }
+                                }
+                                offset = 0;
+                            }
+                            Err(error) => {
+                                let valid_up_to = error.valid_up_to();
+                                if valid_up_to > 0 {
+                                    unsafe {
+                                        let text = str::from_utf8_unchecked(&buf[..valid_up_to]);
+                                        for line in text.lines() {
+                                            if !line.is_empty()
+                                                && tx.send(line.to_string()).is_err()
+                                            {
+                                                break; // Return if receiver is closed
+                                            }
+                                        }
+                                    }
+                                }
+                                buf.copy_within(valid_up_to.., 0);
+                                offset = size_plus_offset - valid_up_to;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tx.send(format!("Error: {:?}", e)).unwrap();
+                        break;
+                    }
+                }
+            }
+
+            Ok(())
+        });
 
         Ok(())
     }
 
     fn post(&self, url: &str, body: &str) -> Result<String, RequestError> {
         // Get a new client
-        let mut client = Self::create_client()?;
+        let mut client = create_client()?;
 
         // Prepare headers with auth token
         let headers = [

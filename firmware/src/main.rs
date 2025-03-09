@@ -1,6 +1,5 @@
 use anyhow::Result;
 use board::Board;
-use chess_game::chess_connector::LocalChessConnector;
 use chess_game::game::ChessGame;
 use chess_game::lichess::LichessConnector;
 use embedded_svc::http::Method;
@@ -27,6 +26,50 @@ mod storage;
 mod web;
 mod wifi;
 
+fn run_game(
+    token: String,
+    mcp23017: I2cDriver<'_>,
+    ws2812: Ws2812Esp32Rmt,
+    web: &mut web::Web,
+) -> Result<()> {
+    #[cfg(not(feature = "no_board"))]
+    let mut board = Board::new(mcp23017, 0x20);
+    #[cfg(not(feature = "no_board"))]
+    board.setup()?;
+
+    let mut display = display::Display::new(ws2812);
+    display.setup()?;
+
+    // Create a requester with the API key
+    let requester = EspRequester::new(token);
+    let lichess_connector = LichessConnector::new(requester);
+    let mut chess = ChessGame::new(lichess_connector, "yYaBzWvb")?;
+
+    // Start the main loop
+    info!("Start app loop");
+    loop {
+        #[cfg(not(feature = "no_board"))]
+        match board.tick() {
+            Ok(physical) => {
+                let _ = chess.tick(physical);
+                web.tick(chess.game.clone());
+                display.tick(physical, &chess)?;
+            }
+            Err(e) => return Err(e),
+        }
+
+        #[cfg(feature = "no_board")]
+        {
+            let game = chess::Game::default();
+            let _ = chess.tick(*game.current_position().combined());
+            web.tick(chess.game.clone());
+            display.tick(*game.current_position().combined(), &chess)?;
+        }
+
+        sleep(Duration::from_millis(1000));
+    }
+}
+
 /// Entry point to our application.
 fn main() -> Result<()> {
     // It is necessary to call this function once. Otherwise some patches to the runtime
@@ -47,14 +90,6 @@ fn main() -> Result<()> {
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
 
     let ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
-
-    #[cfg(not(feature = "no_board"))]
-    let mut board = Board::new(mcp23017, 0x20);
-    #[cfg(not(feature = "no_board"))]
-    board.setup()?;
-
-    let mut display = display::Display::new(ws2812);
-    display.setup()?;
 
     let mut web = web::Web::new();
 
@@ -84,36 +119,21 @@ fn main() -> Result<()> {
 
     web.register(&mut server)?;
 
-    // All errors from here should not panic but only print errors.
-
-    // Create a requester with the API key
-    let requester = EspRequester::new(token.unwrap_or_default());
-    let lichess_connector = LichessConnector::new(requester);
-    let mut chess = ChessGame::new(lichess_connector, "yYaBzWvb")?;
-
-    // Start the main loop
-    info!("Start app loop");
-    loop {
-        #[cfg(not(feature = "no_board"))]
-        match board.tick() {
-            Ok(physical) => {
-                let _ = chess.tick(physical);
-                web.tick(chess.game.clone());
-                display.tick(physical, &chess)?;
+    if let Some(token) = token {
+        match run_game(token, mcp23017, ws2812, &mut web) {
+            Ok(_) => {
+                warn!("Stopping game loop");
+                Ok(())
             }
             Err(e) => {
-                error!("Error: {:?}", e);
+                warn!("Stopping game loop due to error: {:?}", e);
+                loop {
+                    sleep(Duration::from_millis(1000));
+                }
             }
         }
-
-        #[cfg(feature = "no_board")]
-        {
-            let game = chess::Game::default();
-            let _ = chess.tick(*game.current_position().combined());
-            web.tick(chess.game.clone());
-            display.tick(*game.current_position().combined(), &chess)?;
-        }
-
-        sleep(Duration::from_millis(1000));
+    } else {
+        error!("No token found");
+        Err(anyhow::anyhow!("No token found"))
     }
 }
