@@ -76,7 +76,7 @@ async fn main() {
                 // Use try-catch pattern to gracefully handle errors
                 match game.tick(physical_board) {
                     Ok(new_board) => {
-                        physical_board = new_board;
+                        //   physical_board = new_board;
                         // Print the game state
                         println!("{:?}", game);
                     }
@@ -97,8 +97,8 @@ async fn main() {
             // Refresh command - tick the game with the current physical board state
             println!("Refreshing board...");
             match game.tick(physical_board) {
-                Ok(new_board) => {
-                    physical_board = new_board;
+                Ok(_new_board) => {
+                    // physical_board = new_board;
                     println!("{:?}", game);
                 }
                 Err(e) => {

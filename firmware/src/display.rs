@@ -72,6 +72,14 @@ impl<'a> Display<'a> {
             let diff = expected.diff(physical);
             let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
 
+            let last_move = game.last_move();
+
+            // Colorize the last moved square.
+            if let Some(last_move) = last_move {
+                pixels[Self::get_pixel(last_move.get_source())] = RGB { r: 0, g: 5, b: 5 };
+                pixels[Self::get_pixel(last_move.get_dest())] = RGB { r: 0, g: 20, b: 20 };
+            };
+
             diff.missing.for_each(|square| {
                 pixels[Self::get_pixel(square)] = RGB { r: 20, g: 20, b: 0 };
             });

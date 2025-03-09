@@ -1,7 +1,7 @@
 use crate::bitboard_extensions::*;
 use crate::chess_connector::{ChessConnector, ChessConnectorError};
 use crate::requester::Requester;
-use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
+use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
 use std::cmp::Ordering::*;
@@ -129,6 +129,18 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
                         }
                     };
 
+                    // Colorize the last moved piece.
+                    let last_move = self.last_move();
+                    let colored_symbol = if let Some(last_move) = last_move {
+                        if square == last_move.get_source() || square == last_move.get_dest() {
+                            format!(" {} ", symbol).on_truecolor(0, 110, 110)
+                        } else {
+                            colored_symbol
+                        }
+                    } else {
+                        colored_symbol
+                    };
+
                     // Colorize the moving piece.
                     let colored_symbol =
                         if let ChessState::MovingPiece { piece: _, from } = self.state {
@@ -199,6 +211,27 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
             physical: BitBoard::new(0),
             state: ChessState::Idle,
         })
+    }
+
+    pub fn last_move(&self) -> Option<ChessMove> {
+        self.game
+            .actions()
+            .iter()
+            .filter(|a| {
+                if let Action::MakeMove(_) = a {
+                    true
+                } else {
+                    false
+                }
+            })
+            .last()
+            .map(|m| {
+                if let Action::MakeMove(m) = m {
+                    *m
+                } else {
+                    panic!("Last move is not a make move");
+                }
+            })
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError<Connection::R>> {
