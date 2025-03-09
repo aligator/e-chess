@@ -8,7 +8,6 @@ use esp_idf_hal::io::{EspIOError, Write};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use esp_idf_sys::EspError;
 use log::*;
-use std::cell::RefCell;
 use std::fmt;
 use std::sync::mpsc::Sender;
 use std::thread::{self};
@@ -65,6 +64,73 @@ impl EspRequester {
         Self { api_key }
     }
 
+    /// Helper function to read a chunk of data from a Read source and convert it to UTF-8
+    /// Returns a tuple containing:
+    /// - The number of bytes read
+    /// - The valid UTF-8 string from the current read
+    /// - The number of bytes that should be kept as offset for the next read
+    fn read_utf8_chunk(
+        response: &mut impl Read,
+        buf: &mut [u8],
+        offset: usize,
+    ) -> Result<(usize, String, usize), RequestError> {
+        // Read into the buffer starting at the offset
+        let bytes_read = match response.read(&mut buf[offset..]) {
+            Ok(size) => {
+                if size == 0 {
+                    info!("End of response reached (zero bytes)");
+                    return Ok((0, String::new(), offset));
+                }
+                size
+            }
+            Err(e) => {
+                info!("Error reading response: {:?}", e);
+                return Err(RequestError::Read(format!("Read error: {:?}", e)));
+            }
+        };
+
+        let total_size = bytes_read + offset;
+        info!(
+            "Read {} bytes (total in buffer: {})",
+            bytes_read, total_size
+        );
+
+        // Try to convert the entire buffer to a UTF-8 string
+        match str::from_utf8(&buf[..total_size]) {
+            Ok(s) => {
+                // All data is valid UTF-8
+                info!("Successfully converted {} bytes to UTF-8", total_size);
+                Ok((bytes_read, s.to_string(), 0))
+            }
+            Err(e) => {
+                // Only part of the data is valid UTF-8
+                let valid_up_to = e.valid_up_to();
+                info!(
+                    "Partial UTF-8 conversion: valid up to {} of {} bytes",
+                    valid_up_to, total_size
+                );
+
+                // Extract the valid part
+                let valid_str = if valid_up_to > 0 {
+                    // Safe because we've verified these bytes are valid UTF-8
+                    unsafe { str::from_utf8_unchecked(&buf[..valid_up_to]) }.to_string()
+                } else {
+                    String::new()
+                };
+
+                // Move the remaining bytes to the beginning of the buffer
+                if valid_up_to < total_size {
+                    let remaining = total_size - valid_up_to;
+                    buf.copy_within(valid_up_to..total_size, 0);
+                    info!("Moved {} remaining bytes to beginning of buffer", remaining);
+                    Ok((bytes_read, valid_str, remaining))
+                } else {
+                    Ok((bytes_read, valid_str, 0))
+                }
+            }
+        }
+    }
+
     // Helper to process HTTP response to string
     fn process_response(mut response: impl Read, status: u16) -> Result<String, RequestError> {
         if !(200..=299).contains(&status) {
@@ -79,49 +145,21 @@ impl EspRequester {
 
         info!("Starting to read response body");
         loop {
-            match response.read(&mut buf[offset..]) {
-                Ok(size) => {
+            match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
+                Ok((size, text, new_offset)) => {
                     if size == 0 {
                         info!("End of response reached (zero bytes)");
                         break;
                     }
 
                     total += size;
-                    let size_plus_offset = size + offset;
-                    info!(
-                        "Read {} bytes (total: {}, buffer size: {})",
-                        size, total, size_plus_offset
-                    );
-
-                    match str::from_utf8(&buf[..size_plus_offset]) {
-                        Ok(text) => {
-                            info!("Successfully converted {} bytes to UTF-8", size_plus_offset);
-                            response_text.push_str(text);
-                            offset = 0;
-                        }
-                        Err(error) => {
-                            let valid_up_to = error.valid_up_to();
-                            info!(
-                                "Partial UTF-8 conversion: valid up to {} of {} bytes",
-                                valid_up_to, size_plus_offset
-                            );
-
-                            if valid_up_to > 0 {
-                                unsafe {
-                                    response_text
-                                        .push_str(str::from_utf8_unchecked(&buf[..valid_up_to]));
-                                }
-                            }
-
-                            buf.copy_within(valid_up_to.., 0);
-                            offset = size_plus_offset - valid_up_to;
-                            info!("Remaining bytes in buffer: {}", offset);
-                        }
-                    }
+                    info!("Read {} bytes (total: {})", size, total);
+                    response_text.push_str(&text);
+                    offset = new_offset;
                 }
                 Err(e) => {
                     info!("Error reading response: {:?}", e);
-                    return Err(RequestError::Read(format!("Read error: {:?}", e)));
+                    return Err(e);
                 }
             }
         }
@@ -130,7 +168,7 @@ impl EspRequester {
             total,
             response_text.len()
         );
-        if response_text.len() > 0 {
+        if !response_text.is_empty() {
             info!(
                 "Response preview: {}",
                 if response_text.len() > 100 {
@@ -177,7 +215,7 @@ impl Requester for EspRequester {
             };
 
             // Submit the request
-            let response = match request.submit() {
+            let mut response = match request.submit() {
                 Ok(resp) => resp,
                 Err(e) => {
                     info!("Error submitting stream request: {:?}", e);
@@ -193,19 +231,17 @@ impl Requester for EspRequester {
                 return Err(RequestError::Status(status));
             }
 
-            // Process the streaming response
+            // Process the streaming response using the read_utf8_chunk helper
             info!("Processing stream response");
-            let mut buf = [0_u8; 1024]; // Increased buffer size for more efficient reading
-            let mut reader = response;
+            let mut buf = [0_u8; 1024]; // Buffer for reading
+            let mut offset = 0;
             let mut total_bytes = 0;
             let mut line_count = 0;
-
-            // Buffer to accumulate partial JSON data
             let mut accumulated_data = String::new();
 
             loop {
-                match reader.read(&mut buf) {
-                    Ok(size) => {
+                match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
+                    Ok((size, text, new_offset)) => {
                         if size == 0 {
                             info!("Stream ended (zero bytes received). Total received: {} bytes, {} lines", total_bytes, line_count);
 
@@ -227,39 +263,14 @@ impl Requester for EspRequester {
                         total_bytes += size;
                         info!("Read {} bytes from stream (total: {})", size, total_bytes);
 
-                        // Convert bytes to string and handle UTF-8 errors more efficiently
-                        match std::str::from_utf8(&buf[..size]) {
-                            Ok(text) => {
-                                // Append the new text to our accumulated data
-                                accumulated_data.push_str(text);
-                                info!("Accumulated data size: {} chars", accumulated_data.len());
-                            }
-                            Err(e) => {
-                                // Handle partial UTF-8 sequences more efficiently
-                                let valid_up_to = e.valid_up_to();
-
-                                if valid_up_to > 0 {
-                                    // Add the valid part
-                                    let valid_text = unsafe {
-                                        std::str::from_utf8_unchecked(&buf[..valid_up_to])
-                                    };
-                                    accumulated_data.push_str(valid_text);
-                                }
-
-                                // If there's an incomplete UTF-8 sequence at the end, we need to handle it
-                                if let Some(incomplete_char) = e.error_len() {
-                                    // Copy the incomplete bytes to the beginning of the buffer for the next read
-                                    let remainder = &buf[valid_up_to..size];
-                                    info!(
-                                        "Found incomplete UTF-8 sequence of {} bytes",
-                                        remainder.len()
-                                    );
-
-                                    // We'll just ignore the incomplete sequence for now as it will be completed
-                                    // in the next read. This is a simplification that works for most streaming APIs.
-                                }
-                            }
+                        if text.trim().is_empty() {
+                            info!("Skipping empty line");
+                            continue;
                         }
+
+                        // Append the new text to our accumulated data
+                        accumulated_data.push_str(&text);
+                        info!("Accumulated data size: {} chars", accumulated_data.len());
 
                         // Process complete lines
                         if accumulated_data.contains('\n') {
@@ -282,6 +293,8 @@ impl Requester for EspRequester {
                             // Keep the last line which might be incomplete
                             accumulated_data = lines.last().unwrap().to_string();
                         }
+
+                        offset = new_offset;
                     }
                     Err(e) => {
                         info!("Error reading from stream: {:?}", e);
@@ -344,7 +357,7 @@ impl Requester for EspRequester {
 
         // Process the response
         info!("Processing POST response");
-        let result = Self::process_response(response, status);
+        let result = EspRequester::process_response(response, status);
         match &result {
             Ok(response_text) => {
                 info!("POST request completed successfully");
