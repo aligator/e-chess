@@ -303,7 +303,7 @@ impl Web {
         
         Web {
             game: Arc::new(Mutex::new(None)),
-            game_id: Arc::new(Mutex::new(String::from("yYaBzWvb"))), // Default game ID
+            game_id: Arc::new(Mutex::new(String::from("c3tClYtJeqSD"))), // Default game ID
             event_sender: tx,
             event_receiver: Arc::new(Mutex::new(rx)),
         }

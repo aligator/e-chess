@@ -46,7 +46,7 @@ fn run_game(
 
     // Use the game ID from the web interface
     let game_id = web.get_game_id();
-    let mut chess = ChessGame::new(lichess_connector, &game_id)?;
+    let mut game = ChessGame::new(lichess_connector, &game_id)?;
 
     // Start the main loop
     info!("Start app loop");
@@ -63,7 +63,7 @@ fn run_game(
             // Create a new chess game with the new ID
             match ChessGame::new(lichess_connector, &new_game_id) {
                 Ok(new_chess) => {
-                    chess = new_chess;
+                    game = new_chess;
                     info!("Game reloaded successfully");
                 }
                 Err(e) => {
@@ -75,27 +75,24 @@ fn run_game(
 
         #[cfg(not(feature = "no_board"))]
         match board.tick() {
-            Ok(physical) => {
-                let new_expected = chess.tick(physical);
-                match new_expected {
-                    Ok(expected) => {
-                        web.tick(chess.game.clone());
-                        display.tick(physical, &chess)?;
-                    }
-                    Err(e) => return Err(e.into()),
+            Ok(physical) => match game.tick(physical) {
+                Ok(expected) => {
+                    web.tick(game.game.clone());
+                    display.tick(physical, &game)?;
                 }
-            }
+                Err(e) => return Err(e.into()),
+            },
             Err(e) => return Err(e),
         }
 
         #[cfg(feature = "no_board")]
         {
             let game = chess::Game::default();
-            let new_expected = chess.tick(*game.current_position().combined());
+            let new_expected = game.tick(*game.current_position().combined());
             match new_expected {
                 Ok(expected) => {
-                    web.tick(chess.game.clone());
-                    display.tick(*game.current_position().combined(), &chess)?;
+                    web.tick(game.game.clone());
+                    display.tick(*game.current_position().combined(), &game)?;
                 }
                 Err(e) => return Err(e.into()),
             }

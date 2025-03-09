@@ -215,6 +215,27 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         self.expected_white | self.expected_black
     }
 
+    fn execute_move(&mut self, chess_move: ChessMove) -> bool {
+        // First check if the move is legal.
+        if !self.game.current_position().legal(chess_move) {
+            return false;
+        }
+        // Ensure the move is legal by checking the connection first
+        if !self.connection.make_move(chess_move) {
+            return false;
+        }
+
+        // If it was successful, execute the move also locally
+        // -> should not fail as it is legal.
+        if !self.game.make_move(chess_move) {
+            panic!(
+                "Move was legal but could not be executed locally. Should not happen. {:?}",
+                chess_move
+            );
+        }
+        true
+    }
+
     /// A new pice got placed.
     /// This move is only possible, if one pice was removed before (to make a move).
     fn place_physical(&mut self, to: Square) {
@@ -237,25 +258,11 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
                 let chess_move = ChessMove::new(from, to, promotion);
 
-                // Ensure the move is legal by checking the connection first
-                if !self.connection.make_move(chess_move) {
-                    return;
-                }
-
                 // Allow just replacing it on the same square.
                 if from != to {
                     // First check if the move is legal.
-                    if !self.game.current_position().legal(chess_move) {
+                    if !self.execute_move(chess_move) {
                         return;
-                    }
-
-                    // If it was successful, execute the move also locally
-                    // -> should not fail as it is legal.
-                    if !self.game.make_move(chess_move) {
-                        panic!(
-                            "Move was legal but could not be executed locally. Should not happen. {:?}",
-                            chess_move
-                        );
                     }
                 }
 
@@ -288,8 +295,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
                 // Execute the move if it is successful - it is legal. If not, just do nothing.
                 let chess_move = ChessMove::new(from, square, None);
-                if !self.game.make_move(chess_move) {
-                    // Do nothing. It is illegal to place a piece on an illegal square.
+                if !self.execute_move(chess_move) {
                     return;
                 }
 
@@ -354,7 +360,13 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         // Tick the connection to get events until there is no more event.
         while let Some(event) = self.connection.tick()? {
             // event is the last move
-            self.game.make_move(ChessMove::from_str(&event).unwrap());
+            println!("Event: {}", event);
+            self.game.make_move(ChessMove::from_str(&event)?);
+
+            self.expected_white = *self.game.current_position().color_combined(Color::White);
+            self.expected_black = *self.game.current_position().color_combined(Color::Black);
+            println!("EventDone: \n{}", self.game.current_position());
+            return Ok(self.expected_physical());
         }
 
         // Save current physical board for visualization.

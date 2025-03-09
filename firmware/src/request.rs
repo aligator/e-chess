@@ -8,10 +8,11 @@ use esp_idf_hal::io::{EspIOError, Write};
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use esp_idf_sys::EspError;
 use log::*;
-use std::error::Error;
+use std::cell::RefCell;
 use std::fmt;
 use std::sync::mpsc::Sender;
 use std::thread::{self};
+use std::{error::Error, fmt::Debug};
 
 #[derive(Debug)]
 pub enum RequestError {
@@ -49,14 +50,23 @@ fn create_client() -> Result<Client<EspHttpConnection>, RequestError> {
 }
 
 // ESP implementation of the Requester trait
-#[derive(Debug)]
 pub struct EspRequester {
     api_key: String,
+    client: RefCell<Client<EspHttpConnection>>,
+}
+
+impl Debug for EspRequester {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EspRequester {{ api_key: {:?} }}", self.api_key)
+    }
 }
 
 impl EspRequester {
     pub fn new(api_key: String) -> Self {
-        Self { api_key }
+        Self {
+            api_key,
+            client: RefCell::new(create_client().unwrap()),
+        }
     }
 
     // Helper to process HTTP response to string
@@ -298,10 +308,6 @@ impl Requester for EspRequester {
         info!("Starting POST request to: {}", url);
         info!("POST request body: {}", body);
 
-        // Get a new client
-        info!("Creating HTTP client for POST request");
-        let mut client = create_client()?;
-
         // Prepare headers with auth token
         let headers = [
             ("Content-Type", "application/json"),
@@ -311,6 +317,9 @@ impl Requester for EspRequester {
 
         // Create the request
         info!("Preparing POST request to: {}", url);
+        // let mut client = self.client.borrow_mut();
+        // may be more stable to create a new client each time
+        let mut client = create_client()?;
         let mut request = match client.request(Method::Post, url, &headers) {
             Ok(req) => req,
             Err(e) => {
