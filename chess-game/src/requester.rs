@@ -1,19 +1,4 @@
-use core::fmt;
-use std::sync::mpsc::Sender;
-
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub struct RequestError {
-    #[from]
-    source: Box<dyn std::error::Error + Send + Sync>,
-}
-
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.source)
-    }
-}
+use std::{fmt::Debug, sync::mpsc::Sender};
 
 /// Trait for sending and receiving requests.
 /// Abstracts away the details of the request implementation.
@@ -23,6 +8,23 @@ impl fmt::Display for RequestError {
 ///
 /// It can be used by the chess connectors.
 pub trait Requester {
-    fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), RequestError>;
-    fn post(&self, url: &str, body: &str) -> Result<String, RequestError>;
+    type RequestError: Debug;
+
+    fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), Self::RequestError>;
+    fn post(&self, url: &str, body: &str) -> Result<String, Self::RequestError>;
+}
+
+#[derive(Debug)]
+pub struct DummyRequester;
+
+impl Requester for DummyRequester {
+    type RequestError = ();
+
+    fn stream(&self, _tx: &mut Sender<String>, _url: &str) -> Result<(), Self::RequestError> {
+        Ok(())
+    }
+
+    fn post(&self, _url: &str, _body: &str) -> Result<String, Self::RequestError> {
+        Ok(String::new())
+    }
 }

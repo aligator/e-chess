@@ -54,7 +54,10 @@ impl<R: Requester> LichessConnector<R> {
         }
     }
 
-    fn create_game(&self, game_response: LichessGameResponse) -> Result<Game, ChessConnectorError> {
+    fn create_game(
+        &self,
+        game_response: LichessGameResponse,
+    ) -> Result<Game, ChessConnectorError<R>> {
         let moves = game_response
             .state
             .moves
@@ -77,7 +80,7 @@ impl<R: Requester> LichessConnector<R> {
     fn parse_game(
         &self,
         game_response: String,
-    ) -> Result<LichessGameResponse, ChessConnectorError> {
+    ) -> Result<LichessGameResponse, ChessConnectorError<R>> {
         // First, try to parse the JSON to get the type field
         let json_value: serde_json::Value = serde_json::from_str(&game_response)
             .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
@@ -118,9 +121,13 @@ impl<R: Requester> LichessConnector<R> {
 }
 
 impl<R: Requester> ChessConnector for LichessConnector<R> {
-    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
+    type R = R;
+
+    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError<R>> {
         let url = format!("https://lichess.org/api/board/game/stream/{}", id);
-        self.request.stream(&mut self.upstream_tx.clone(), &url)?;
+        self.request
+            .stream(&mut self.upstream_tx.clone(), &url)
+            .map_err(|e| ChessConnectorError::<R>::RequestError(e))?;
 
         // Get first response from stream to check if game exists
         let first_response = self
@@ -155,7 +162,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         }
     }
 
-    fn tick(&self) -> Result<Option<String>, ChessConnectorError> {
+    fn tick(&self) -> Result<Option<String>, ChessConnectorError<R>> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
                 // parse_game now handles both game responses and game state updates

@@ -1,5 +1,6 @@
 use crate::bitboard_extensions::*;
 use crate::chess_connector::{ChessConnector, ChessConnectorError};
+use crate::requester::Requester;
 use chess::{BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
@@ -8,12 +9,12 @@ use std::{fmt, str::FromStr};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ChessGameError {
+pub enum ChessGameError<R: Requester> {
     #[error("board could not be loaded by the given FEN")]
     LoadingFen(#[from] chess::InvalidError),
 
     #[error("game could not be loaded")]
-    LoadingGame(#[from] ChessConnectorError),
+    LoadingGame(#[from] ChessConnectorError<R>),
 }
 
 #[derive(Clone, Copy)]
@@ -182,7 +183,10 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
 }
 
 impl<Connection: ChessConnector> ChessGame<Connection> {
-    pub fn new(mut connection: Connection, id: &str) -> Result<Self, ChessGameError> {
+    pub fn new(
+        mut connection: Connection,
+        id: &str,
+    ) -> Result<Self, ChessGameError<Connection::R>> {
         let initial_game = connection.load_game(id)?;
         let white = *initial_game.current_position().color_combined(Color::White);
         let black = *initial_game.current_position().color_combined(Color::Black);
@@ -197,7 +201,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         })
     }
 
-    pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
+    pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError<Connection::R>> {
         self.game = self.connection.load_game(id)?;
 
         // Reset expected physical board state based on the loaded game.
@@ -343,7 +347,10 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
-    pub fn tick(&mut self, physical_board: BitBoard) -> Result<BitBoard, ChessGameError> {
+    pub fn tick(
+        &mut self,
+        physical_board: BitBoard,
+    ) -> Result<BitBoard, ChessGameError<Connection::R>> {
         // Tick the connection to get events until there is no more event.
         while let Some(event) = self.connection.tick()? {
             // event is the last move

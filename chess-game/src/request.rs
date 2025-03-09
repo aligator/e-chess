@@ -2,17 +2,29 @@
 
 use futures_util::StreamExt;
 use reqwest;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{RecvError, Sender};
+use thiserror::Error;
 
 use crate::lichess::LichessConnector;
-use crate::requester::{RequestError, Requester};
+use crate::requester::Requester;
 
+#[derive(Error, Debug)]
+pub enum RequestError {
+    #[error(transparent)]
+    Request(reqwest::Error),
+    #[error(transparent)]
+    Recv(RecvError),
+}
+
+#[derive(Debug)]
 pub struct Request {
     pub api_key: String,
 }
 
 impl Requester for Request {
-    fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), RequestError> {
+    type RequestError = RequestError;
+
+    fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), self::RequestError> {
         let tx = tx.clone();
         let api_key = self.api_key.clone();
         let url = url.to_string();
@@ -44,9 +56,9 @@ impl Requester for Request {
         Ok(())
     }
 
-    fn post(&self, url: &str, body: &str) -> Result<String, RequestError> {
+    fn post(&self, url: &str, body: &str) -> Result<String, self::RequestError> {
         // Using a channel to get the result from the async operation
-        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<String, RequestError>>();
         let api_key = self.api_key.clone();
         let url = url.to_string();
         let body = body.to_string();
@@ -67,29 +79,17 @@ impl Requester for Request {
                         let _ = tx.send(Ok(text));
                     }
                     Err(e) => {
-                        let _ = tx.send(Err(RequestError::from(
-                            Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-                        )));
+                        let _ = tx.send(Err(RequestError::Request(e)));
                     }
                 },
                 Err(e) => {
-                    let _ = tx.send(Err(RequestError::from(
-                        Box::new(e) as Box<dyn std::error::Error + Send + Sync>
-                    )));
+                    let _ = tx.send(Err(RequestError::Request(e)));
                 }
             }
         });
 
         // Wait for the response
-        let result = rx
-            .recv()
-            .unwrap_or(Err(RequestError::from(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Request timeout",
-            ))
-                as Box<dyn std::error::Error + Send + Sync>)));
-
-        result
+        rx.recv().map_err(|e| RequestError::Recv(e))?
     }
 }
 
