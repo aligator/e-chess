@@ -329,6 +329,10 @@ impl Web {
     
     // Check for game ID changes and update if necessary
     pub fn check_for_game_id_change(&self) -> Option<String> {
+        // TODO: this is currently a bit weird implemented.
+        // Use proper solution with channels and event system.
+
+
         // Try to get the receiver lock
         let receiver_lock = self.event_receiver.lock().ok()?;
         
