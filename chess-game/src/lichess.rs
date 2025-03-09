@@ -162,13 +162,13 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         }
     }
 
-    fn tick(&self) -> Result<Option<String>, ChessConnectorError<R>> {
+    fn next_event(&self) -> Result<Option<String>, ChessConnectorError<R>> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
                 // parse_game now handles both game responses and game state updates
                 let game = self.parse_game(event)?;
 
-                // Get the last move
+                // Get the last move of the event
                 let last_move = game
                     .state
                     .moves
@@ -177,20 +177,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
                     .last()
                     .unwrap_or_default();
 
-                // Only make a move if we have one
                 if !last_move.is_empty() {
-                    // Make the move
-                    match ChessMove::from_str(last_move) {
-                        Ok(chess_move) => {
-                            self.make_move(chess_move);
-                        }
-                        Err(e) => {
-                            return Err(ChessConnectorError::InvalidResponse(e.to_string()));
-                        }
-                    }
-
-                    // TODO validate if it was the only move since the last tick?
-
                     Ok(Some(last_move.to_string()))
                 } else {
                     Ok(None)

@@ -31,7 +31,7 @@ pub trait ChessConnector {
     /// Ticks the connector and updates the board by returning the FEN string of the game.
     /// In this function the connector can check for new upstream events.
     /// It gets called as often as possible, so it should be lightweight.
-    fn tick(&self) -> Result<Option<String>, ChessConnectorError<Self::R>>;
+    fn next_event(&self) -> Result<Option<String>, ChessConnectorError<Self::R>>;
 }
 
 pub struct LocalChessConnector;
@@ -53,7 +53,7 @@ impl ChessConnector for LocalChessConnector {
         true
     }
 
-    fn tick(&self) -> Result<Option<String>, ChessConnectorError<Self::R>> {
+    fn next_event(&self) -> Result<Option<String>, ChessConnectorError<Self::R>> {
         Ok(Some(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
         ))

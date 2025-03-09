@@ -8,6 +8,22 @@ use std::cmp::Ordering::*;
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
+fn action_to_move(action: &Action) -> ChessMove {
+    if let Action::MakeMove(m) = action {
+        *m
+    } else {
+        panic!("Last move is not a make move");
+    }
+}
+
+fn is_move_action(action: &&Action) -> bool {
+    if let Action::MakeMove(_) = action {
+        true
+    } else {
+        false
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ChessGameError<R: Requester> {
     #[error("board could not be loaded by the given FEN")]
@@ -50,6 +66,10 @@ pub struct ChessGame<Connection: ChessConnector> {
     /// The current physical state of the game.
     /// It indicates if a pice is currently being moved physically.
     pub state: ChessState,
+
+    /// The last move that was made online.
+    /// This is used to avoid sending the same moves multiple times.
+    server_moves: Vec<ChessMove>,
 }
 
 impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
@@ -210,6 +230,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
             expected_black: black,
             physical: BitBoard::new(0),
             state: ChessState::Idle,
+            server_moves: Vec::new(),
         })
     }
 
@@ -217,25 +238,20 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         self.game
             .actions()
             .iter()
-            .filter(|a| {
-                if let Action::MakeMove(_) = a {
-                    true
-                } else {
-                    false
-                }
-            })
+            .filter(is_move_action)
             .last()
-            .map(|m| {
-                if let Action::MakeMove(m) = m {
-                    *m
-                } else {
-                    panic!("Last move is not a make move");
-                }
-            })
+            .map(action_to_move)
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError<Connection::R>> {
         self.game = self.connection.load_game(id)?;
+        self.server_moves = self
+            .game
+            .actions()
+            .iter()
+            .filter(is_move_action)
+            .map(action_to_move)
+            .collect();
 
         // Reset expected physical board state based on the loaded game.
         self.expected_white = *self.game.current_position().color_combined(Color::White);
@@ -253,9 +269,20 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         if !self.game.current_position().legal(chess_move) {
             return false;
         }
-        // Ensure the move is legal by checking the connection first
-        if !self.connection.make_move(chess_move) {
-            return false;
+
+        // Check if the move has already been made.
+        if self.server_moves.last() == Some(&chess_move) {
+            println!("Move already made: {:?}", chess_move);
+            println!("Server moves: {:?}", self.server_moves);
+        } else {
+            println!("Sending move: {:?}", chess_move);
+            println!("Server moves: {:?}", self.server_moves);
+
+            // Ensure the move is legal by checking the connection first
+            if !self.connection.make_move(chess_move) {
+                return false;
+            }
+            self.server_moves.push(chess_move);
         }
 
         // If it was successful, execute the move also locally
@@ -391,15 +418,16 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         physical_board: BitBoard,
     ) -> Result<BitBoard, ChessGameError<Connection::R>> {
         // Tick the connection to get events until there is no more event.
-        while let Some(event) = self.connection.tick()? {
+        while let Some(event) = self.connection.next_event()? {
             // event is the last move
             println!("Event: {}", event);
             self.game.make_move(ChessMove::from_str(&event)?);
 
+            self.server_moves.push(ChessMove::from_str(&event)?);
+
             self.expected_white = *self.game.current_position().color_combined(Color::White);
             self.expected_black = *self.game.current_position().color_combined(Color::Black);
             println!("EventDone: \n{}", self.game.current_position());
-            return Ok(self.expected_physical());
         }
 
         // Save current physical board for visualization.

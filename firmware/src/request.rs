@@ -52,7 +52,6 @@ fn create_client() -> Result<Client<EspHttpConnection>, RequestError> {
 // ESP implementation of the Requester trait
 pub struct EspRequester {
     api_key: String,
-    client: RefCell<Client<EspHttpConnection>>,
 }
 
 impl Debug for EspRequester {
@@ -63,10 +62,7 @@ impl Debug for EspRequester {
 
 impl EspRequester {
     pub fn new(api_key: String) -> Self {
-        Self {
-            api_key,
-            client: RefCell::new(create_client().unwrap()),
-        }
+        Self { api_key }
     }
 
     // Helper to process HTTP response to string
@@ -317,7 +313,6 @@ impl Requester for EspRequester {
 
         // Create the request
         info!("Preparing POST request to: {}", url);
-        // let mut client = self.client.borrow_mut();
         // may be more stable to create a new client each time
         let mut client = create_client()?;
         let mut request = match client.request(Method::Post, url, &headers) {
