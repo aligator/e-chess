@@ -392,6 +392,18 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
     if let Some(client_config) = wifi_configuration.as_client_conf_ref() {
         info!("Starting Client {}", client_config.ssid);
         try_connect(&mut wifi_driver)?;
+
+        // Wait until dns is available.
+        loop {
+            let dns_res = wifi_driver.sta_netif().get_dns();
+            info!("DNS: {:?}", dns_res);
+            if !dns_res.is_unspecified() {
+                break;
+            }
+            info!("Waiting for DNS...");
+
+            thread::sleep(Duration::from_secs(1));
+        }
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
         info!("Starting Access Point {}", ap_config.ssid);
         info!("IP info: {:?}", wifi_driver.ap_netif().get_ip_info());

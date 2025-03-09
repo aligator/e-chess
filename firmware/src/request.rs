@@ -10,7 +10,7 @@ use esp_idf_sys::EspError;
 use log::*;
 use std::error::Error;
 use std::fmt;
-use std::sync::mpsc::{RecvError, Sender};
+use std::sync::mpsc::Sender;
 use std::thread::{self};
 
 #[derive(Debug)]
@@ -19,7 +19,6 @@ pub enum RequestError {
     EspIO(EspIOError),
     Status(u16),
     Read(String),
-    Recv(RecvError),
 }
 
 impl Error for RequestError {}
@@ -31,7 +30,6 @@ impl fmt::Display for RequestError {
             RequestError::EspIO(e) => write!(f, "ESP IO error: {:?}", e),
             RequestError::Status(code) => write!(f, "HTTP status error: {}", code),
             RequestError::Read(msg) => write!(f, "Read error: {}", msg),
-            RequestError::Recv(e) => write!(f, "Receive error: {:?}", e),
         }
     }
 }
