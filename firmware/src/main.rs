@@ -41,13 +41,38 @@ fn run_game(
     display.setup()?;
 
     // Create a requester with the API key
-    let requester = EspRequester::new(token);
+    let requester = EspRequester::new(token.clone());
     let lichess_connector = LichessConnector::new(requester);
-    let mut chess = ChessGame::new(lichess_connector, "yYaBzWvb")?;
+
+    // Use the game ID from the web interface
+    let game_id = web.get_game_id();
+    let mut chess = ChessGame::new(lichess_connector, &game_id)?;
 
     // Start the main loop
     info!("Start app loop");
     loop {
+        // Check if the game ID has changed via the event channel
+        if let Some(new_game_id) = web.check_for_game_id_change() {
+            // Game ID has changed, reload the game
+            info!("Game ID changed to {}, reloading game", new_game_id);
+
+            // Create a new requester and connector
+            let requester = EspRequester::new(token.clone());
+            let lichess_connector = LichessConnector::new(requester);
+
+            // Create a new chess game with the new ID
+            match ChessGame::new(lichess_connector, &new_game_id) {
+                Ok(new_chess) => {
+                    chess = new_chess;
+                    info!("Game reloaded successfully");
+                }
+                Err(e) => {
+                    error!("Failed to load game: {:?}", e);
+                    // Continue with the current game
+                }
+            }
+        }
+
         #[cfg(not(feature = "no_board"))]
         match board.tick() {
             Ok(physical) => {
@@ -75,8 +100,6 @@ fn run_game(
                 Err(e) => return Err(e.into()),
             }
         }
-
-        sleep(Duration::from_millis(1000));
     }
 }
 

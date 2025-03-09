@@ -402,7 +402,7 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
             }
             info!("Waiting for DNS...");
 
-            thread::sleep(Duration::from_secs(1));
+            sleep(Duration::from_secs(1));
         }
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
         info!("Starting Access Point {}", ap_config.ssid);

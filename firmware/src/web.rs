@@ -3,17 +3,22 @@ use chess::{BoardStatus, File, Game, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::{html, PreEscaped};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 
 use crate::wifi::page;
 
 pub struct Web {
     game: Arc<Mutex<Option<chess::Game>>>,
+    game_id: Arc<Mutex<String>>,
+    event_sender: mpsc::Sender<String>,
+    event_receiver: Arc<Mutex<mpsc::Receiver<String>>>,
 }
 
-unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>) -> Result<()> {
+unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/game", Method::Get, move |request| {
         let game = game.lock().unwrap();
+        let current_game_id = game_id.lock().unwrap().clone();
 
         let html = if let Some(game) = &*game {
             let game_state = game.current_position();
@@ -133,6 +138,31 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
                         .active-player {
                             color: #2d3436;
                         }
+                        .game-id-control {
+                            margin: 20px;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            font-family: Arial, sans-serif;
+                        }
+                        .game-id-control input[type="text"] {
+                            padding: 8px;
+                            border: 1px solid #ccc;
+                            border-radius: 4px;
+                            font-size: 1em;
+                        }
+                        .game-id-control button {
+                            padding: 8px 16px;
+                            background-color: #2980b9;
+                            color: white;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            font-size: 1em;
+                        }
+                        .game-id-control button:hover {
+                            background-color: #3498db;
+                        }
                     "# }
                     h1 { "E-Chess" }
                     div class="game-info" {
@@ -144,6 +174,11 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
                                 chess::Color::Black => "Black",
                             })
                         }
+                    }
+                    div class="game-id-control" {
+                        label for="gameId" { "Game ID: " }
+                        input type="text" id="gameId" value=(current_game_id) {}
+                        button id="loadGame" { "Load Game" }
                     }
                     table { (PreEscaped(table)) }
                     div class="refresh-control" {
@@ -164,6 +199,25 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
                         document.getElementById('autoRefresh').addEventListener('change', function() {
                             scheduleRefresh();
                         });
+
+                        document.getElementById('loadGame').addEventListener('click', function() {
+                            const gameId = document.getElementById('gameId').value.trim();
+                            if (gameId) {
+                                fetch('/load-game?id=' + encodeURIComponent(gameId), {
+                                    method: 'GET'
+                                }).then(function(response) {
+                                    if (response.ok) {
+                                        location.reload();
+                                    } else {
+                                        alert('Failed to load game. Please check the game ID.');
+                                    }
+                                }).catch(function(error) {
+                                    alert('Error: ' + error);
+                                });
+                            } else {
+                                alert('Please enter a valid game ID');
+                            }
+                        });
                     "# }
                 )
                 .into_string(),
@@ -173,6 +227,31 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
                 html!(
                     h1 { "E-Chess" }
                     p {"No game state"}
+                    div class="game-id-control" {
+                        label for="gameId" { "Game ID: " }
+                        input type="text" id="gameId" value=(current_game_id) {}
+                        button id="loadGame" { "Load Game" }
+                    }
+                    script { r#"
+                        document.getElementById('loadGame').addEventListener('click', function() {
+                            const gameId = document.getElementById('gameId').value.trim();
+                            if (gameId) {
+                                fetch('/load-game?id=' + encodeURIComponent(gameId), {
+                                    method: 'GET'
+                                }).then(function(response) {
+                                    if (response.ok) {
+                                        location.reload();
+                                    } else {
+                                        alert('Failed to load game. Please check the game ID.');
+                                    }
+                                }).catch(function(error) {
+                                    alert('Error: ' + error);
+                                });
+                            } else {
+                                alert('Please enter a valid game ID');
+                            }
+                        });
+                    "# }
                 )
                 .into_string(),
             )
@@ -195,10 +274,38 @@ unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
+unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<String>) -> Result<()> {
+    server.fn_handler_nonstatic("/load-game", Method::Get, move |request| {
+        let uri = request.uri();
+        
+        // Parse the query string to get the game ID
+        if let Some(query) = uri.split('?').nth(1) {
+            if let Some(id_param) = query.split('&').find(|p| p.starts_with("id=")) {
+                if let Some(id) = id_param.split('=').nth(1) {
+                    // Send the game ID through the channel
+                    let _ = sender.send(id.to_string());
+                }
+            }
+        }
+        
+        let mut response = request.into_ok_response()?;
+        response.write_all(b"OK")?;
+        Ok(())
+    })?;
+    
+    Ok(())
+}
+
 impl Web {
     pub fn new() -> Web {
+        // Create a channel for game ID changes
+        let (tx, rx) = mpsc::channel();
+        
         Web {
             game: Arc::new(Mutex::new(None)),
+            game_id: Arc::new(Mutex::new(String::from("yYaBzWvb"))), // Default game ID
+            event_sender: tx,
+            event_receiver: Arc::new(Mutex::new(rx)),
         }
     }
 
@@ -206,12 +313,32 @@ impl Web {
         println!("Registering Web");
         unsafe { 
             handle_favicon(server)?;
-            handle_game(server, self.game.clone())?;
+            handle_game(server, self.game.clone(), self.game_id.clone())?;
+            handle_load_game(server, self.event_sender.clone())?;
         };
         Ok(())
     }
 
     pub fn tick(&mut self, game: chess::Game) {
         self.game.lock().unwrap().replace(game);
+    }
+    
+    pub fn get_game_id(&self) -> String {
+        self.game_id.lock().unwrap().clone()
+    }
+    
+    // Check for game ID changes and update if necessary
+    pub fn check_for_game_id_change(&self) -> Option<String> {
+        // Try to get the receiver lock
+        let receiver_lock = self.event_receiver.lock().ok()?;
+        
+        // Try to receive a new game ID (non-blocking)
+        let new_game_id = receiver_lock.try_recv().ok()?;
+        
+        // Update the game ID
+        let mut game_id_lock = self.game_id.lock().ok()?;
+        *game_id_lock = new_game_id.clone();
+        
+        Some(new_game_id)
     }
 }
