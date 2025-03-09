@@ -51,9 +51,14 @@ fn run_game(
         #[cfg(not(feature = "no_board"))]
         match board.tick() {
             Ok(physical) => {
-                let _ = chess.tick(physical);
-                web.tick(chess.game.clone());
-                display.tick(physical, &chess)?;
+                let new_expected = chess.tick(physical);
+                match new_expected {
+                    Ok(expected) => {
+                        web.tick(chess.game.clone());
+                        display.tick(physical, &chess)?;
+                    }
+                    Err(e) => return Err(e.into()),
+                }
             }
             Err(e) => return Err(e),
         }
@@ -61,9 +66,14 @@ fn run_game(
         #[cfg(feature = "no_board")]
         {
             let game = chess::Game::default();
-            let _ = chess.tick(*game.current_position().combined());
-            web.tick(chess.game.clone());
-            display.tick(*game.current_position().combined(), &chess)?;
+            let new_expected = chess.tick(*game.current_position().combined());
+            match new_expected {
+                Ok(expected) => {
+                    web.tick(chess.game.clone());
+                    display.tick(*game.current_position().combined(), &chess)?;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
 
         sleep(Duration::from_millis(1000));
