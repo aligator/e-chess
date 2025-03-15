@@ -7,10 +7,12 @@ use std::{sync::{mpsc, Arc, Mutex}, thread};
 
 use crate::wifi::page;
 
+#[derive(Debug)]
 pub enum GameStateEvent {
     UpdateGame(Option<chess::Game>),
 }
 
+#[derive(Debug)]
 pub enum GameCommandEvent {
     LoadNewGame(String),
 }
@@ -467,21 +469,29 @@ impl Web {
 
         let current_game_for_thread = self.game.clone();
         thread::spawn(move || {
-            if let Ok(game_state_event) = event_rx.recv() {
-                match game_state_event {
-                    GameStateEvent::UpdateGame(updated_game) => {
-                        if let Some(updated_game) = updated_game {
-                            current_game_for_thread.lock().unwrap().replace(updated_game);
-                        } else {
-                            current_game_for_thread.lock().unwrap().take();
+            println!("Starting web event processing thread");
+            loop {
+                match event_rx.recv() {
+                    Ok(game_state_event) => {
+                        match game_state_event {
+                            GameStateEvent::UpdateGame(updated_game) => {
+                                if let Some(updated_game) = updated_game {
+                                    current_game_for_thread.lock().unwrap().replace(updated_game);
+                                } else {
+                                    current_game_for_thread.lock().unwrap().take();
+                                }
+                            }
                         }
+                    }
+                    Err(e) => {
+                        println!("Error receiving game state event: {:?}, exiting thread", e);
+                        break;
                     }
                 }
             }
+            println!("Web event processing thread exited");
         });
 
-
-        println!("Registering Web");
         unsafe { 
             handle_favicon(server)?;
             handle_game(server, self.game.clone(), self.game_id.clone())?;

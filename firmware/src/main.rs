@@ -49,19 +49,27 @@ fn run_game(
 
     // Use the game ID from the web interface
     let mut game = ChessGame::new(lichess_connector)?;
+    info!("Created ChessGame");
 
     let web = web::Web::new();
     let (state_tx, state_rx) = channel::<GameStateEvent>();
+    info!("Created state channel: {:?}", state_tx);
     let command_rx = web.register(&mut server, state_rx)?;
+    info!("Registered web interface");
 
     // Start the main loop
     info!("Start app loop");
     loop {
         // Check if event happens
         if let Ok(event) = command_rx.try_recv() {
+            info!("Received command event: {:?}", event);
             match event {
                 GameCommandEvent::LoadNewGame(game_id) => {
-                    game.reset(&game_id)?;
+                    info!("Loading new game: {}", game_id);
+                    match game.reset(&game_id) {
+                        Ok(_) => info!("Successfully reset game with ID: {}", game_id),
+                        Err(e) => warn!("Failed to reset game: {:?}", e),
+                    }
                 }
             }
         }
@@ -70,16 +78,23 @@ fn run_game(
         {
             if let Some(_) = game.game {
                 match board.tick() {
-                    Ok(physical) => match game.tick(physical) {
-                        Ok(_expected) => {
-                            // TODO: not sure if this isn't a bit inefficient to do every tick...
-                            state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
-                            display.tick(physical, &game)?;
+                    Ok(physical) => {
+                        match game.tick(physical) {
+                            Ok(_expected) => {
+                                // TODO: not sure if this isn't a bit inefficient to do every tick...
+                                match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        warn!("Failed to send game update: {:?}", e);
+                                    }
+                                }
+                                display.tick(physical, &game)?;
+                            }
+                            Err(e) => {
+                                warn!("Error in game tick: {:?}", e);
+                            }
                         }
-                        Err(e) => {
-                            warn!("Error in game tick: {:?}", e);
-                        }
-                    },
+                    }
                     Err(e) => {
                         warn!("Error in board tick: {:?}", e);
                     }
@@ -94,7 +109,12 @@ fn run_game(
                     game.tick(*game.game.as_ref().unwrap().current_position().combined());
                 match new_expected {
                     Ok(_expected) => {
-                        state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
+                        match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!("Failed to send game update: {:?}", e);
+                            }
+                        }
                         display.tick(
                             *game.game.as_ref().unwrap().current_position().combined(),
                             &game,
@@ -106,6 +126,9 @@ fn run_game(
                 }
             }
         }
+
+        // Sleep to reduce CPU usage and make logs more readable
+        sleep(Duration::from_millis(500));
     }
 }
 

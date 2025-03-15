@@ -453,14 +453,18 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
             // Tick the connection to get events until there is no more event.
             while let Some(event) = self.connection.next_event()? {
                 // event is the last move
-                println!("Event: {}", event);
-                game.make_move(ChessMove::from_str(&event)?);
+                match ChessMove::from_str(&event) {
+                    Ok(chess_move) => {
+                        game.make_move(chess_move);
+                        self.server_moves.push(chess_move);
 
-                self.server_moves.push(ChessMove::from_str(&event)?);
-
-                self.expected_white = *game.current_position().color_combined(Color::White);
-                self.expected_black = *game.current_position().color_combined(Color::Black);
-                println!("EventDone: \n{}", game.current_position());
+                        self.expected_white = *game.current_position().color_combined(Color::White);
+                        self.expected_black = *game.current_position().color_combined(Color::Black);
+                    }
+                    Err(e) => {
+                        return Err(ChessGameError::LoadingFen(e));
+                    }
+                }
             }
         }
 
@@ -480,11 +484,6 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
             // If more than one bit differs - do nothing,
             // as there would be no way to determine what happens.
             // In this case the previous physical board state has to be restored before continuing.
-
-            // TODO: maybe later we may add a check here to handle "moving" a part physically.
-            // That would be the case if the player moves the pice in a way that the reeds of both field change
-            // their state at the same time.
-            // However as I am not sure if that will be physically possible, I will leave it out for now.
             return Ok(last_occupied);
         }
 

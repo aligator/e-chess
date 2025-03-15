@@ -90,25 +90,16 @@ impl EspRequester {
         };
 
         let total_size = bytes_read + offset;
-        info!(
-            "Read {} bytes (total in buffer: {})",
-            bytes_read, total_size
-        );
 
         // Try to convert the entire buffer to a UTF-8 string
         match str::from_utf8(&buf[..total_size]) {
             Ok(s) => {
                 // All data is valid UTF-8
-                info!("Successfully converted {} bytes to UTF-8", total_size);
                 Ok((bytes_read, s.to_string(), 0))
             }
             Err(e) => {
                 // Only part of the data is valid UTF-8
                 let valid_up_to = e.valid_up_to();
-                info!(
-                    "Partial UTF-8 conversion: valid up to {} of {} bytes",
-                    valid_up_to, total_size
-                );
 
                 // Extract the valid part
                 let valid_str = if valid_up_to > 0 {
@@ -122,7 +113,6 @@ impl EspRequester {
                 if valid_up_to < total_size {
                     let remaining = total_size - valid_up_to;
                     buf.copy_within(valid_up_to..total_size, 0);
-                    info!("Moved {} remaining bytes to beginning of buffer", remaining);
                     Ok((bytes_read, valid_str, remaining))
                 } else {
                     Ok((bytes_read, valid_str, 0))
@@ -140,10 +130,8 @@ impl EspRequester {
 
         let mut buf = [0_u8; 256];
         let mut offset = 0;
-        let mut total = 0;
         let mut response_text = String::new();
 
-        info!("Starting to read response body");
         loop {
             match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
                 Ok((size, text, new_offset)) => {
@@ -152,8 +140,6 @@ impl EspRequester {
                         break;
                     }
 
-                    total += size;
-                    info!("Read {} bytes (total: {})", size, total);
                     response_text.push_str(&text);
                     offset = new_offset;
                 }
@@ -162,21 +148,6 @@ impl EspRequester {
                     return Err(e);
                 }
             }
-        }
-        info!(
-            "Total bytes received: {}, final response length: {}",
-            total,
-            response_text.len()
-        );
-        if !response_text.is_empty() {
-            info!(
-                "Response preview: {}",
-                if response_text.len() > 100 {
-                    format!("{}...", &response_text[..100])
-                } else {
-                    response_text.clone()
-                }
-            );
         }
         Ok(response_text)
     }
@@ -193,8 +164,13 @@ impl Requester for EspRequester {
 
         thread::spawn(move || {
             // Get a new client
-            info!("Creating HTTP client for stream request");
-            let mut client = create_client()?;
+            let mut client = match create_client() {
+                Ok(client) => client,
+                Err(e) => {
+                    error!("Failed to create HTTP client: {:?}", e);
+                    return Err(e);
+                }
+            };
 
             // Prepare headers with auth token
             let headers = [
@@ -202,14 +178,11 @@ impl Requester for EspRequester {
                 ("Authorization", &format!("Bearer {}", api_key)),
             ];
 
-            info!("Headers: {:?}", headers);
-
             // Create the request
-            info!("Sending GET stream request to: {}", url);
             let request = match client.request(Method::Get, &url, &headers) {
                 Ok(req) => req,
                 Err(e) => {
-                    info!("Error creating stream request: {:?}", e);
+                    error!("Error creating stream request: {:?}", e);
                     return Err(RequestError::EspIO(e));
                 }
             };
@@ -218,21 +191,19 @@ impl Requester for EspRequester {
             let mut response = match request.submit() {
                 Ok(resp) => resp,
                 Err(e) => {
-                    info!("Error submitting stream request: {:?}", e);
+                    error!("Error submitting stream request: {:?}", e);
                     return Err(RequestError::EspIO(e));
                 }
             };
 
             let status = response.status();
-            info!("Stream response status code: {}", status);
 
             if !(200..=299).contains(&status) {
-                info!("Stream request failed with status: {}", status);
+                error!("Stream request failed with status: {}", status);
                 return Err(RequestError::Status(status));
             }
 
             // Process the streaming response using the read_utf8_chunk helper
-            info!("Processing stream response");
             let mut buf = [0_u8; 1024]; // Buffer for reading
             let mut offset = 0;
             let mut total_bytes = 0;
@@ -243,35 +214,29 @@ impl Requester for EspRequester {
                 match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
                     Ok((size, text, new_offset)) => {
                         if size == 0 {
-                            info!("Stream ended (zero bytes received). Total received: {} bytes, {} lines", total_bytes, line_count);
+                            info!("Stream ended (zero bytes received)");
 
                             // Process any remaining accumulated data
                             if !accumulated_data.is_empty() {
-                                info!(
-                                    "Processing remaining accumulated data ({} chars)",
-                                    accumulated_data.len()
-                                );
-                                if tx.send(accumulated_data).is_err() {
-                                    info!("Stream channel closed, stopping stream");
+                                match tx.send(accumulated_data) {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        warn!("Failed to send on channel (likely closed): {:?}", e);
+                                        return Ok(());
+                                    }
                                 }
-                                line_count += 1;
                             }
 
                             break;
                         }
 
                         total_bytes += size;
-                        info!("Read {} bytes from stream (total: {})", size, total_bytes);
-
                         if text.trim().is_empty() {
-                            info!("Skipping empty line");
                             continue;
                         }
 
                         // Append the new text to our accumulated data
                         accumulated_data.push_str(&text);
-                        info!("Accumulated data size: {} chars", accumulated_data.len());
-
                         // Process complete lines
                         if accumulated_data.contains('\n') {
                             let lines: Vec<&str> = accumulated_data.split('\n').collect();
@@ -280,13 +245,16 @@ impl Requester for EspRequester {
                             for i in 0..lines.len() - 1 {
                                 let line = lines[i];
                                 if !line.is_empty() {
-                                    info!("Processing complete line ({} chars)", line.len());
-
-                                    if tx.send(line.to_string()).is_err() {
-                                        info!("Stream channel closed, stopping stream");
-                                        return Ok(());
+                                    match tx.send(line.to_string()) {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            warn!(
+                                                "Failed to send on channel (likely closed): {:?}",
+                                                e
+                                            );
+                                            return Ok(());
+                                        }
                                     }
-                                    line_count += 1;
                                 }
                             }
 
@@ -297,16 +265,18 @@ impl Requester for EspRequester {
                         offset = new_offset;
                     }
                     Err(e) => {
-                        info!("Error reading from stream: {:?}", e);
-                        tx.send(format!("Error: {:?}", e)).unwrap();
+                        error!("Error reading from stream: {:?}", e);
+                        match tx.send(format!("Error: {:?}", e)) {
+                            Ok(_) => {}
+                            Err(send_err) => {
+                                warn!("Failed to send error on channel: {:?}", send_err)
+                            }
+                        }
                         break;
                     }
                 }
             }
-            info!(
-                "Stream processing completed. Total processed: {} bytes, {} lines",
-                total_bytes, line_count
-            );
+            info!("Stream processing completed");
             Ok(())
         });
 
