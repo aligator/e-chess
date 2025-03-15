@@ -32,9 +32,6 @@ unsafe fn handle_game(server: &mut EspHttpServer, current_game_id: Arc<Mutex<Str
         // Always use the same page structure
         let html = page(
             html!(
-                link rel="stylesheet" href="/styles.css" {}
-                h1 { "E-Chess" }
-                
                 // Game ID control - always visible
                 div class="game-id-control" {
                     label for="gameId" { "Game ID: " }

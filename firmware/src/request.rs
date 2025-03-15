@@ -206,8 +206,6 @@ impl Requester for EspRequester {
             // Process the streaming response using the read_utf8_chunk helper
             let mut buf = [0_u8; 1024]; // Buffer for reading
             let mut offset = 0;
-            let mut total_bytes = 0;
-            let mut line_count = 0;
             let mut accumulated_data = String::new();
 
             loop {
@@ -230,7 +228,6 @@ impl Requester for EspRequester {
                             break;
                         }
 
-                        total_bytes += size;
                         if text.trim().is_empty() {
                             continue;
                         }

@@ -42,7 +42,46 @@ pub fn page(body: String) -> String {
                 title { "E-Chess" }
                 link rel="stylesheet" href="/styles.css" {}
             }
-            body { (PreEscaped(body)) }
+            body {
+                // Header with title and menu
+                div class="header" {
+                    // Title on the left
+                    h1 { "E-Chess" }
+                    
+                    // Menu for navigation on the right
+                    div class="menu-container" {
+                        div class="menu" {
+                            a href="/game" class="menu-item" id="menu-game" { "Game" }
+                            a href="/settings" class="menu-item" id="menu-settings" { "Settings" }
+                        }
+                    }
+                    
+                    // GitHub button in top right
+                    a href="https://github.com/aligator/e-chess" target="_blank" class="github-button" {
+                        span class="github-icon" {}
+                    }
+                }
+
+                // Main content
+                div class="content" {
+                    (PreEscaped(body))
+                }
+
+                // Common scripts
+                script {
+                    (PreEscaped(r#"
+                    document.addEventListener('DOMContentLoaded', function() {
+                        // Set active menu item based on current page
+                        const path = window.location.pathname;
+                        if (path === '/game' || path === '/') {
+                            document.getElementById('menu-game').classList.add('active');
+                        } else if (path === '/settings') {
+                            document.getElementById('menu-settings').classList.add('active');
+                        }
+                    });
+                    "#))
+                }
+            }
         }
     )
     .into_string()
@@ -56,7 +95,6 @@ pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
     server.fn_handler("/settings", Method::Get, |request| {
         let html: String = page(
             html!(
-                h1 { "E-Chess" }
                 div class="container" {
                     p class="message" { 
                         "Please enter the SSID and password of the network you want to connect to." 
@@ -138,7 +176,6 @@ pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
             // Return success page
             let html = page(
                 html!(
-                    h1 { "E-Chess" }
                     div class="container" {
                         p class="message" { "WiFi Settings Saved" }
                         p class="message" {
@@ -154,7 +191,6 @@ pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
             // Return error page
             let html = page(
                 html!(
-                    h1 { "E-Chess" }
                     div class="container" {
                         p class="message error" { "Both SSID and password are required." }
                         a href="/settings" { "Go back" }
@@ -200,7 +236,6 @@ pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
         // Return success page
         let html = page(
             html!(
-                h1 { "E-Chess" }
                 div class="container" {
                     p class="message" { "App Settings Saved" }
                 }
