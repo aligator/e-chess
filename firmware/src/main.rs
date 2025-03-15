@@ -76,9 +76,13 @@ fn run_game(
                             state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
                             display.tick(physical, &game)?;
                         }
-                        Err(e) => return Err(e.into()),
+                        Err(e) => {
+                            warn!("Error in game tick: {:?}", e);
+                        }
                     },
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        warn!("Error in board tick: {:?}", e);
+                    }
                 }
             }
         }
@@ -96,7 +100,9 @@ fn run_game(
                             &game,
                         )?;
                     }
-                    Err(e) => return Err(e.into()),
+                    Err(e) => {
+                        warn!("Error in game tick: {:?}", e);
+                    }
                 }
             }
         }
