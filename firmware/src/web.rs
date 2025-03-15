@@ -2,7 +2,7 @@ use anyhow::Result;
 use chess::{BoardStatus, File, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
-use maud::{html, PreEscaped};
+use maud::html;
 use std::{sync::{mpsc, Arc, Mutex}, thread};
 
 use crate::wifi::page;
@@ -27,7 +27,11 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::
         let game = game.lock().unwrap();
         let current_game_id = current_game_id.lock().unwrap().clone();
 
-        let html = if let Some(game) = &*game {
+        // Determine if a game is loaded
+        let game_loaded = game.is_some();
+
+        // Get initial game state if available
+        let (status, active_color) = if let Some(game) = &*game {
             let game_state = game.current_position();
             let active_color = game.side_to_move();
             let status = match game_state.status() {
@@ -35,286 +39,62 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::
                 BoardStatus::Stalemate => "Stalemate",
                 BoardStatus::Ongoing => "In progress",
             };
-
-            page(
-                html!(
-                    style { r#"
-                        body { 
-                            font-family: Arial, sans-serif;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            background-color: #f0f0f0;
-                        }
-                        h1 { 
-                            color: #333;
-                            margin-bottom: 1em;
-                        }
-                        table {
-                            border-collapse: collapse;
-                            margin: 20px;
-                        }
-                        td {
-                            width: 50px;
-                            height: 50px;
-                            text-align: center;
-                            font-size: 2em;
-                        }
-                        .coord {
-                            font-size: 1em;
-                            padding: 5px;
-                            color: #666;
-                        }
-                        .dark-square {
-                            background-color: #b58863;
-                        }
-                        .light-square {
-                            background-color: #f0d9b5;
-                        }
-                        .white-piece {
-                            color: #fff;
-                            text-shadow: 0 0 2px #000;
-                        }
-                        .black-piece {
-                            color: #000;
-                            text-shadow: 0 0 2px #fff;
-                        }
-                        .refresh-control {
-                            margin: 20px;
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            font-family: Arial, sans-serif;
-                        }
-                        .refresh-control input {
-                            width: 20px;
-                            height: 20px;
-                        }
-                        .game-info {
-                            margin: 20px;
-                            padding: 15px;
-                            background-color: white;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        }
-                        .game-info p {
-                            margin: 5px 0;
-                            font-size: 1.1em;
-                        }
-                        .status {
-                            font-weight: bold;
-                            color: #d63031;
-                        }
-                        .active-player {
-                            color: #2d3436;
-                        }
-                        .game-id-control {
-                            margin: 20px;
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            font-family: Arial, sans-serif;
-                        }
-                        .game-id-control input[type="text"] {
-                            padding: 8px;
-                            border: 1px solid #ccc;
-                            border-radius: 4px;
-                            font-size: 1em;
-                        }
-                        .game-id-control button {
-                            padding: 8px 16px;
-                            background-color: #2980b9;
-                            color: white;
-                            border: none;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 1em;
-                        }
-                        .game-id-control button:hover {
-                            background-color: #3498db;
-                        }
-                    "# }
-                    h1 { "E-Chess" }
-                    div id="game-container" {
-                        div id="game-info" class="game-info" {
-                            p id="game-status" class="status" { (status) }
-                            p id="active-player" class="active-player" { 
-                                "Active player: " 
-                                (match active_color {
-                                    chess::Color::White => "White",
-                                    chess::Color::Black => "Black",
-                                })
-                            }
-                        }
-                        div class="game-id-control" {
-                            label for="gameId" { "Game ID: " }
-                            input type="text" id="gameId" value=(current_game_id) {}
-                            button id="loadGame" { "Load Game" }
-                        }
-                        div id="board-container" {}
-                        div class="refresh-control" {
-                            input type="checkbox" id="autoRefresh" checked="checked" {}
-                            label for="autoRefresh" { "Auto refresh" }
-                        }
-                    }
-                    script { (PreEscaped(r#"
-                        // Function to fetch and update the board
-                        function updateBoard() {
-                            fetch('/board-update')
-                                .then(response => response.text())
-                                .then(html => {
-                                    document.getElementById('board-container').innerHTML = html;
-                                })
-                                .catch(error => {
-                                    console.error('Error updating board:', error);
-                                });
-                        }
-
-                        // Function to fetch and update the game info
-                        function updateGameInfo() {
-                            fetch('/game-info')
-                                .then(response => response.json())
-                                .then(data => {
-                                    document.getElementById('game-status').textContent = data.status;
-                                    document.getElementById('active-player').textContent = 'Active player: ' + data.activePlayer;
-                                })
-                                .catch(error => {
-                                    console.error('Error updating game info:', error);
-                                });
-                        }
-
-                        // Function to schedule updates
-                        function scheduleUpdates() {
-                            if (document.getElementById('autoRefresh').checked) {
-                                setTimeout(function() {
-                                    updateBoard();
-                                    updateGameInfo();
-                                    scheduleUpdates();
-                                }, 1000);
-                            }
-                        }
-                        
-                        // Set up event listeners
-                        document.getElementById('autoRefresh').addEventListener('change', function() {
-                            if (this.checked) {
-                                scheduleUpdates();
-                            }
-                        });
-
-                        document.getElementById('loadGame').addEventListener('click', function() {
-                            const gameId = document.getElementById('gameId').value.trim();
-                            if (gameId) {
-                                fetch('/load-game?id=' + encodeURIComponent(gameId), {
-                                    method: 'GET'
-                                }).then(function(response) {
-                                    if (response.ok) {
-                                        updateBoard();
-                                        updateGameInfo();
-                                    } else {
-                                        alert('Failed to load game. Please check the game ID.');
-                                    }
-                                }).catch(function(error) {
-                                    alert('Error: ' + error);
-                                });
-                            } else {
-                                alert('Please enter a valid game ID');
-                            }
-                        });
-
-                        // Start the update cycle
-                        scheduleUpdates();
-                    "#)) }
-                )
-                .into_string(),
-            )
+            (status, match active_color {
+                chess::Color::White => "White",
+                chess::Color::Black => "Black",
+            })
         } else {
-            page(
-                html!(
-                    style { r#"
-                        body { 
-                            font-family: Arial, sans-serif;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            background-color: #f0f0f0;
-                        }
-                        h1 { 
-                            color: #333;
-                            margin-bottom: 1em;
-                        }
-                        .game-id-control {
-                            margin: 20px;
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            font-family: Arial, sans-serif;
-                        }
-                        .game-id-control input[type="text"] {
-                            padding: 8px;
-                            border: 1px solid #ccc;
-                            border-radius: 4px;
-                            font-size: 1em;
-                        }
-                        .game-id-control button {
-                            padding: 8px 16px;
-                            background-color: #2980b9;
-                            color: white;
-                            border: none;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            font-size: 1em;
-                        }
-                        .game-id-control button:hover {
-                            background-color: #3498db;
-                        }
-                    "# }
-                    h1 { "E-Chess" }
-                    p {"No game state"}
-                    div id="game-container" {
-                        div class="game-id-control" {
-                            label for="gameId" { "Game ID: " }
-                            input type="text" id="gameId" value=(current_game_id) {}
-                            button id="loadGame" { "Load Game" }
-                        }
-                        div id="board-container" {}
-                    }
-                    script { (PreEscaped(r#"
-                        // Function to fetch and update the board
-                        function updateBoard() {
-                            fetch('/board-update')
-                                .then(response => response.text())
-                                .then(html => {
-                                    document.getElementById('board-container').innerHTML = html;
-                                })
-                                .catch(error => {
-                                    console.error('Error updating board:', error);
-                                });
-                        }
-
-                        document.getElementById('loadGame').addEventListener('click', function() {
-                            const gameId = document.getElementById('gameId').value.trim();
-                            if (gameId) {
-                                fetch('/load-game?id=' + encodeURIComponent(gameId), {
-                                    method: 'GET'
-                                }).then(function(response) {
-                                    if (response.ok) {
-                                        // After loading a game, redirect to the game page
-                                        window.location.href = '/game';
-                                    } else {
-                                        alert('Failed to load game. Please check the game ID.');
-                                    }
-                                }).catch(function(error) {
-                                    alert('Error: ' + error);
-                                });
-                            } else {
-                                alert('Please enter a valid game ID');
-                            }
-                        });
-                    "#)) }
-                )
-                .into_string(),
-            )
+            ("No game", "None")
         };
+
+        // Always use the same page structure
+        let html = page(
+            html!(
+                link rel="stylesheet" href="/styles.css" {}
+                h1 { "E-Chess" }
+                
+                // Game info section - will be shown/hidden via JS
+                div id="game-info" class=("game-info".to_owned() + if !game_loaded { " hidden" } else { "" }) {
+                    p id="game-status" class="status" { (status) }
+                    p id="active-player" class="active-player" { 
+                        "Active player: " (active_color)
+                    }
+                }
+                
+                // No game message - will be shown/hidden via JS
+                p id="no-game-message" class=(if game_loaded { "hidden" } else { "" }) {
+                    "No game loaded. Please enter a game ID below to load a game."
+                }
+                
+                // Loading indicator - hidden by default
+                div id="loading-indicator" class="loading-indicator hidden" {
+                    div {}
+                    div {}
+                    div {}
+                    div {}
+                }
+                
+                // Game ID control - always visible
+                div class="game-id-control" {
+                    label for="gameId" { "Game ID: " }
+                    input type="text" id="gameId" value=(current_game_id) {}
+                    button id="loadGame" { "Load Game" }
+                }
+                
+                // Board container - will be populated via AJAX
+                div id="board-container" {}
+                
+                // Auto refresh control - will be shown/hidden via JS
+                div id="refresh-control" class=("refresh-control".to_owned() + if !game_loaded { " hidden" } else { "" }) {
+                    input type="checkbox" id="autoRefresh" checked="checked" {}
+                    label for="autoRefresh" { "Auto refresh" }
+                }
+                
+                script src="/board.js" {}
+            )
+            .into_string(),
+        );
+        
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
@@ -328,6 +108,34 @@ unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
 
         let mut response = request.into_ok_response()?;
         response.write_all(FAVICON)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/styles.css", Method::Get, move |request| -> Result<()> {
+        // Include the CSS file at compile time
+        const CSS: &[u8] = include_bytes!("../assets/styles.css");
+
+        let mut response = request.into_response(200, None, &[
+            ("Content-Type", "text/css"),
+        ])?;
+        response.write_all(CSS)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/board.js", Method::Get, move |request| -> Result<()> {
+        // Include the JavaScript file at compile time
+        const JS: &[u8] = include_bytes!("../assets/board.js");
+
+        let mut response = request.into_response(200, None, &[
+            ("Content-Type", "application/javascript"),
+        ])?;
+        response.write_all(JS)?;
         Ok(())
     })?;
     Ok(())
@@ -494,6 +302,8 @@ impl Web {
 
         unsafe { 
             handle_favicon(server)?;
+            handle_css(server)?;
+            handle_js(server)?;
             handle_game(server, self.game.clone(), self.game_id.clone())?;
             handle_board_update(server, self.game.clone())?;
             handle_game_info(server, self.game.clone())?;

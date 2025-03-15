@@ -11,7 +11,7 @@ use esp_idf_svc::{
     wifi::EspWifi,
 };
 use log::*;
-use maud::{html, PreEscaped};
+use maud::{html, PreEscaped, DOCTYPE};
 use std::thread::{self, sleep};
 use std::time::Duration;
 
@@ -33,83 +33,14 @@ enum Event {
 
 pub fn page(body: String) -> String {
     html!(
+        (DOCTYPE)
         html {
             head {
                 meta charset="UTF-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
+
                 title { "E-Chess" }
-                style { r#"
-                    body {
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        background-color: #f0f0f0;
-                        margin: 0;
-                        padding: 20px;
-                    }
-                    h1 {
-                        color: #333;
-                        margin-bottom: 1em;
-                    }
-                    .container {
-                        background-color: white;
-                        padding: 30px;
-                        border-radius: 8px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                        max-width: 400px;
-                        width: 100%;
-                    }
-                    form {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 15px;
-                    }
-                    .form-group {
-                        display: flex;
-                        flex-direction: column;
-                        gap: 5px;
-                    }
-                    label {
-                        color: #2d3436;
-                        font-weight: bold;
-                    }
-                    input[type="text"],
-                    input[type="password"] {
-                        padding: 10px;
-                        border: 1px solid #ddd;
-                        border-radius: 4px;
-                        font-size: 16px;
-                    }
-                    input[type="submit"] {
-                        background-color: #b58863;
-                        color: white;
-                        border: none;
-                        padding: 12px;
-                        border-radius: 4px;
-                        font-size: 16px;
-                        cursor: pointer;
-                        margin-top: 10px;
-                    }
-                    input[type="submit"]:hover {
-                        background-color: #9e7657;
-                    }
-                    .message {
-                        text-align: center;
-                        margin-bottom: 20px;
-                        line-height: 1.5;
-                    }
-                    .error {
-                        color: #d63031;
-                    }
-                    a {
-                        color: #b58863;
-                        text-decoration: none;
-                    }
-                    a:hover {
-                        text-decoration: underline;
-                    }
-                "# }
+                link rel="stylesheet" href="/styles.css" {}
             }
             body { (PreEscaped(body)) }
         }
