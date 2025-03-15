@@ -124,6 +124,10 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
     type R = R;
 
     fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError<R>> {
+        let (tx, rx) = mpsc::channel();
+        self.upstream_rx = rx;
+        self.upstream_tx = tx;
+
         let url = format!("https://lichess.org/api/board/game/stream/{}", id);
         self.request
             .stream(&mut self.upstream_tx.clone(), &url)

@@ -67,31 +67,37 @@ fn run_game(
         }
 
         #[cfg(not(feature = "no_board"))]
-        match board.tick() {
-            Ok(physical) => match game.tick(physical) {
-                Ok(_expected) => {
-                    // TODO: not sure if this isn't a bit inefficient...
-                    state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
-                    display.tick(physical, &game)?;
+        {
+            if let Some(_) = game.game {
+                match board.tick() {
+                    Ok(physical) => match game.tick(physical) {
+                        Ok(_expected) => {
+                            // TODO: not sure if this isn't a bit inefficient to do every tick...
+                            state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
+                            display.tick(physical, &game)?;
+                        }
+                        Err(e) => return Err(e.into()),
+                    },
+                    Err(e) => return Err(e),
                 }
-                Err(e) => return Err(e.into()),
-            },
-            Err(e) => return Err(e),
+            }
         }
 
         #[cfg(feature = "no_board")]
         {
-            let new_expected =
-                game.tick(*game.game.as_ref().unwrap().current_position().combined());
-            match new_expected {
-                Ok(_expected) => {
-                    state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
-                    display.tick(
-                        *game.game.as_ref().unwrap().current_position().combined(),
-                        &game,
-                    )?;
+            if let Some(_) = game.game.as_ref() {
+                let new_expected =
+                    game.tick(*game.game.as_ref().unwrap().current_position().combined());
+                match new_expected {
+                    Ok(_expected) => {
+                        state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
+                        display.tick(
+                            *game.game.as_ref().unwrap().current_position().combined(),
+                            &game,
+                        )?;
+                    }
+                    Err(e) => return Err(e.into()),
                 }
-                Err(e) => return Err(e.into()),
             }
         }
     }

@@ -289,8 +289,9 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
         if let Some(query) = uri.split('?').nth(1) {
             if let Some(id_param) = query.split('&').find(|p| p.starts_with("id=")) {
                 if let Some(id) = id_param.split('=').nth(1) {
+                    println!("Loading game: {}", id);
                     // Send the game ID through the channel
-                    let _ = sender.send(GameCommandEvent::LoadNewGame(id.to_string()));
+                    sender.send(GameCommandEvent::LoadNewGame(id.to_string())).unwrap();
                 }
             }
         }
