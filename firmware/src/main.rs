@@ -66,9 +66,32 @@ fn run_game(
             match event {
                 GameCommandEvent::LoadNewGame(game_id) => {
                     info!("Loading new game: {}", game_id);
+
+                    // Load the new game
                     match game.reset(&game_id) {
-                        Ok(_) => info!("Successfully reset game with ID: {}", game_id),
-                        Err(e) => warn!("Failed to reset game: {:?}", e),
+                        Ok(_) => {
+                            info!("Successfully reset game with ID: {}", game_id);
+                            // Notify the UI about the new game
+                            match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                                Ok(_) => info!("Sent game update event (new game)"),
+                                Err(e) => warn!("Failed to send game update event: {:?}", e),
+                            }
+
+                            // Send the GameLoaded event with the game ID
+                            match state_tx.send(GameStateEvent::GameLoaded(game_id.clone())) {
+                                Ok(_) => info!("Sent game loaded event for ID: {}", game_id),
+                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to reset game: {:?}", e);
+
+                            // Send an empty GameLoaded event to indicate failure
+                            match state_tx.send(GameStateEvent::GameLoaded(String::new())) {
+                                Ok(_) => info!("Sent empty game loaded event to indicate failure"),
+                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
+                            }
+                        }
                     }
                 }
             }

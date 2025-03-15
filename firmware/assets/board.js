@@ -1,130 +1,83 @@
-// Function to fetch and update the board
-function updateBoard() {
-    fetch('/board-update')
-        .then(response => response.text())
-        .then(html => {
-            document.getElementById('board-container').innerHTML = html;
-            
-            // Check if we have a game loaded
-            const hasGame = !html.includes('No game loaded');
-            updateUIVisibility(hasGame);
-        })
-        .catch(error => {
-            console.error('Error updating board:', error);
-            hideLoadingIndicator();
-            showNoGameMessage();
-        });
-}
-
-// Function to fetch and update the game info
-function updateGameInfo() {
-    fetch('/game-info')
+// Function to fetch and update game data (board and game info combined)
+function updateGameData() {
+    fetch('/game-data')
         .then(response => response.json())
         .then(data => {
-            document.getElementById('game-status').textContent = data.status;
-            document.getElementById('active-player').textContent = 'Active player: ' + data.activePlayer;
+            // Check game state
+            const isLoaded = data.isLoaded;
             
-            // Check if we have a game loaded
-            const hasGame = data.status !== 'No game';
-            updateUIVisibility(hasGame);
+            // Update UI visibility based on game state
+            updateUIVisibility(isLoaded);
+
+            // Update game info
+            document.getElementById('game-status').textContent = data.status;
+            document.getElementById('active-player').textContent = `Active player: ${data.activePlayer || 'None'}`;
+            
+            // Update board HTML
+            document.getElementById('board-container').innerHTML = data.boardHtml || "";
+            
+            // Check if this is the game we're waiting for
+            if (window.requestedGameId && isLoaded && data.gameId === window.requestedGameId) {
+                console.log('Game loaded successfully:', data.gameId);
+                
+                // Enable the button
+                loadingFinished();
+            }
         })
         .catch(error => {
-            console.error('Error updating game info:', error);
-            hideLoadingIndicator();
-            showNoGameMessage();
+            console.error('Error updating game data:', error);
+            updateUIVisibility(false);
+            loadingFinished();
         });
 }
 
-// Function to show loading indicator
-function showLoadingIndicator() {
-    const loadingIndicator = document.getElementById('loading-indicator');
-    const noGameMessage = document.getElementById('no-game-message');
+// Function to disable load button and show loading indicator inside it
+function disableLoadButton() {
+    const loadGameButton = document.getElementById('loadGame');
+    if (loadGameButton) {
+        loadGameButton.disabled = true;
+        loadGameButton.classList.add('loading');
+        loadGameButton.innerHTML = '<span class="button-loading-indicator"></span> Loading...';
+    }
+}
+
+// Function to enable load button and restore its text
+function loadingFinished() {
+    // Reset the requested game ID
+    window.requestedGameId = null;
     
-    if (loadingIndicator) {
-        loadingIndicator.classList.remove('hidden');
-    }
-    
-    if (noGameMessage) {
-        noGameMessage.classList.add('hidden');
-    }
-}
-
-// Function to hide loading indicator
-function hideLoadingIndicator() {
-    const loadingIndicator = document.getElementById('loading-indicator');
-    if (loadingIndicator) {
-        loadingIndicator.classList.add('hidden');
+    const loadGameButton = document.getElementById('loadGame');
+    if (loadGameButton) {
+        loadGameButton.disabled = false;
+        loadGameButton.classList.remove('loading');
+        loadGameButton.textContent = 'Load Game';
     }
 }
 
-// Function to show no game message
-function showNoGameMessage() {
-    const noGameMessage = document.getElementById('no-game-message');
-    if (noGameMessage) {
-        noGameMessage.textContent = "No game loaded. Please enter a game ID below to load a game.";
-        noGameMessage.classList.remove('hidden');
-    }
-}
-
-// Function to update UI visibility based on game state
-function updateUIVisibility(hasGame) {
+// Function to update UI visibility
+function updateUIVisibility(isLoaded) {
     // Show/hide game info
     const gameInfo = document.getElementById('game-info');
     if (gameInfo) {
-        gameInfo.classList.toggle('hidden', !hasGame);
+        gameInfo.classList.toggle('hidden', !isLoaded);
     }
     
-    // Show/hide no game message and loading indicator
-    const noGameMessage = document.getElementById('no-game-message');
-    const loadingIndicator = document.getElementById('loading-indicator');
-    
-    if (hasGame) {
-        // Game is loaded, hide both no-game message and loading indicator
-        if (noGameMessage) noGameMessage.classList.add('hidden');
-        if (loadingIndicator) loadingIndicator.classList.add('hidden');
-    } else {
-        // No game is loaded
-        // If we're in loading state, keep the loading indicator visible
-        // Otherwise show the no-game message
-        if (loadingIndicator && !loadingIndicator.classList.contains('hidden')) {
-            // We're in loading state, keep the indicator visible
-            if (noGameMessage) noGameMessage.classList.add('hidden');
-        } else {
-            // We're not in loading state, show the no-game message
-            if (noGameMessage) noGameMessage.classList.remove('hidden');
-            if (loadingIndicator) loadingIndicator.classList.add('hidden');
-        }
-    }
-    
-    // Show/hide refresh control
-    const refreshControl = document.getElementById('refresh-control');
-    if (refreshControl) {
-        refreshControl.classList.toggle('hidden', !hasGame);
-    }
-}
-
-// Function to schedule updates
-function scheduleUpdates() {
-    if (document.getElementById('autoRefresh') && document.getElementById('autoRefresh').checked) {
-        setTimeout(function() {
-            updateBoard();
-            updateGameInfo();
-            scheduleUpdates();
-        }, 1000);
+    // Show/hide board container
+    const boardContainer = document.getElementById('board-container');
+    if (boardContainer) {
+        boardContainer.classList.toggle('hidden', !isLoaded);
     }
 }
 
 // Set up event listeners when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    // Auto refresh checkbox
-    const autoRefreshCheckbox = document.getElementById('autoRefresh');
-    if (autoRefreshCheckbox) {
-        autoRefreshCheckbox.addEventListener('change', function() {
-            if (this.checked) {
-                scheduleUpdates();
-            }
-        });
-    }
+    // Initial update to get the current game state
+    updateGameData();
+    
+    // Set up a single interval for updates
+    setInterval(function() {
+        updateGameData();
+    }, 1000);
 
     // Load game button
     const loadGameButton = document.getElementById('loadGame');
@@ -132,40 +85,42 @@ document.addEventListener('DOMContentLoaded', function() {
         loadGameButton.addEventListener('click', function() {
             const gameId = document.getElementById('gameId').value.trim();
             if (gameId) {
-                // Show loading indicator
-                showLoadingIndicator();
+                // Disable the button and show loading indicator inside it
+                disableLoadButton();
+                
+                updateUIVisibility(false);
+
+                // Clear the board immediately to provide visual feedback
+                const boardContainer = document.getElementById('board-container');
+                if (boardContainer) {
+                    boardContainer.innerHTML = '';
+                }
                 
                 fetch('/load-game?id=' + encodeURIComponent(gameId), {
                     method: 'GET'
                 }).then(function(response) {
                     if (response.ok) {
-                        // Don't hide the loading indicator here
-                        // It will be hidden by updateUIVisibility when the game is confirmed to be loaded
-                        updateBoard();
-                        updateGameInfo();
+                        console.log('Load game request sent, waiting for game to load...');
+                        
+                        // Store the requested game ID
+                        window.requestedGameId = gameId;
                     } else {
                         alert('Failed to load game. Please check the game ID.');
-                        hideLoadingIndicator();
-                        showNoGameMessage();
+                        loadingFinished();
+                        
+                        // Update UI to show no game
+                        updateUIVisibility(false);
                     }
                 }).catch(function(error) {
                     alert('Error: ' + error);
-                    hideLoadingIndicator();
-                    showNoGameMessage();
+                    loadingFinished();
+                    
+                    // Update UI to show no game
+                    updateUIVisibility(false);
                 });
             } else {
                 alert('Please enter a valid game ID');
             }
         });
-    }
-
-    // Start the update cycle if auto-refresh is checked
-    if (autoRefreshCheckbox && autoRefreshCheckbox.checked) {
-        // Delay the first update slightly to ensure the page is fully loaded
-        setTimeout(function() {
-            updateBoard();
-            updateGameInfo();
-            scheduleUpdates();
-        }, 200);
     }
 }); 

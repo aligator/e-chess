@@ -3,6 +3,8 @@ use chess::{BoardStatus, File, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::html;
+use serde_json::json;
+use core::panic;
 use std::{sync::{mpsc, Arc, Mutex}, thread};
 
 use crate::wifi::page;
@@ -10,6 +12,7 @@ use crate::wifi::page;
 #[derive(Debug)]
 pub enum GameStateEvent {
     UpdateGame(Option<chess::Game>),
+    GameLoaded(String),
 }
 
 #[derive(Debug)]
@@ -22,30 +25,9 @@ pub struct Web {
     game_id: Arc<Mutex<String>>,
 }
 
-unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>, current_game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_game(server: &mut EspHttpServer, current_game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/game", Method::Get, move |request| {
-        let game = game.lock().unwrap();
         let current_game_id = current_game_id.lock().unwrap().clone();
-
-        // Determine if a game is loaded
-        let game_loaded = game.is_some();
-
-        // Get initial game state if available
-        let (status, active_color) = if let Some(game) = &*game {
-            let game_state = game.current_position();
-            let active_color = game.side_to_move();
-            let status = match game_state.status() {
-                BoardStatus::Checkmate => "Checkmate!",
-                BoardStatus::Stalemate => "Stalemate",
-                BoardStatus::Ongoing => "In progress",
-            };
-            (status, match active_color {
-                chess::Color::White => "White",
-                chess::Color::Black => "Black",
-            })
-        } else {
-            ("No game", "None")
-        };
 
         // Always use the same page structure
         let html = page(
@@ -53,42 +35,25 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::
                 link rel="stylesheet" href="/styles.css" {}
                 h1 { "E-Chess" }
                 
-                // Game info section - will be shown/hidden via JS
-                div id="game-info" class=("game-info".to_owned() + if !game_loaded { " hidden" } else { "" }) {
-                    p id="game-status" class="status" { (status) }
-                    p id="active-player" class="active-player" { 
-                        "Active player: " (active_color)
-                    }
-                }
-                
-                // No game message - will be shown/hidden via JS
-                p id="no-game-message" class=(if game_loaded { "hidden" } else { "" }) {
-                    "No game loaded. Please enter a game ID below to load a game."
-                }
-                
-                // Loading indicator - hidden by default
-                div id="loading-indicator" class="loading-indicator hidden" {
-                    div {}
-                    div {}
-                    div {}
-                    div {}
-                }
-                
                 // Game ID control - always visible
                 div class="game-id-control" {
                     label for="gameId" { "Game ID: " }
                     input type="text" id="gameId" value=(current_game_id) {}
                     button id="loadGame" { "Load Game" }
                 }
+               
+                // Game info section - will be shown/hidden via JS
+                div id="game-info" class=("game-info hidden") {
+                    div class="status-container" {
+                        p id="game-status" class="status" { "" }
+                    }
+                    p id="active-player" class="active-player" { 
+                        ""
+                    }
+                }
                 
                 // Board container - will be populated via AJAX
                 div id="board-container" {}
-                
-                // Auto refresh control - will be shown/hidden via JS
-                div id="refresh-control" class=("refresh-control".to_owned() + if !game_loaded { " hidden" } else { "" }) {
-                    input type="checkbox" id="autoRefresh" checked="checked" {}
-                    label for="autoRefresh" { "Auto refresh" }
-                }
                 
                 script src="/board.js" {}
             )
@@ -141,7 +106,7 @@ unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
-unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>) -> Result<()> {
+unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>, game: Arc<Mutex<Option<chess::Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/load-game", Method::Get, move |request| -> Result<()> {
         let uri = request.uri();
         
@@ -150,7 +115,10 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
             if let Some(id_param) = query.split('&').find(|p| p.starts_with("id=")) {
                 if let Some(id) = id_param.split('=').nth(1) {
                     println!("Loading game: {}", id);
-                    // Send the game ID through the channel
+
+                    *game_id.lock().unwrap() = "".to_string();
+                    
+                    // Trigger event to load new game
                     sender.send(GameCommandEvent::LoadNewGame(id.to_string())).unwrap();
                 }
             }
@@ -164,15 +132,41 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
     Ok(())
 }
 
-// New function to handle board updates via AJAX
-unsafe fn handle_board_update(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>) -> Result<()> {
-    server.fn_handler_nonstatic("/board-update", Method::Get, move |request| -> Result<()> {
+// Send game data to the client
+unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
+    server.fn_handler_nonstatic("/game-data", Method::Get, move |request| -> Result<()> {
         let game = game.lock().unwrap();
+        let current_game_id = game_id.lock().unwrap().clone();
         
-        let html = if let Some(game) = &*game {
+        // Determine game state
+        let has_game_id = !current_game_id.is_empty();
+        
+        let json_response = if !has_game_id || game.is_none() {
+            // Game ID exists but game is not loaded yet (loading)
+            json!({
+                "status": "",
+                "activePlayer": "",
+                "isLoaded": false,
+                "gameId": "",
+                "boardHtml": ""
+            }).to_string()
+        } else if let Some(game) = &*game {
+            // Game is loaded and ready
             let game_state = game.current_position();
+            let active_color = game.side_to_move();
+            let status = match game_state.status() {
+                BoardStatus::Checkmate => "Checkmate!",
+                BoardStatus::Stalemate => "Stalemate",
+                BoardStatus::Ongoing => "In progress",
+            };
             
-            let mut table: String = String::new();
+            let active_player = match active_color {
+                chess::Color::White => "White",
+                chess::Color::Black => "Black",
+            };
+            
+            // Generate board HTML
+            let mut table = String::new();
 
             for rank in (0..8).rev() {
                 table += &format!("<tr><td class='coord'>{}</td>", rank + 1);
@@ -209,54 +203,25 @@ unsafe fn handle_board_update(server: &mut EspHttpServer, game: Arc<Mutex<Option
             }
             table += "<tr><td></td><td class='coord'>a</td><td class='coord'>b</td><td class='coord'>c</td><td class='coord'>d</td><td class='coord'>e</td><td class='coord'>f</td><td class='coord'>g</td><td class='coord'>h</td></tr>";
             
-            // Wrap the HTML content with PreEscaped
-            format!("<table>{}</table>", table)
+            let board_html = format!("<table>{}</table>", table);
+            
+            // Use serde_json to create the JSON response
+            json!({
+                "status": status,
+                "activePlayer": active_player,
+                "isLoaded": true,
+                "gameId": current_game_id,
+                "boardHtml": board_html
+            }).to_string()
         } else {
-            // Wrap the HTML content with PreEscaped
-            "<p>No game loaded</p>".to_string() 
-        };
-        
-        let mut response = request.into_ok_response()?;
-        response.write_all(html.as_bytes())?;
-        Ok(())
-    })?;
-    
-    Ok(())
-}
-
-// New function to handle game info updates via AJAX
-unsafe fn handle_game_info(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>) -> Result<()> {
-    server.fn_handler_nonstatic("/game-info", Method::Get, move |request| -> Result<()> {
-        let game = game.lock().unwrap();
-        
-        let json = if let Some(game) = &*game {
-            let game_state = game.current_position();
-            let active_color = game.side_to_move();
-            let status = match game_state.status() {
-                BoardStatus::Checkmate => "Checkmate!",
-                BoardStatus::Stalemate => "Stalemate",
-                BoardStatus::Ongoing => "In progress",
-            };
-            
-            let active_player = match active_color {
-                chess::Color::White => "White",
-                chess::Color::Black => "Black",
-            };
-            
-            // Properly escape special characters in the JSON string
-            let escaped_status = status.replace("\"", "\\\"").replace("\n", "\\n");
-            let escaped_player = active_player.replace("\"", "\\\"").replace("\n", "\\n");
-            
-            format!(r#"{{"status":"{0}","activePlayer":"{1}"}}"#, escaped_status, escaped_player)
-        } else {
-            r#"{"status":"No game","activePlayer":"None"}"#.to_string()
+            panic!("Game is not loaded-should not happen");
         };
         
         // Set the content type header to application/json
         let mut response = request.into_response(200, None, &[
             ("Content-Type", "application/json"),
         ])?;
-        response.write_all(json.as_bytes())?;
+        response.write_all(json_response.as_bytes())?;
         Ok(())
     })?;
     
@@ -276,6 +241,7 @@ impl Web {
         let (tx_cmd, rx_cmd) = mpsc::channel::<GameCommandEvent>();
 
         let current_game_for_thread = self.game.clone();
+        let game_id_for_thread = self.game_id.clone();
         thread::spawn(move || {
             println!("Starting web event processing thread");
             loop {
@@ -288,6 +254,10 @@ impl Web {
                                 } else {
                                     current_game_for_thread.lock().unwrap().take();
                                 }
+                            }
+                            GameStateEvent::GameLoaded(id) => {
+                                // Update the game_id for the /game-info endpoint
+                                *game_id_for_thread.lock().unwrap() = id;
                             }
                         }
                     }
@@ -304,10 +274,10 @@ impl Web {
             handle_favicon(server)?;
             handle_css(server)?;
             handle_js(server)?;
-            handle_game(server, self.game.clone(), self.game_id.clone())?;
-            handle_board_update(server, self.game.clone())?;
-            handle_game_info(server, self.game.clone())?;
-            handle_load_game(server, tx_cmd)?;
+            handle_game(server, self.game_id.clone())?;
+            // Use the combined endpoint instead of separate board and game info endpoints
+            handle_game_data(server, self.game.clone(), self.game_id.clone())?;
+            handle_load_game(server, tx_cmd, self.game.clone(), self.game_id.clone())?;
         };
 
         Ok(rx_cmd)
