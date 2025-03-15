@@ -8,14 +8,17 @@ use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
 use esp_idf_svc::eventloop::EspSystemEventLoop;
+use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
 use log::*;
 use maud::html;
 use request::EspRequester;
+use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use storage::Storage;
+use web::{GameCommandEvent, GameStateEvent};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod board;
@@ -30,7 +33,7 @@ fn run_game(
     token: String,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
-    web: &mut web::Web,
+    mut server: &mut EspHttpServer<'static>,
 ) -> Result<()> {
     #[cfg(not(feature = "no_board"))]
     let mut board = Board::new(mcp23017, 0x20);
@@ -45,30 +48,20 @@ fn run_game(
     let lichess_connector = LichessConnector::new(requester);
 
     // Use the game ID from the web interface
-    let game_id = web.get_game_id();
-    let mut game = ChessGame::new(lichess_connector, &game_id)?;
+    let mut game = ChessGame::new(lichess_connector)?;
+
+    let web = web::Web::new();
+    let (state_tx, state_rx) = channel::<GameStateEvent>();
+    let command_rx = web.register(&mut server, state_rx)?;
 
     // Start the main loop
     info!("Start app loop");
     loop {
-        // Check if the game ID has changed via the event channel
-        if let Some(new_game_id) = web.check_for_game_id_change() {
-            // Game ID has changed, reload the game
-            info!("Game ID changed to {}, reloading game", new_game_id);
-
-            // Create a new requester and connector
-            let requester = EspRequester::new(token.clone());
-            let lichess_connector = LichessConnector::new(requester);
-
-            // Create a new chess game with the new ID
-            match ChessGame::new(lichess_connector, &new_game_id) {
-                Ok(new_chess) => {
-                    game = new_chess;
-                    info!("Game reloaded successfully");
-                }
-                Err(e) => {
-                    error!("Failed to load game: {:?}", e);
-                    // Continue with the current game
+        // Check if event happens
+        if let Ok(event) = command_rx.try_recv() {
+            match event {
+                GameCommandEvent::LoadNewGame(game_id) => {
+                    game.reset(&game_id)?;
                 }
             }
         }
@@ -76,8 +69,9 @@ fn run_game(
         #[cfg(not(feature = "no_board"))]
         match board.tick() {
             Ok(physical) => match game.tick(physical) {
-                Ok(expected) => {
-                    web.tick(game.game.clone());
+                Ok(_expected) => {
+                    // TODO: not sure if this isn't a bit inefficient...
+                    state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
                     display.tick(physical, &game)?;
                 }
                 Err(e) => return Err(e.into()),
@@ -87,12 +81,15 @@ fn run_game(
 
         #[cfg(feature = "no_board")]
         {
-            let game = chess::Game::default();
-            let new_expected = game.tick(*game.current_position().combined());
+            let new_expected =
+                game.tick(*game.game.as_ref().unwrap().current_position().combined());
             match new_expected {
-                Ok(expected) => {
-                    web.tick(game.game.clone());
-                    display.tick(*game.current_position().combined(), &game)?;
+                Ok(_expected) => {
+                    state_tx.send(GameStateEvent::UpdateGame(game.game.clone()))?;
+                    display.tick(
+                        *game.game.as_ref().unwrap().current_position().combined(),
+                        &game,
+                    )?;
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -121,8 +118,6 @@ fn main() -> Result<()> {
 
     let ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
 
-    let mut web = web::Web::new();
-
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs.clone()))?;
@@ -147,10 +142,8 @@ fn main() -> Result<()> {
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
-    web.register(&mut server)?;
-
     if let Some(token) = token {
-        match run_game(token, mcp23017, ws2812, &mut web) {
+        match run_game(token, mcp23017, ws2812, &mut server) {
             Ok(_) => {
                 warn!("Stopping game loop");
                 Ok(())

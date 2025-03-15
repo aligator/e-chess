@@ -32,7 +32,8 @@ async fn main() {
     });
 
     // Use the factory function from the request module
-    let mut game = ChessGame::new(request::create_lichess_connector(api_key), &id).unwrap();
+    let mut game = ChessGame::new(request::create_lichess_connector(api_key)).unwrap();
+    game.reset(&id).unwrap();
 
     let mut physical_board = game.expected_physical();
     // Start with all set correctly.

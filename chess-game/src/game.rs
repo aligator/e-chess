@@ -45,7 +45,7 @@ pub struct ChessGame<Connection: ChessConnector> {
     /// This makes it
     /// 1. possible to run a fully local chess game
     /// 2. possible to validate moves before they are sent to the server
-    pub game: Game,
+    pub game: Option<Game>,
 
     /// The connection to the server.
     /// It is used to sync the game state with the server.
@@ -74,9 +74,15 @@ pub struct ChessGame<Connection: ChessConnector> {
 
 impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let board: Board = self.game.current_position();
+        if self.game.is_none() {
+            return write!(f, "No game");
+        }
+
+        let game = self.game.as_ref().unwrap();
+
+        let board: Board = game.current_position();
         // Add header showing whose turn it is
-        let turn = if self.game.side_to_move() == Color::White {
+        let turn = if game.side_to_move() == Color::White {
             "White to move"
         } else {
             "Black to move"
@@ -92,7 +98,7 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
             }
         }
 
-        writeln!(f, "\nFEN: {}\n", self.game.current_position())?;
+        writeln!(f, "\nFEN: {}\n", game.current_position())?;
 
         #[cfg(not(feature = "colored-debug"))]
         writeln!(f, "\n♙ = white\n♟ = black\n")?;
@@ -169,7 +175,7 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
                                 format!(" {} ", symbol).on_green()
                             } else {
                                 // TODO: is it performant enough to call this multiple times?
-                                if MoveGen::new_legal(&self.game.current_position())
+                                if MoveGen::new_legal(&game.current_position())
                                     .filter(|m| m.get_source() == from)
                                     .any(|m| m.get_dest() == square)
                                 {
@@ -215,19 +221,12 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
 }
 
 impl<Connection: ChessConnector> ChessGame<Connection> {
-    pub fn new(
-        mut connection: Connection,
-        id: &str,
-    ) -> Result<Self, ChessGameError<Connection::R>> {
-        let initial_game = connection.load_game(id)?;
-        let white = *initial_game.current_position().color_combined(Color::White);
-        let black = *initial_game.current_position().color_combined(Color::Black);
-
+    pub fn new(connection: Connection) -> Result<Self, ChessGameError<Connection::R>> {
         Ok(ChessGame {
-            game: initial_game,
+            game: None,
             connection: connection,
-            expected_white: white,
-            expected_black: black,
+            expected_white: BitBoard(0),
+            expected_black: BitBoard(0),
             physical: BitBoard::new(0),
             state: ChessState::Idle,
             server_moves: Vec::new(),
@@ -235,27 +234,32 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     }
 
     pub fn last_move(&self) -> Option<ChessMove> {
-        self.game
-            .actions()
-            .iter()
-            .filter(is_move_action)
-            .last()
-            .map(action_to_move)
+        if let Some(game) = &self.game {
+            game.actions()
+                .iter()
+                .filter(is_move_action)
+                .last()
+                .map(action_to_move)
+        } else {
+            None
+        }
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError<Connection::R>> {
-        self.game = self.connection.load_game(id)?;
-        self.server_moves = self
-            .game
-            .actions()
-            .iter()
-            .filter(is_move_action)
-            .map(action_to_move)
-            .collect();
+        self.game = Some(self.connection.load_game(id)?);
 
-        // Reset expected physical board state based on the loaded game.
-        self.expected_white = *self.game.current_position().color_combined(Color::White);
-        self.expected_black = *self.game.current_position().color_combined(Color::Black);
+        if let Some(game) = &self.game {
+            self.server_moves = game
+                .actions()
+                .iter()
+                .filter(is_move_action)
+                .map(action_to_move)
+                .collect();
+
+            // Reset expected physical board state based on the loaded game.
+            self.expected_white = *game.current_position().color_combined(Color::White);
+            self.expected_black = *game.current_position().color_combined(Color::Black);
+        }
 
         Ok(())
     }
@@ -265,8 +269,14 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     }
 
     fn execute_move(&mut self, chess_move: ChessMove) -> bool {
+        if self.game.is_none() {
+            return false;
+        }
+
+        let game = self.game.as_mut().unwrap();
+
         // First check if the move is legal.
-        if !self.game.current_position().legal(chess_move) {
+        if !game.current_position().legal(chess_move) {
             return false;
         }
 
@@ -287,7 +297,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
         // If it was successful, execute the move also locally
         // -> should not fail as it is legal.
-        if !self.game.make_move(chess_move) {
+        if !game.make_move(chess_move) {
             panic!(
                 "Move was legal but could not be executed locally. Should not happen. {:?}",
                 chess_move
@@ -299,6 +309,10 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     /// A new pice got placed.
     /// This move is only possible, if one pice was removed before (to make a move).
     fn place_physical(&mut self, to: Square) {
+        if self.game.is_none() {
+            return;
+        }
+
         match self.state {
             ChessState::MovingPiece { piece, from } => {
                 // Only set promotion if it's a pawn moving to the last rank
@@ -331,8 +345,9 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
                 // Update the expected physical board states.
                 // This includes any remove or castled pieces.
-                self.expected_white = *self.game.current_position().color_combined(Color::White);
-                self.expected_black = *self.game.current_position().color_combined(Color::Black);
+                let game: &Game = self.game.as_ref().unwrap();
+                self.expected_white = *game.current_position().color_combined(Color::White);
+                self.expected_black = *game.current_position().color_combined(Color::Black);
             }
             ChessState::Idle => {
                 // Illegal to place piece without removing one first
@@ -342,15 +357,22 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
     // Remove piece physically, but remember it, so that it can be placed again later at another position.
     fn remove_physical(&mut self, square: Square) {
+        if self.game.is_none() {
+            return;
+        }
+
         match self.state {
             ChessState::MovingPiece { piece: _, from } => {
                 // This is only allowed if a piece is removed because it gets destroyed.
                 // So if it is enemy and target of an attack by te moving piece.
 
                 // Check if the piece is an enemy.
-                if self.game.current_position().color_on(square) == Some(self.game.side_to_move()) {
-                    // Do nothing. It is illegal to remove a piece of the current player.
-                    return;
+                {
+                    let game: &Game = self.game.as_ref().unwrap();
+                    if game.current_position().color_on(square) == Some(game.side_to_move()) {
+                        // Do nothing. It is illegal to remove a piece of the current player.
+                        return;
+                    }
                 }
 
                 // Execute the move if it is successful - it is legal. If not, just do nothing.
@@ -365,18 +387,20 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
                 // Update the expected physical board states.
                 // This includes any remove pieces.
                 // The player will have to place the pice on the enemies square to continue the game.
-                self.expected_white = *self.game.current_position().color_combined(Color::White);
-                self.expected_black = *self.game.current_position().color_combined(Color::Black);
+                let game: &Game = self.game.as_ref().unwrap();
+                self.expected_white = *game.current_position().color_combined(Color::White);
+                self.expected_black = *game.current_position().color_combined(Color::Black);
             }
             ChessState::Idle => {
+                let game: &Game = self.game.as_ref().unwrap();
                 // Check if it is a piece of the current player.
-                if self.game.current_position().color_on(square) != Some(self.game.side_to_move()) {
+                if game.current_position().color_on(square) != Some(game.side_to_move()) {
                     // Do nothing. It is illegal to move pieces of the opponent.
                     return;
                 }
 
                 // Update the state with the moving piece
-                if let Some(piece) = self.game.current_position().piece_on(square) {
+                if let Some(piece) = game.current_position().piece_on(square) {
                     self.state = ChessState::MovingPiece {
                         piece,
                         from: square,
@@ -386,8 +410,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
                 // Remove the piece from the physical board.
                 // Just do both at once - it is easier and still correct.
                 let bit = BitBoard::from_square(square);
-
-                if self.game.side_to_move() == Color::White {
+                if game.side_to_move() == Color::White {
                     self.expected_white ^= bit;
                 } else {
                     self.expected_black ^= bit;
@@ -397,11 +420,15 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     }
 
     pub fn get_possible_moves(&self) -> BitBoard {
+        if self.game.is_none() {
+            return BitBoard::new(0);
+        }
+
         let mut moves = BitBoard::new(0);
 
         if let ChessState::MovingPiece { piece: _, from } = self.state {
-            for m in
-                MoveGen::new_legal(&self.game.current_position()).filter(|m| m.get_source() == from)
+            let game: &Game = self.game.as_ref().unwrap();
+            for m in MoveGen::new_legal(&game.current_position()).filter(|m| m.get_source() == from)
             {
                 moves |= BitBoard::from_square(m.get_dest());
             }
@@ -417,17 +444,24 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         &mut self,
         physical_board: BitBoard,
     ) -> Result<BitBoard, ChessGameError<Connection::R>> {
-        // Tick the connection to get events until there is no more event.
-        while let Some(event) = self.connection.next_event()? {
-            // event is the last move
-            println!("Event: {}", event);
-            self.game.make_move(ChessMove::from_str(&event)?);
+        if self.game.is_none() {
+            return Ok(physical_board);
+        }
+        {
+            let game: &mut Game = self.game.as_mut().unwrap();
 
-            self.server_moves.push(ChessMove::from_str(&event)?);
+            // Tick the connection to get events until there is no more event.
+            while let Some(event) = self.connection.next_event()? {
+                // event is the last move
+                println!("Event: {}", event);
+                game.make_move(ChessMove::from_str(&event)?);
 
-            self.expected_white = *self.game.current_position().color_combined(Color::White);
-            self.expected_black = *self.game.current_position().color_combined(Color::Black);
-            println!("EventDone: \n{}", self.game.current_position());
+                self.server_moves.push(ChessMove::from_str(&event)?);
+
+                self.expected_white = *game.current_position().color_combined(Color::White);
+                self.expected_black = *game.current_position().color_combined(Color::Black);
+                println!("EventDone: \n{}", game.current_position());
+            }
         }
 
         // Save current physical board for visualization.
@@ -437,7 +471,8 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         let last_occupied = self.expected_physical();
 
         // If there is already a winner, just do nothing.
-        if self.game.result().is_some() {
+        let game: &mut Game = self.game.as_mut().unwrap();
+        if game.result().is_some() {
             return Ok(last_occupied);
         }
 
@@ -484,7 +519,7 @@ mod tests {
 
     #[test]
     fn test_new_game() {
-        let chess = ChessGame::new(LocalChessConnector::new(), "").unwrap();
+        let chess = ChessGame::new(LocalChessConnector::new()).unwrap();
         assert_eq!(chess.expected_white, BitBoard::new(65535));
 
         // 11111111
@@ -505,6 +540,6 @@ mod tests {
         // 00000000
         // 11111111
         // 11111111
-        assert_eq!(chess.game.side_to_move(), Color::White);
+        assert_eq!(chess.game.as_ref().unwrap().side_to_move(), Color::White);
     }
 }

@@ -1,24 +1,31 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use chess::{BoardStatus, File, Game, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::{html, PreEscaped};
-use std::sync::{Arc, Mutex, mpsc};
-use std::thread;
+use std::{sync::{mpsc, Arc, Mutex}, thread};
 
 use crate::wifi::page;
+
+pub enum GameStateEvent {
+    UpdateGame(Option<chess::Game>),
+}
+
+pub enum GameCommandEvent {
+    LoadNewGame(String),
+}
 
 pub struct Web {
     game: Arc<Mutex<Option<chess::Game>>>,
     game_id: Arc<Mutex<String>>,
-    event_sender: mpsc::Sender<String>,
-    event_receiver: Arc<Mutex<mpsc::Receiver<String>>>,
 }
 
-unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>, current_game_id: Arc<Mutex<String>>) -> Result<()> {
+
+
     server.fn_handler_nonstatic("/game", Method::Get, move |request| {
         let game = game.lock().unwrap();
-        let current_game_id = game_id.lock().unwrap().clone();
+        let current_game_id = current_game_id.lock().unwrap().clone();
 
         let html = if let Some(game) = &*game {
             let game_state = game.current_position();
@@ -263,7 +270,7 @@ unsafe fn handle_game(server: &mut EspHttpServer, game: Arc<Mutex<Option<Game>>>
 }
 
 unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
-    server.fn_handler_nonstatic("/favicon.ico", Method::Get, move |request| {
+    server.fn_handler_nonstatic("/favicon.ico", Method::Get, move |request| -> Result<()> {
         // Include the favicon file at compile time
         const FAVICON: &[u8] = include_bytes!("../assets/favicon.ico");
 
@@ -274,8 +281,8 @@ unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
-unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<String>) -> Result<()> {
-    server.fn_handler_nonstatic("/load-game", Method::Get, move |request| {
+unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>) -> Result<()> {
+    server.fn_handler_nonstatic("/load-game", Method::Get, move |request| -> Result<()> {
         let uri = request.uri();
         
         // Parse the query string to get the game ID
@@ -283,7 +290,7 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Stri
             if let Some(id_param) = query.split('&').find(|p| p.starts_with("id=")) {
                 if let Some(id) = id_param.split('=').nth(1) {
                     // Send the game ID through the channel
-                    let _ = sender.send(id.to_string());
+                    let _ = sender.send(GameCommandEvent::LoadNewGame(id.to_string()));
                 }
             }
         }
@@ -299,50 +306,38 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Stri
 impl Web {
     pub fn new() -> Web {
         // Create a channel for game ID changes
-        let (tx, rx) = mpsc::channel();
-        
         Web {
             game: Arc::new(Mutex::new(None)),
-            game_id: Arc::new(Mutex::new(String::from("c3tClYtJeqSD"))), // Default game ID
-            event_sender: tx,
-            event_receiver: Arc::new(Mutex::new(rx)),
+            game_id: Arc::new(Mutex::new(String::new())),
         }
     }
 
-    pub fn register(&self, server: &mut EspHttpServer) -> Result<()> {
+    pub fn register(&self, server: &mut EspHttpServer, event_rx: mpsc::Receiver<GameStateEvent>) -> Result<mpsc::Receiver<GameCommandEvent>> {
+        let (tx_cmd, rx_cmd) = mpsc::channel::<GameCommandEvent>();
+
+        let current_game_for_thread = self.game.clone();
+        thread::spawn(move || {
+            if let Ok(game_state_event) = event_rx.recv() {
+                match game_state_event {
+                    GameStateEvent::UpdateGame(updated_game) => {
+                        if let Some(updated_game) = updated_game {
+                            current_game_for_thread.lock().unwrap().replace(updated_game);
+                        } else {
+                            current_game_for_thread.lock().unwrap().take();
+                        }
+                    }
+                }
+            }
+        });
+
+
         println!("Registering Web");
         unsafe { 
             handle_favicon(server)?;
             handle_game(server, self.game.clone(), self.game_id.clone())?;
-            handle_load_game(server, self.event_sender.clone())?;
+            handle_load_game(server, tx_cmd)?;
         };
-        Ok(())
-    }
 
-    pub fn tick(&mut self, game: chess::Game) {
-        self.game.lock().unwrap().replace(game);
-    }
-    
-    pub fn get_game_id(&self) -> String {
-        self.game_id.lock().unwrap().clone()
-    }
-    
-    // Check for game ID changes and update if necessary
-    pub fn check_for_game_id_change(&self) -> Option<String> {
-        // TODO: this is currently a bit weird implemented.
-        // Use proper solution with channels and event system.
-
-
-        // Try to get the receiver lock
-        let receiver_lock = self.event_receiver.lock().ok()?;
-        
-        // Try to receive a new game ID (non-blocking)
-        let new_game_id = receiver_lock.try_recv().ok()?;
-        
-        // Update the game ID
-        let mut game_id_lock = self.game_id.lock().ok()?;
-        *game_id_lock = new_game_id.clone();
-        
-        Some(new_game_id)
+        Ok(rx_cmd)
     }
 }
