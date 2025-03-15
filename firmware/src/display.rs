@@ -80,6 +80,15 @@ impl<'a> Display<'a> {
                 pixels[Self::get_pixel(last_move.get_dest())] = RGB { r: 0, g: 20, b: 20 };
             };
 
+            // Colorize the currently moving piece in blue
+            match game.state {
+                chess_game::game::ChessState::MovingPiece { piece: _, from } => {
+                    // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
+                    pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
+                }
+                _ => {}
+            }
+
             diff.missing.for_each(|square| {
                 pixels[Self::get_pixel(square)] = RGB { r: 20, g: 20, b: 0 };
             });

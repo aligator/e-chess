@@ -29,11 +29,6 @@ struct LichessGameResponse {
     state: LichessGameState,
 }
 
-enum LichessEvent {
-    GameResponse(LichessGameResponse),
-    GameStateUpdate(LichessGameState),
-}
-
 pub struct LichessConnector<R: Requester> {
     id: Option<String>,
 

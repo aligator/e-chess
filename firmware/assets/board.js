@@ -8,13 +8,11 @@ function updateBoard() {
             // Check if we have a game loaded
             const hasGame = !html.includes('No game loaded');
             updateUIVisibility(hasGame);
-            
-            // Hide loading indicator if it's visible
-            hideLoadingIndicator();
         })
         .catch(error => {
             console.error('Error updating board:', error);
             hideLoadingIndicator();
+            showNoGameMessage();
         });
 }
 
@@ -32,6 +30,8 @@ function updateGameInfo() {
         })
         .catch(error => {
             console.error('Error updating game info:', error);
+            hideLoadingIndicator();
+            showNoGameMessage();
         });
 }
 
@@ -57,6 +57,15 @@ function hideLoadingIndicator() {
     }
 }
 
+// Function to show no game message
+function showNoGameMessage() {
+    const noGameMessage = document.getElementById('no-game-message');
+    if (noGameMessage) {
+        noGameMessage.textContent = "No game loaded. Please enter a game ID below to load a game.";
+        noGameMessage.classList.remove('hidden');
+    }
+}
+
 // Function to update UI visibility based on game state
 function updateUIVisibility(hasGame) {
     // Show/hide game info
@@ -65,10 +74,26 @@ function updateUIVisibility(hasGame) {
         gameInfo.classList.toggle('hidden', !hasGame);
     }
     
-    // Show/hide no game message
+    // Show/hide no game message and loading indicator
     const noGameMessage = document.getElementById('no-game-message');
-    if (noGameMessage) {
-        noGameMessage.classList.toggle('hidden', hasGame);
+    const loadingIndicator = document.getElementById('loading-indicator');
+    
+    if (hasGame) {
+        // Game is loaded, hide both no-game message and loading indicator
+        if (noGameMessage) noGameMessage.classList.add('hidden');
+        if (loadingIndicator) loadingIndicator.classList.add('hidden');
+    } else {
+        // No game is loaded
+        // If we're in loading state, keep the loading indicator visible
+        // Otherwise show the no-game message
+        if (loadingIndicator && !loadingIndicator.classList.contains('hidden')) {
+            // We're in loading state, keep the indicator visible
+            if (noGameMessage) noGameMessage.classList.add('hidden');
+        } else {
+            // We're not in loading state, show the no-game message
+            if (noGameMessage) noGameMessage.classList.remove('hidden');
+            if (loadingIndicator) loadingIndicator.classList.add('hidden');
+        }
     }
     
     // Show/hide refresh control
@@ -76,9 +101,6 @@ function updateUIVisibility(hasGame) {
     if (refreshControl) {
         refreshControl.classList.toggle('hidden', !hasGame);
     }
-    
-    // Always hide loading indicator when updating UI
-    hideLoadingIndicator();
 }
 
 // Function to schedule updates
@@ -117,27 +139,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     method: 'GET'
                 }).then(function(response) {
                     if (response.ok) {
+                        // Don't hide the loading indicator here
+                        // It will be hidden by updateUIVisibility when the game is confirmed to be loaded
                         updateBoard();
                         updateGameInfo();
                     } else {
                         alert('Failed to load game. Please check the game ID.');
-                        // Show no game message again
                         hideLoadingIndicator();
-                        const noGameMessage = document.getElementById('no-game-message');
-                        if (noGameMessage) {
-                            noGameMessage.textContent = "No game loaded. Please enter a game ID below to load a game.";
-                            noGameMessage.classList.remove('hidden');
-                        }
+                        showNoGameMessage();
                     }
                 }).catch(function(error) {
                     alert('Error: ' + error);
-                    // Show no game message again
                     hideLoadingIndicator();
-                    const noGameMessage = document.getElementById('no-game-message');
-                    if (noGameMessage) {
-                        noGameMessage.textContent = "No game loaded. Please enter a game ID below to load a game.";
-                        noGameMessage.classList.remove('hidden');
-                    }
+                    showNoGameMessage();
                 });
             } else {
                 alert('Please enter a valid game ID');
