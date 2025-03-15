@@ -150,8 +150,8 @@ fn run_game(
             }
         }
 
-        // Sleep to reduce CPU usage and make logs more readable
-        sleep(Duration::from_millis(500));
+        // Sleep to reduce CPU usage
+        sleep(Duration::from_millis(100));
     }
 }
 
