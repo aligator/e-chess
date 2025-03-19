@@ -54,9 +54,7 @@ impl ChessConnector for LocalChessConnector {
     }
 
     fn next_event(&self) -> Result<Option<String>, ChessConnectorError<Self::R>> {
-        Ok(Some(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
-        ))
+        Ok(None)
     }
 }
 

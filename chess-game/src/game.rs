@@ -45,27 +45,27 @@ pub struct ChessGame<Connection: ChessConnector> {
     /// This makes it
     /// 1. possible to run a fully local chess game
     /// 2. possible to validate moves before they are sent to the server
-    pub game: Option<Game>,
+    game: Option<Game>,
 
     /// The connection to the server.
     /// It is used to sync the game state with the server.
     /// It also provides events the local game listens to.
     /// For example if the opponent made a move, the local game will be notified.
-    pub connection: Connection,
+    connection: Connection,
 
     /// The expected physical board state for white.
-    pub expected_white: BitBoard,
+    expected_white: BitBoard,
 
     /// The expected physical board state for black.
-    pub expected_black: BitBoard,
+    expected_black: BitBoard,
 
     /// The physical board state.
     /// If it differs too much from the expected state, the game pauses until it matches again.
-    pub physical: BitBoard,
+    physical: BitBoard,
 
     /// The current physical state of the game.
     /// It indicates if a pice is currently being moved physically.
-    pub state: ChessState,
+    state: ChessState,
 
     /// The last move that was made online.
     /// This is used to avoid sending the same moves multiple times.
@@ -224,13 +224,17 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     pub fn new(connection: Connection) -> Result<Self, ChessGameError<Connection::R>> {
         Ok(ChessGame {
             game: None,
-            connection: connection,
+            connection,
             expected_white: BitBoard(0),
             expected_black: BitBoard(0),
             physical: BitBoard::new(0),
             state: ChessState::Idle,
             server_moves: Vec::new(),
         })
+    }
+
+    pub fn game(&self) -> Option<Game> {
+        return self.game.clone();
     }
 
     pub fn last_move(&self) -> Option<ChessMove> {
@@ -472,39 +476,44 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         self.physical = physical_board;
 
         // Update the game state based on the physical board
-        let last_occupied = self.expected_physical();
+        let expected_occupied = self.expected_physical();
 
         // If there is already a winner, just do nothing.
         let game: &mut Game = self.game.as_mut().unwrap();
         if game.result().is_some() {
-            return Ok(last_occupied);
+            return Ok(expected_occupied);
         }
 
-        if last_occupied.only_one_bit_set_to_one() {
+        let diff = expected_occupied.get_different_bits(self.physical);
+        if !diff.only_one_bit_set_to_one() {
             // If more than one bit differs - do nothing,
             // as there would be no way to determine what happens.
             // In this case the previous physical board state has to be restored before continuing.
-            return Ok(last_occupied);
+            return Ok(expected_occupied);
         }
 
-        match physical_board.0.cmp(&last_occupied.0) {
+        match physical_board.0.cmp(&expected_occupied.0) {
             Greater => {
                 // If more bits are set, a piece must have been placed.
                 self.place_physical(Square::new(
-                    last_occupied.get_different_bits(physical_board).first_one(),
+                    expected_occupied
+                        .get_different_bits(physical_board)
+                        .first_one(),
                 ));
                 Ok(self.expected_physical())
             }
             Less => {
                 // If fewer bits are set, a piece must have been removed.
                 self.remove_physical(Square::new(
-                    last_occupied.get_different_bits(physical_board).first_one(),
+                    expected_occupied
+                        .get_different_bits(physical_board)
+                        .first_one(),
                 ));
                 Ok(self.expected_physical())
             }
             Equal => {
                 // If the same number of bits are set, do nothing.
-                Ok(last_occupied)
+                Ok(expected_occupied)
             }
         }
     }
@@ -512,33 +521,43 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
 #[cfg(test)]
 mod tests {
-    use crate::chess_connector::LocalChessConnector;
+    use crate::{chess_connector::LocalChessConnector, requester::DummyRequester};
 
     use super::*;
 
     #[test]
-    fn test_new_game() {
-        let chess = ChessGame::new(LocalChessConnector::new()).unwrap();
-        assert_eq!(chess.expected_white, BitBoard::new(65535));
+    fn test_tick_invalid_board() -> Result<(), ChessGameError<DummyRequester>> {
+        let mut chess = ChessGame::new(LocalChessConnector::new()).unwrap();
+        chess.reset("")?;
 
-        // 11111111
-        // 11111111
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        assert_eq!(chess.expected_black, BitBoard::new(18446462598732840960));
+        let mut physical = chess.expected_physical();
 
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        // 00000000
-        // 11111111
-        // 11111111
-        assert_eq!(chess.game.as_ref().unwrap().side_to_move(), Color::White);
+        // Set initally correct
+        let initially_expected = chess.tick(physical)?;
+        assert!(initially_expected == physical);
+
+        // Take two black that shouldn't be taken
+        physical = physical
+            ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::A))
+            ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::B));
+        let expected = chess.tick(physical)?;
+        println!("{:?}", chess);
+        assert!(expected == initially_expected);
+
+        // Now take a2 - it should not try to make the move!
+        physical = physical ^ BitBoard::from_square(Square::make_square(Rank::Second, File::A));
+        let expected = chess.tick(physical)?;
+        println!("{:?}", chess);
+        assert!(expected == initially_expected);
+
+        // Try to place on a3
+        physical = physical | BitBoard::from_square(Square::make_square(Rank::Third, File::A));
+        let expected = chess.tick(physical)?;
+        println!("{:?}", chess);
+        assert!(expected == initially_expected);
+
+        // Until now - no real move was done -> expected is still the initially expected.
+
+        Ok(())
     }
 }

@@ -103,7 +103,7 @@ unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
-unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>, game: Arc<Mutex<Option<chess::Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>, game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/load-game", Method::Get, move |request| -> Result<()> {
         let uri = request.uri();
         
@@ -272,9 +272,8 @@ impl Web {
             handle_css(server)?;
             handle_js(server)?;
             handle_game(server, self.game_id.clone())?;
-            // Use the combined endpoint instead of separate board and game info endpoints
             handle_game_data(server, self.game.clone(), self.game_id.clone())?;
-            handle_load_game(server, tx_cmd, self.game.clone(), self.game_id.clone())?;
+            handle_load_game(server, tx_cmd, self.game_id.clone())?;
         };
 
         Ok(rx_cmd)

@@ -37,7 +37,7 @@ async fn main() {
 
     let mut physical_board = game.expected_physical();
     // Start with all set correctly.
-    game.physical = physical_board;
+    game.tick(physical_board).unwrap();
 
     println!("{:?}", game);
 
@@ -76,8 +76,7 @@ async fn main() {
 
                 // Use try-catch pattern to gracefully handle errors
                 match game.tick(physical_board) {
-                    Ok(new_board) => {
-                        //   physical_board = new_board;
+                    Ok(_new_board) => {
                         // Print the game state
                         println!("{:?}", game);
                     }

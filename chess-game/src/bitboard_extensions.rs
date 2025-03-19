@@ -55,3 +55,17 @@ impl BitBoardExtensions for BitBoard {
         println!("   a b c d e f g h");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_only_one_bit_set_to_one() {
+        assert!(BitBoard::new(0b00100).only_one_bit_set_to_one());
+        assert!(!BitBoard::new(0b100100).only_one_bit_set_to_one());
+        assert!(!BitBoard::new(0b111111).only_one_bit_set_to_one());
+        assert!(BitBoard::new(0b10000).only_one_bit_set_to_one());
+        assert!(BitBoard::new(0b00001).only_one_bit_set_to_one());
+    }
+}

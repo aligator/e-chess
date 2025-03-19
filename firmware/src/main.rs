@@ -48,7 +48,7 @@ fn run_game(
     let lichess_connector = LichessConnector::new(requester);
 
     // Use the game ID from the web interface
-    let mut game = ChessGame::new(lichess_connector)?;
+    let mut chess_game = ChessGame::new(lichess_connector)?;
     info!("Created ChessGame");
 
     let web = web::Web::new();
@@ -68,11 +68,11 @@ fn run_game(
                     info!("Loading new game: {}", game_id);
 
                     // Load the new game
-                    match game.reset(&game_id) {
+                    match chess_game.reset(&game_id) {
                         Ok(_) => {
                             info!("Successfully reset game with ID: {}", game_id);
                             // Notify the UI about the new game
-                            match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                            match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
                                 Ok(_) => info!("Sent game update event (new game)"),
                                 Err(e) => warn!("Failed to send game update event: {:?}", e),
                             }
@@ -99,19 +99,19 @@ fn run_game(
 
         #[cfg(not(feature = "no_board"))]
         {
-            if let Some(_) = game.game {
+            if let Some(game) = chess_game.game() {
                 match board.tick() {
                     Ok(physical) => {
-                        match game.tick(physical) {
+                        match chess_game.tick(physical) {
                             Ok(_expected) => {
                                 // TODO: not sure if this isn't a bit inefficient to do every tick...
-                                match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                                match state_tx.send(GameStateEvent::UpdateGame(Some(game))) {
                                     Ok(_) => {}
                                     Err(e) => {
                                         warn!("Failed to send game update: {:?}", e);
                                     }
                                 }
-                                display.tick(physical, &game)?;
+                                display.tick(physical, &chess_game)?;
                             }
                             Err(e) => {
                                 warn!("Error in game tick: {:?}", e);
@@ -125,23 +125,19 @@ fn run_game(
             }
         }
 
-        #[cfg(feature = "no_board")]
+        //#[cfg(feature = "no_board")]
         {
-            if let Some(_) = game.game.as_ref() {
-                let new_expected =
-                    game.tick(*game.game.as_ref().unwrap().current_position().combined());
+            if let Some(game) = chess_game.game() {
+                let new_expected = chess_game.tick(*game.clone().current_position().combined());
                 match new_expected {
                     Ok(_expected) => {
-                        match state_tx.send(GameStateEvent::UpdateGame(game.game.clone())) {
+                        match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
                             Ok(_) => {}
                             Err(e) => {
                                 warn!("Failed to send game update: {:?}", e);
                             }
                         }
-                        display.tick(
-                            *game.game.as_ref().unwrap().current_position().combined(),
-                            &game,
-                        )?;
+                        display.tick(*game.clone().current_position().combined(), &chess_game)?;
                     }
                     Err(e) => {
                         warn!("Error in game tick: {:?}", e);
