@@ -126,7 +126,7 @@ fn run_game(
             }
         }
 
-        //#[cfg(feature = "no_board")]
+        #[cfg(feature = "no_board")]
         {
             if let Some(game) = chess_game.game() {
                 let new_expected = chess_game.tick(*game.clone().current_position().combined());
