@@ -285,13 +285,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         }
 
         // Check if the move has already been made.
-        if self.server_moves.last() == Some(&chess_move) {
-            println!("Move already made: {:?}", chess_move);
-            println!("Server moves: {:?}", self.server_moves);
-        } else {
-            println!("Sending move: {:?}", chess_move);
-            println!("Server moves: {:?}", self.server_moves);
-
+        if self.server_moves.last() != Some(&chess_move) {
             // Ensure the move is legal by checking the connection first
             if !self.connection.make_move(chess_move) {
                 return false;

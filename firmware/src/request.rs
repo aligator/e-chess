@@ -78,7 +78,6 @@ impl EspRequester {
         let bytes_read = match response.read(&mut buf[offset..]) {
             Ok(size) => {
                 if size == 0 {
-                    info!("End of response reached (zero bytes)");
                     return Ok((0, String::new(), offset));
                 }
                 size
@@ -211,11 +210,11 @@ impl Requester for EspRequester {
             loop {
                 match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
                     Ok((size, text, new_offset)) => {
+                        info!("Receiving Chunks of data");
                         if size == 0 {
-                            info!("Stream ended (zero bytes received)");
-
                             // Process any remaining accumulated data
                             if !accumulated_data.is_empty() {
+                                info!("Event received");
                                 match tx.send(accumulated_data) {
                                     Ok(_) => {}
                                     Err(e) => {
@@ -273,7 +272,6 @@ impl Requester for EspRequester {
                     }
                 }
             }
-            info!("Stream processing completed");
             Ok(())
         });
 
@@ -282,7 +280,6 @@ impl Requester for EspRequester {
 
     fn post(&self, url: &str, body: &str) -> Result<String, RequestError> {
         info!("Starting POST request to: {}", url);
-        info!("POST request body: {}", body);
 
         // Prepare headers with auth token
         let headers = [
@@ -292,8 +289,7 @@ impl Requester for EspRequester {
         ];
 
         // Create the request
-        info!("Preparing POST request to: {}", url);
-        // may be more stable to create a new client each time
+        // It is more stable to create a new client each time. But maybe not fast...
         let mut client = create_client()?;
         let mut request = match client.request(Method::Post, url, &headers) {
             Ok(req) => req,
@@ -310,7 +306,6 @@ impl Requester for EspRequester {
         }
 
         // Submit the request
-        info!("Submitting POST request");
         let response = match request.submit() {
             Ok(resp) => resp,
             Err(e) => {
@@ -320,10 +315,8 @@ impl Requester for EspRequester {
         };
 
         let status = response.status();
-        info!("POST response status code: {}", status);
 
         // Process the response
-        info!("Processing POST response");
         let result = EspRequester::process_response(response, status);
         match &result {
             Ok(response_text) => {
