@@ -3,10 +3,11 @@ use board::Board;
 use chess_game::game::ChessGame;
 use chess_game::lichess::LichessConnector;
 use embedded_svc::http::Method;
-use esp_idf_hal::i2c::*;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
+use esp_idf_hal::rmt::TxRmtDriver;
+use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
@@ -99,13 +100,13 @@ fn run_game(
 
         #[cfg(not(feature = "no_board"))]
         {
-            if let Some(game) = chess_game.game() {
+            if let Some(_) = chess_game.game() {
                 match board.tick() {
                     Ok(physical) => {
                         match chess_game.tick(physical) {
                             Ok(_expected) => {
                                 // TODO: not sure if this isn't a bit inefficient to do every tick...
-                                match state_tx.send(GameStateEvent::UpdateGame(Some(game))) {
+                                match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
                                     Ok(_) => {}
                                     Err(e) => {
                                         warn!("Failed to send game update: {:?}", e);
@@ -170,7 +171,15 @@ fn main() -> Result<()> {
     let config = I2cConfig::new().baudrate(100.kHz().into());
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
 
-    let ws2812 = Ws2812Esp32Rmt::new(peripherals.rmt.channel0, peripherals.pins.gpio23)?;
+    let driver_config = TransmitConfig::new()
+        .clock_divider(1) // Required parameter.
+        .mem_block_num(8); // Increase the number depending on your code.
+    let driver = TxRmtDriver::new(
+        peripherals.rmt.channel0,
+        peripherals.pins.gpio23,
+        &driver_config,
+    )?;
+    let ws2812 = Ws2812Esp32Rmt::new_with_rmt_driver(driver)?;
 
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;

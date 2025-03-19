@@ -33,7 +33,7 @@ esp-idf-sys = { version = "0.36", default-features = false, features = [
 
 anyhow = { version = "1.0.86" }
 smart-leds = { version = "0.4.0", default-features = false }
-ws2812-esp32-rmt-driver = { version = "*", default-features = false, features = ["smart-leds-trait"], git = "https://github.com/aligator/ws2812-esp32-rmt-driver.git", branch = "fix-flickering-by-using-2-mem-blocks" }
+ws2812-esp32-rmt-driver = { version = "0.12.0", default-features = false, features = ["smart-leds-trait"] }
 chess = { git = "https://github.com/aligator/chess-rs", default-features = false }
 chess-game = { version = "*", default-features = false, path = "../chess-game" }
 heapless = {version = "0.8.0", default-features = false }
