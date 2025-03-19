@@ -65,10 +65,7 @@ impl<'a> Display<'a> {
     ) -> Result<()> {
         let expected = game.expected_physical();
 
-        if self
-            .previous_state
-            .map_or(true, |prev| prev != (physical, expected))
-        {
+        if self.previous_state != Some((physical, expected)) {
             let diff = expected.diff(physical);
             let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
 
@@ -81,12 +78,9 @@ impl<'a> Display<'a> {
             };
 
             // Colorize the currently moving piece in blue
-            match game.state {
-                chess_game::game::ChessState::MovingPiece { piece: _, from } => {
-                    // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
-                    pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
-                }
-                _ => {}
+            if let chess_game::game::ChessState::MovingPiece { piece: _, from } = game.state() {
+                // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
+                pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
             }
 
             diff.missing.for_each(|square| {

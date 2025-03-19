@@ -17,11 +17,7 @@ fn action_to_move(action: &Action) -> ChessMove {
 }
 
 fn is_move_action(action: &&Action) -> bool {
-    if let Action::MakeMove(_) = action {
-        true
-    } else {
-        false
-    }
+    matches!(action, Action::MakeMove(_))
 }
 
 #[derive(Error, Debug)]
@@ -234,7 +230,11 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     }
 
     pub fn game(&self) -> Option<Game> {
-        return self.game.clone();
+        self.game.clone()
+    }
+
+    pub fn state(&self) -> ChessState {
+        self.state
     }
 
     pub fn last_move(&self) -> Option<ChessMove> {
