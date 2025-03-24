@@ -75,11 +75,14 @@ impl EspRequester {
         offset: usize,
     ) -> Result<(usize, String, usize), RequestError> {
         // Read into the buffer starting at the offset
+        info!("Reading ...");
         let bytes_read = match response.read(&mut buf[offset..]) {
             Ok(size) => {
                 if size == 0 {
                     return Ok((0, String::new(), offset));
                 }
+                info!("Receiving Chunks of data");
+
                 size
             }
             Err(e) => {
@@ -90,10 +93,12 @@ impl EspRequester {
 
         let total_size = bytes_read + offset;
 
+        info!("Parse utf8");
         // Try to convert the entire buffer to a UTF-8 string
         match str::from_utf8(&buf[..total_size]) {
             Ok(s) => {
                 // All data is valid UTF-8
+                info!("Parsing done");
                 Ok((bytes_read, s.to_string(), 0))
             }
             Err(e) => {
@@ -203,14 +208,13 @@ impl Requester for EspRequester {
             }
 
             // Process the streaming response using the read_utf8_chunk helper
-            let mut buf = [0_u8; 1024]; // Buffer for reading
+            let mut buf = [0_u8; 128]; // Buffer for reading
             let mut offset = 0;
             let mut accumulated_data = String::new();
 
             loop {
                 match EspRequester::read_utf8_chunk(&mut response, &mut buf, offset) {
                     Ok((size, text, new_offset)) => {
-                        info!("Receiving Chunks of data");
                         if size == 0 {
                             // Process any remaining accumulated data
                             if !accumulated_data.is_empty() {
