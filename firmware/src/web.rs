@@ -22,20 +22,20 @@ pub enum GameCommandEvent {
 
 pub struct Web {
     game: Arc<Mutex<Option<chess::Game>>>,
-    game_id: Arc<Mutex<String>>,
+    game_key: Arc<Mutex<String>>,
 }
 
-unsafe fn handle_game(server: &mut EspHttpServer, current_game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/game", Method::Get, move |request| {
-        let current_game_id = current_game_id.lock().unwrap().clone();
+        let current_game_key = current_game_key.lock().unwrap().clone();
 
         // Always use the same page structure
         let html = page(
             html!(
                 // Game ID control - always visible
-                div class="game-id-control" {
-                    label for="gameId" { "Game ID: " }
-                    input type="text" id="gameId" value=(current_game_id) {}
+                div class="game-selector" {
+                    label for="gameKey" { "Game ID or FEN: " }
+                    input type="text" id="gameKey" value=(current_game_key) {}
                     button id="loadGame" { "Load Game" }
                 }
                
@@ -109,8 +109,10 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
         
         // Parse the query string to get the game ID
         if let Some(query) = uri.split('?').nth(1) {
-            if let Some(id_param) = query.split('&').find(|p| p.starts_with("id=")) {
+            if let Some(id_param) = query.split('&').find(|p| p.starts_with("key=")) {
                 if let Some(id) = id_param.split('=').nth(1) {
+                    // decode the id
+                    let id = urlencoding::decode(id)?;
                     println!("Loading game: {}", id);
 
                     *game_id.lock().unwrap() = "".to_string();
@@ -144,7 +146,7 @@ unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ch
                 "status": "",
                 "activePlayer": "",
                 "isLoaded": false,
-                "gameId": "",
+                "gameKey": "",
                 "boardHtml": ""
             }).to_string()
         } else if let Some(game) = &*game {
@@ -207,7 +209,7 @@ unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ch
                 "status": status,
                 "activePlayer": active_player,
                 "isLoaded": true,
-                "gameId": current_game_id,
+                "gameKey": current_game_id,
                 "boardHtml": board_html
             }).to_string()
         } else {
@@ -230,7 +232,7 @@ impl Web {
         // Create a channel for game ID changes
         Web {
             game: Arc::new(Mutex::new(None)),
-            game_id: Arc::new(Mutex::new(String::new())),
+            game_key: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -238,7 +240,7 @@ impl Web {
         let (tx_cmd, rx_cmd) = mpsc::channel::<GameCommandEvent>();
 
         let current_game_for_thread = self.game.clone();
-        let game_id_for_thread = self.game_id.clone();
+        let game_id_for_thread = self.game_key.clone();
         thread::spawn(move || {
             println!("Starting web event processing thread");
             loop {
@@ -271,9 +273,9 @@ impl Web {
             handle_favicon(server)?;
             handle_css(server)?;
             handle_js(server)?;
-            handle_game(server, self.game_id.clone())?;
-            handle_game_data(server, self.game.clone(), self.game_id.clone())?;
-            handle_load_game(server, tx_cmd, self.game_id.clone())?;
+            handle_game(server, self.game_key.clone())?;
+            handle_game_data(server, self.game.clone(), self.game_key.clone())?;
+            handle_load_game(server, tx_cmd, self.game_key.clone())?;
         };
 
         Ok(rx_cmd)

@@ -17,8 +17,8 @@ function updateGameData() {
             document.getElementById('board-container').innerHTML = data.boardHtml || "";
             
             // Check if this is the game we're waiting for
-            if (window.requestedGameId && isLoaded && data.gameId === window.requestedGameId) {
-                console.log('Game loaded successfully:', data.gameId);
+            if (window.requestedGameKey && isLoaded && data.gameKey === window.requestedGameKey) {
+                console.log('Game loaded successfully:', data.gameKey);
                 
                 // Enable the button
                 loadingFinished();
@@ -43,8 +43,8 @@ function disableLoadButton() {
 
 // Function to enable load button and restore its text
 function loadingFinished() {
-    // Reset the requested game ID
-    window.requestedGameId = null;
+    // Reset the requested game Key
+    window.requestedGameKey = null;
     
     const loadGameButton = document.getElementById('loadGame');
     if (loadGameButton) {
@@ -83,8 +83,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const loadGameButton = document.getElementById('loadGame');
     if (loadGameButton) {
         loadGameButton.addEventListener('click', function() {
-            const gameId = document.getElementById('gameId').value.trim();
-            if (gameId) {
+            const gameKey = document.getElementById('gameKey').value.trim();
+            if (gameKey) {
                 // Disable the button and show loading indicator inside it
                 disableLoadButton();
                 
@@ -96,16 +96,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     boardContainer.innerHTML = '';
                 }
                 
-                fetch('/load-game?id=' + encodeURIComponent(gameId), {
+                fetch('/load-game?key=' + encodeURIComponent(gameKey), {
                     method: 'GET'
                 }).then(function(response) {
                     if (response.ok) {
                         console.log('Load game request sent, waiting for game to load...');
                         
-                        // Store the requested game ID
-                        window.requestedGameId = gameId;
+                        // Store the requested game Key
+                        window.requestedGameKey = gameKey;
                     } else {
-                        alert('Failed to load game. Please check the game ID.');
+                        alert('Failed to load game. Please check the game Key.');
                         loadingFinished();
                         
                         // Update UI to show no game
@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateUIVisibility(false);
                 });
             } else {
-                alert('Please enter a valid game ID');
+                alert('Please enter a valid game Key');
             }
         });
     }

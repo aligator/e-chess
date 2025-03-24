@@ -1,5 +1,6 @@
 use anyhow::Result;
 use board::Board;
+use chess_game::chess_connector::LocalChessConnector;
 use chess_game::game::ChessGame;
 use chess_game::lichess::LichessConnector;
 use embedded_svc::http::Method;
@@ -44,12 +45,8 @@ fn run_game(
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    // Create a requester with the API key
-    let requester = EspRequester::new(token.clone());
-    let lichess_connector = Box::new(LichessConnector::new(requester));
-
     // Use the game ID from the web interface
-    let mut chess_game = ChessGame::new(lichess_connector)?;
+    let mut chess_game = ChessGame::new(LocalChessConnector::new())?;
     info!("Created ChessGame");
 
     let web = web::Web::new();
@@ -65,13 +62,22 @@ fn run_game(
         if let Ok(event) = command_rx.try_recv() {
             info!("Received command event: {:?}", event);
             match event {
-                GameCommandEvent::LoadNewGame(game_id) => {
-                    info!("Loading new game: {}", game_id);
+                GameCommandEvent::LoadNewGame(game_key) => {
+                    info!("Loading new game: {}", game_key);
+
+                    // If the game key is a FEN string, parse it and start a local game.
+                    // Otherwise, start a lichess game.
+                    chess_game = ChessGame::new(if game_key.contains(" ") {
+                        LocalChessConnector::new()
+                    } else {
+                        let requester = EspRequester::new(token.clone());
+                        Box::new(LichessConnector::new(requester))
+                    })?;
 
                     // Load the new game
-                    match chess_game.reset(&game_id) {
+                    match chess_game.reset(&game_key) {
                         Ok(_) => {
-                            info!("Successfully reset game with ID: {}", game_id);
+                            info!("Successfully reset game with ID: {}", game_key);
                             // Notify the UI about the new game
                             match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
                                 Ok(_) => info!("Sent game update event (new game)"),
@@ -79,8 +85,8 @@ fn run_game(
                             }
 
                             // Send the GameLoaded event with the game ID
-                            match state_tx.send(GameStateEvent::GameLoaded(game_id.clone())) {
-                                Ok(_) => info!("Sent game loaded event for ID: {}", game_id),
+                            match state_tx.send(GameStateEvent::GameLoaded(game_key.clone())) {
+                                Ok(_) => info!("Sent game loaded event for ID: {}", game_key),
                                 Err(e) => warn!("Failed to send game loaded event: {:?}", e),
                             }
                         }

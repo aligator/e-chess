@@ -65,20 +65,20 @@ td {
 .active-player {
     color: #2d3436;
 }
-.game-id-control {
+.game-selector {
     margin: 20px;
     display: flex;
     align-items: center;
     gap: 10px;
     font-family: Arial, sans-serif;
 }
-.game-id-control input[type="text"] {
+.game-selector input[type="text"] {
     padding: 8px;
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 1em;
 }
-.game-id-control button {
+.game-selector button {
     padding: 8px 16px;
     background-color: #b58863;
     color: white;
@@ -89,15 +89,15 @@ td {
     position: relative;
     min-width: 100px;
 }
-.game-id-control button:hover {
+.game-selector button:hover {
     background-color: #9e7657;
 }
-.game-id-control button:disabled {
+.game-selector button:disabled {
     background-color: #95a5a6;
     cursor: not-allowed;
     opacity: 0.8;
 }
-.game-id-control button.loading {
+.game-selector button.loading {
     padding-left: 30px;
 }
 
