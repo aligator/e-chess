@@ -1,6 +1,5 @@
 use crate::bitboard_extensions::*;
 use crate::chess_connector::{ChessConnector, ChessConnectorError};
-use crate::requester::Requester;
 use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
@@ -21,12 +20,12 @@ fn is_move_action(action: &&Action) -> bool {
 }
 
 #[derive(Error, Debug)]
-pub enum ChessGameError<R: Requester> {
+pub enum ChessGameError {
     #[error("board could not be loaded by the given FEN")]
     LoadingFen(#[from] chess::InvalidError),
 
     #[error("game could not be loaded")]
-    LoadingGame(#[from] ChessConnectorError<R>),
+    LoadingGame(#[from] ChessConnectorError),
 }
 
 #[derive(Clone, Copy)]
@@ -35,7 +34,7 @@ pub enum ChessState {
     MovingPiece { piece: Piece, from: Square },
 }
 
-pub struct ChessGame<Connection: ChessConnector> {
+pub struct ChessGame {
     /// The local game representation.
     /// It uses the chess lib that implements the rules of chess.
     /// This makes it
@@ -47,7 +46,7 @@ pub struct ChessGame<Connection: ChessConnector> {
     /// It is used to sync the game state with the server.
     /// It also provides events the local game listens to.
     /// For example if the opponent made a move, the local game will be notified.
-    connection: Connection,
+    connection: Box<dyn ChessConnector>,
 
     /// The expected physical board state for white.
     expected_white: BitBoard,
@@ -68,7 +67,7 @@ pub struct ChessGame<Connection: ChessConnector> {
     server_moves: Vec<ChessMove>,
 }
 
-impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
+impl fmt::Debug for ChessGame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.game.is_none() {
             return write!(f, "No game");
@@ -216,8 +215,8 @@ impl<Connection: ChessConnector> fmt::Debug for ChessGame<Connection> {
     }
 }
 
-impl<Connection: ChessConnector> ChessGame<Connection> {
-    pub fn new(connection: Connection) -> Result<Self, ChessGameError<Connection::R>> {
+impl ChessGame {
+    pub fn new(connection: Box<dyn ChessConnector>) -> Result<Self, ChessGameError> {
         Ok(ChessGame {
             game: None,
             connection,
@@ -249,7 +248,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
         }
     }
 
-    pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError<Connection::R>> {
+    pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
         self.game = Some(self.connection.load_game(id)?);
 
         if let Some(game) = &self.game {
@@ -438,10 +437,7 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
-    pub fn tick(
-        &mut self,
-        physical_board: BitBoard,
-    ) -> Result<BitBoard, ChessGameError<Connection::R>> {
+    pub fn tick(&mut self, physical_board: BitBoard) -> Result<BitBoard, ChessGameError> {
         if self.game.is_none() {
             return Ok(physical_board);
         }
@@ -515,12 +511,12 @@ impl<Connection: ChessConnector> ChessGame<Connection> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{chess_connector::LocalChessConnector, requester::DummyRequester};
+    use crate::chess_connector::LocalChessConnector;
 
     use super::*;
 
     #[test]
-    fn test_tick_invalid_board() -> Result<(), ChessGameError<DummyRequester>> {
+    fn test_tick_invalid_board() -> Result<(), ChessGameError> {
         let mut chess = ChessGame::new(LocalChessConnector::new()).unwrap();
         chess.reset("")?;
 

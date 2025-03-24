@@ -49,10 +49,7 @@ impl<R: Requester> LichessConnector<R> {
         }
     }
 
-    fn create_game(
-        &self,
-        game_response: LichessGameResponse,
-    ) -> Result<Game, ChessConnectorError<R>> {
+    fn create_game(&self, game_response: LichessGameResponse) -> Result<Game, ChessConnectorError> {
         let moves = game_response
             .state
             .moves
@@ -75,7 +72,7 @@ impl<R: Requester> LichessConnector<R> {
     fn parse_game(
         &self,
         game_response: String,
-    ) -> Result<LichessGameResponse, ChessConnectorError<R>> {
+    ) -> Result<LichessGameResponse, ChessConnectorError> {
         // First, try to parse the JSON to get the type field
         let json_value: serde_json::Value = serde_json::from_str(&game_response)
             .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
@@ -116,9 +113,7 @@ impl<R: Requester> LichessConnector<R> {
 }
 
 impl<R: Requester> ChessConnector for LichessConnector<R> {
-    type R = R;
-
-    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError<R>> {
+    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
         let (tx, rx) = mpsc::channel();
         self.upstream_rx = rx;
         self.upstream_tx = tx;
@@ -126,7 +121,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         let url = format!("https://lichess.org/api/board/game/stream/{}", id);
         self.request
             .stream(&mut self.upstream_tx.clone(), &url)
-            .map_err(|e| ChessConnectorError::<R>::RequestError(e))?;
+            .map_err(|e| ChessConnectorError::RequestError(e.to_string()))?;
 
         // Get first response from stream to check if game exists
         let first_response = self
@@ -161,7 +156,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         }
     }
 
-    fn next_event(&self) -> Result<Option<String>, ChessConnectorError<R>> {
+    fn next_event(&self) -> Result<Option<String>, ChessConnectorError> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
                 // parse_game now handles both game responses and game state updates

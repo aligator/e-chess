@@ -2,8 +2,10 @@
 // From the examples-crate directory, run:
 // cargo run --example lichess_game --features lichess-api
 
+use chess_game::chess_connector::{self, ChessConnector};
 use chess_game::game::ChessGame;
-use chess_game::request;
+use chess_game::lichess;
+use chess_game::request::Request;
 use std::io::{self, Write};
 
 #[tokio::main]
@@ -14,12 +16,10 @@ async fn main() {
     let api_key = std::env::var("LICHESS_API_KEY").unwrap_or_else(|_| {
         let args: Vec<String> = std::env::args().collect();
         if args.len() < 2 {
-            eprintln!(
-                "Please provide API key as argument or set LICHESS_API_KEY environment variable"
-            );
-            std::process::exit(1);
+            String::new()
+        } else {
+            args[1].clone()
         }
-        args[1].clone()
     });
 
     let id = std::env::var("GAME_ID").unwrap_or_else(|_| {
@@ -31,8 +31,14 @@ async fn main() {
         }
     });
 
+    let connector: Box<dyn ChessConnector> = if api_key.is_empty() {
+        chess_connector::LocalChessConnector::new()
+    } else {
+        Box::new(lichess::LichessConnector::new(Request { api_key }))
+    };
+
     // Use the factory function from the request module
-    let mut game = ChessGame::new(request::create_lichess_connector(api_key)).unwrap();
+    let mut game = ChessGame::new(connector).unwrap();
     game.reset(&id).unwrap();
 
     let mut physical_board = game.expected_physical();

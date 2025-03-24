@@ -113,7 +113,7 @@ pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
                 }
                 div class="container" {
                     p class="message" {
-                        "Set here the leechess api token." 
+                        "Set here the lichess api token." 
                     }
                     form action="/save_settings" method="POST" {
                         div class="form-group" {

@@ -5,7 +5,6 @@ use reqwest;
 use std::sync::mpsc::{RecvError, Sender};
 use thiserror::Error;
 
-use crate::lichess::LichessConnector;
 use crate::requester::Requester;
 
 #[derive(Error, Debug)]
@@ -19,6 +18,12 @@ pub enum RequestError {
 #[derive(Debug)]
 pub struct Request {
     pub api_key: String,
+}
+
+impl Request {
+    pub fn new(api_key: String) -> Self {
+        Self { api_key }
+    }
 }
 
 impl Requester for Request {
@@ -91,9 +96,4 @@ impl Requester for Request {
         // Wait for the response
         rx.recv().map_err(|e| RequestError::Recv(e))?
     }
-}
-
-// Factory functions to create connectors
-pub fn create_lichess_connector(api_key: String) -> LichessConnector<Request> {
-    LichessConnector::new(Request { api_key })
 }

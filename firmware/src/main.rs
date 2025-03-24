@@ -46,7 +46,7 @@ fn run_game(
 
     // Create a requester with the API key
     let requester = EspRequester::new(token.clone());
-    let lichess_connector = LichessConnector::new(requester);
+    let lichess_connector = Box::new(LichessConnector::new(requester));
 
     // Use the game ID from the web interface
     let mut chess_game = ChessGame::new(lichess_connector)?;

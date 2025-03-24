@@ -8,17 +8,28 @@ use std::{fmt::Debug, sync::mpsc::Sender};
 ///
 /// It can be used by the chess connectors.
 pub trait Requester {
-    type RequestError: Debug;
+    type RequestError: Debug + std::error::Error;
 
     fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), Self::RequestError>;
     fn post(&self, url: &str, body: &str) -> Result<String, Self::RequestError>;
 }
 
 #[derive(Debug)]
+pub struct DummyError;
+
+impl std::fmt::Display for DummyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Dummy error")
+    }
+}
+
+impl std::error::Error for DummyError {}
+
+#[derive(Debug)]
 pub struct DummyRequester;
 
 impl Requester for DummyRequester {
-    type RequestError = ();
+    type RequestError = DummyError;
 
     fn stream(&self, _tx: &mut Sender<String>, _url: &str) -> Result<(), Self::RequestError> {
         Ok(())
