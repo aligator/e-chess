@@ -49,6 +49,9 @@ fn run_game(
     let mut chess_game = ChessGame::new(LocalChessConnector::new())?;
     info!("Created ChessGame");
 
+    // Load standard local game initially
+    chess_game.reset("")?;
+
     let web = web::Web::new();
     let (state_tx, state_rx) = channel::<GameStateEvent>();
     info!("Created state channel: {:?}", state_tx);
