@@ -1,5 +1,5 @@
 use crate::bitboard_extensions::*;
-use crate::chess_connector::{ChessConnector, ChessConnectorError};
+use crate::chess_connector::{ChessConnector, ChessConnectorError, GameEvent};
 use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
@@ -64,7 +64,12 @@ pub struct ChessGame {
 
     /// The last move that was made online.
     /// This is used to avoid sending the same moves multiple times.
+    /// And to track if the amount of moves is less - which triggers a take back
     server_moves: Vec<ChessMove>,
+
+    /// Current game id.
+    /// Needed to reset the game in case of "undo" since the chess lib does not support undoing.
+    id: String,
 }
 
 impl fmt::Debug for ChessGame {
@@ -225,6 +230,7 @@ impl ChessGame {
             physical: BitBoard::new(0),
             state: ChessState::Idle,
             server_moves: Vec::new(),
+            id: String::new(),
         })
     }
 
@@ -250,6 +256,7 @@ impl ChessGame {
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
         self.game = Some(self.connection.load_game(id)?);
+        self.id = id.to_string();
 
         if let Some(game) = &self.game {
             self.server_moves = game
@@ -441,25 +448,60 @@ impl ChessGame {
         if self.game.is_none() {
             return Ok(physical_board);
         }
+        let mut white_request_take_back = false;
+        let mut black_request_take_back = false;
+        let mut reset = false;
+
         {
             let game: &mut Game = self.game.as_mut().unwrap();
 
             // Tick the connection to get events until there is no more event.
             while let Some(event) = self.connection.next_event()? {
-                // event is the last move
-                match ChessMove::from_str(&event) {
-                    Ok(chess_move) => {
-                        game.make_move(chess_move);
-                        self.server_moves.push(chess_move);
+                match event {
+                    GameEvent::State(state) => {
+                        // Handle take-back.
+                        white_request_take_back = state.white_request_take_back;
+                        black_request_take_back = state.black_request_take_back;
+                        // If the new moves are less than before - it is a take back.
+                        if state.moves.len() <= self.server_moves.len() {
+                            // Do it after the while to avoid problems with multiple mut refs of self.
+                            reset = true;
+                            break;
+                        };
 
-                        self.expected_white = *game.current_position().color_combined(Color::White);
-                        self.expected_black = *game.current_position().color_combined(Color::Black);
+                        let last_move = state.moves.last();
+
+                        if let Some(last_move) = last_move {
+                            // event is the last move
+                            match ChessMove::from_str(last_move) {
+                                Ok(chess_move) => {
+                                    game.make_move(chess_move);
+                                    self.server_moves.push(chess_move);
+
+                                    self.expected_white =
+                                        *game.current_position().color_combined(Color::White);
+                                    self.expected_black =
+                                        *game.current_position().color_combined(Color::Black);
+                                }
+                                Err(e) => {
+                                    return Err(ChessGameError::LoadingFen(e));
+                                }
+                            }
+                        }
                     }
-                    Err(e) => {
-                        return Err(ChessGameError::LoadingFen(e));
-                    }
+                    _ => continue,
                 }
             }
+        }
+
+        if reset {
+            self.reset(self.id.clone().as_str())?;
+            // And do the tick again to avoid missing events
+            return self.tick(physical_board);
+        }
+
+        if white_request_take_back || black_request_take_back {
+            println!("WARNING: do something with request_take_back");
         }
 
         // Save current physical board for visualization.

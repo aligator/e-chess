@@ -15,6 +15,17 @@ pub enum ChessConnectorError {
     InvalidFen(String),
 }
 
+pub struct GameState {
+    pub white_request_take_back: bool,
+    pub black_request_take_back: bool,
+    pub moves: Vec<String>,
+}
+
+pub enum GameEvent {
+    State(GameState),
+    Unknown,
+}
+
 pub trait ChessConnector {
     /// Loads a game by id and returns the FEN string of the game.
     fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError>;
@@ -27,7 +38,7 @@ pub trait ChessConnector {
     /// Ticks the connector and updates the board by returning the FEN string of the game.
     /// In this function the connector can check for new upstream events.
     /// It gets called as often as possible, so it should be lightweight.
-    fn next_event(&self) -> Result<Option<String>, ChessConnectorError>;
+    fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError>;
 }
 
 pub struct LocalChessConnector;
@@ -47,7 +58,7 @@ impl ChessConnector for LocalChessConnector {
         true
     }
 
-    fn next_event(&self) -> Result<Option<String>, ChessConnectorError> {
+    fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError> {
         Ok(None)
     }
 }

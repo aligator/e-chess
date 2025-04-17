@@ -1,5 +1,5 @@
 use crate::{
-    chess_connector::{ChessConnector, ChessConnectorError},
+    chess_connector::{ChessConnector, ChessConnectorError, GameEvent, GameState},
     requester::Requester,
 };
 use chess::{ChessMove, Game};
@@ -19,6 +19,8 @@ struct LichessGameState {
     winc: u64,
     binc: u64,
     status: String,
+    wtakeback: Option<bool>,
+    btakeback: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,6 +29,12 @@ struct LichessGameResponse {
     #[serde(rename = "initialFen")]
     initial_fen: String,
     state: LichessGameState,
+}
+
+enum LichessResponse {
+    GameState(LichessGameState),
+    Game(LichessGameResponse),
+    Other,
 }
 
 pub struct LichessConnector<R: Requester> {
@@ -69,10 +77,7 @@ impl<R: Requester> LichessConnector<R> {
         Ok(game)
     }
 
-    fn parse_game(
-        &self,
-        game_response: String,
-    ) -> Result<LichessGameResponse, ChessConnectorError> {
+    fn parse_game(&self, game_response: String) -> Result<LichessResponse, ChessConnectorError> {
         // First, try to parse the JSON to get the type field
         let json_value: serde_json::Value = serde_json::from_str(&game_response)
             .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
@@ -84,31 +89,13 @@ impl<R: Requester> LichessConnector<R> {
                 let game_state: LichessGameState = serde_json::from_value(json_value)
                     .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
 
-                // Create a GameResponse with the necessary fields
-                let game = LichessGameResponse {
-                    id: self.id.clone().unwrap_or_default(),
-                    initial_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-                        .to_string(),
-                    state: LichessGameState {
-                        event_type: "gameState".to_string(),
-                        moves: game_state.moves,
-                        wtime: 0,
-                        btime: 0,
-                        winc: 0,
-                        binc: 0,
-                        status: "".to_string(),
-                    },
-                };
-
-                return Ok(game);
+                return Ok(LichessResponse::GameState(game_state));
             }
         }
 
-        // Otherwise, try to parse as a regular game response
-        let game: LichessGameResponse = serde_json::from_value(json_value)
-            .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
-
-        Ok(game)
+        // Otherwise, try to parse as a regular game response - return Other if it is some other json.
+        Ok(serde_json::from_value(json_value)
+            .map_or(LichessResponse::Other, |v| LichessResponse::Game(v)))
     }
 }
 
@@ -129,7 +116,15 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
             .recv()
             .map_err(|_| ChessConnectorError::GameNotFound)?;
 
-        let game = self.parse_game(first_response)?;
+        let response = self.parse_game(first_response)?;
+        let game = match response {
+            LichessResponse::Game(game) => game,
+            _ => {
+                return Err(ChessConnectorError::InvalidResponse(
+                    "first message is not a valid game response".to_string(),
+                ))
+            }
+        };
 
         self.id = Some(id.to_string());
 
@@ -156,23 +151,31 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         }
     }
 
-    fn next_event(&self) -> Result<Option<String>, ChessConnectorError> {
+    fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError> {
         match self.upstream_rx.try_recv() {
             Ok(event) => {
                 // parse_game now handles both game responses and game state updates
-                let game = self.parse_game(event)?;
+                let response = self.parse_game(event)?;
 
-                // Get the last move of the event
-                let last_move = game
-                    .state
-                    .moves
-                    .split(" ")
-                    .filter(|v| !v.is_empty())
-                    .last()
-                    .unwrap_or_default();
+                let state = match response {
+                    LichessResponse::Game(game) => Some(game.state), // Not sure if this can even happen after the first response...
+                    LichessResponse::GameState(state) => Some(state),
+                    LichessResponse::Other => None,
+                };
 
-                if !last_move.is_empty() {
-                    Ok(Some(last_move.to_string()))
+                if let Some(state) = state {
+                    // Get the last move of the event
+                    let moves = state
+                        .moves
+                        .split(" ")
+                        .filter(|v| !v.is_empty())
+                        .map(|m| m.to_string());
+
+                    Ok(Some(GameEvent::State(GameState {
+                        moves: moves.collect(),
+                        white_request_take_back: state.wtakeback.unwrap_or(false),
+                        black_request_take_back: state.btakeback.unwrap_or(false),
+                    })))
                 } else {
                     Ok(None)
                 }
