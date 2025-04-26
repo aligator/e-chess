@@ -11,7 +11,11 @@ renderMetalPlate = false;
 flipElectronicCaseCover = false;
 
 // Experimental - not really nice...
-extraReedCutout = false;
+extraReedPinCutout = false;
+
+// More easy to add the wires,
+// but may lead to light bleeding into neightbour fields.
+electronicCutoutInBorder = true;
 
 renderPrintable = true;
 
@@ -315,6 +319,8 @@ module BottomElectronic()
             LedStripWiresInWalls(true);
     }
 
+    cutoutHeight = electronicCutoutInBorder ? boxHeight : wireRadius * 2 + c0;
+
     // Wires for the reeds. (vertical)
     for (i = [0:1:size - 1]) {
         translate([
@@ -325,7 +331,7 @@ module BottomElectronic()
             cube([
                 wireRadius * 2,
                 (size - 1) * fieldSize,
-                wireRadius * 2 + c0,
+                cutoutHeight,
             ]);
     }
 
@@ -339,7 +345,7 @@ module BottomElectronic()
             cube([
                 (size - 1) * fieldSize,
                 wireRadius * 2,
-                wireRadius * 2 + c0,
+                cutoutHeight,
             ]);
     }
 
@@ -527,7 +533,7 @@ module ReedPin()
         translate([ -c0, reedPinBorder, -c0 ])
             cube([ reedPinWidth + 2 * c0, cutoutWidthV, cutoutHeight + c0 ]);
 
-        if (extraReedCutout) {
+        if (extraReedPinCutout) {
             translate([ reedPinBorder, -c0, -c0 ])
                 cube([ cutoutWidthH, reedPinBorder / 2 + c0, reedPinHeight + 2 * c0 ]);
             translate([ reedPinBorder, reedPinWidth - reedPinBorder / 2 + c0, -c0 ])
