@@ -28,8 +28,7 @@ topBoardMultiColorEven = false;
 
 // Border on each field.
 // Note that two borders side by side lead to an effective *2 border.
-fieldBorder
-    = 1;
+fieldBorder = 1;
 
 wireRadius = 1.5;
 
@@ -334,12 +333,26 @@ module Bottom()
     {
         cube([ fullOuterBoard, fullOuterBoard, bottomHeight + boxHeight ]);
         translate([ bottomWallSize, bottomWallSize, bottomHeight ])
-            cube([
+        {
+            // This are the four slots of the bottom module.
+            translate([ gridOuter / 2 + 1 * tolerance,
+                gridOuter / 2 + 1 * tolerance,
+                0 ]) for (deg = [ 0, 90, 180, 270 ]) rotate(deg)
+                translate([ fieldBorder, fieldBorder, 0 ]) cube([
+                    gridOuter / 2 - fieldBorder + 1 * tolerance,
+                    gridOuter / 2 - fieldBorder + 1 * tolerance,
+                    boxHeight +
+                    c0
+                ]);
+
+            // And cut it at the top, so that the inserted grid can take part of it.
+            translate([ 0, 0, boxHeight / 2 ]) cube([
                 gridOuter + 2 * tolerance,
                 gridOuter + 2 * tolerance,
-                boxHeight +
+                boxHeight / 2 +
                 c0
             ]);
+        }
 
         BottomElectronic();
     }
@@ -349,7 +362,8 @@ module Bottom()
                 bottomWallSize + tolerance + fieldBorder,
                 bottomWallSize + tolerance + fieldBorder,
                 bottomHeight
-            ]){
+        ])
+        {
             eachGrid()
             {
                 translate([
