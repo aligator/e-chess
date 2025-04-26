@@ -80,10 +80,10 @@ fullOuterBoard = gridOuter + 2 * bottomWallSize + 2 * tolerance;
 
 reedPinWidth = ledWidth + reedPinBorder * 2;
 
-module eachGrid()
+module eachGrid(count = size)
 {
-    for (i = [0:1:size - 1]) {
-        for (j = [0:1:size - 1]) {
+    for (i = [0:1:count - 1]) {
+        for (j = [0:1:count - 1]) {
             translate([ i * fieldSize, j * fieldSize, 0 ]) children();
         }
     }
@@ -201,30 +201,43 @@ module TopGrid()
 
 module Grid()
 {
-    // Render the grid, but remove the outer border as that is rendered
-    // separately with the top grid.
-    intersection()
-    {
-        // Base cube, cuts away the outer border
-        translate([
-            fieldBorder * 2 + tolerance,
-            fieldBorder * 2 + tolerance,
-            0
-        ])
-            // Note we make the grid even smaller (by tolerance) to make sure it
-            // fits nicely in the top-grid.
-            cube([
-                gridInner - 2 * fieldBorder - 2 * tolerance - c0 * 2,
-                gridInner - 2 * fieldBorder - 2 * tolerance - c0 * 2,
-                boxHeight
-            ]);
+    // Note this creates the grid only for the half size.
+    // It is then added 4 times.
+    // Between the instances is a gap which will be filled by the top grid and the bottom part.
 
-        // Grid itself
-        translate([ fieldBorder, fieldBorder, 0 ])
+    // This are the four slots of the bottom module.
+    translate([ gridOuter / 2 + 1 * tolerance,
+        gridOuter / 2 + 1 * tolerance,
+        0 ]) for (deg = [ 0, 90, 180, 270 ])
+        rotate(deg)
+    {
+
+        // Render the grid, but remove the outer border as that is rendered
+        // separately with the top grid.
+
+        intersection()
         {
-            eachGrid()
+            // Base cube, cuts away the outer border
+            translate([
+                fieldBorder * 2 + tolerance,
+                fieldBorder * 2 + tolerance,
+                0
+            ])
+                // Note we make the grid even smaller (by tolerance) to make sure it
+                // fits nicely in the top-grid.
+                cube([
+                    (gridInner / 2) - 2 * fieldBorder - 2 * tolerance - c0 * 2,
+                    (gridInner / 2) - 2 * fieldBorder - 2 * tolerance - c0 * 2,
+                    boxHeight
+                ]);
+
+            // Grid itself
+            translate([ fieldBorder, fieldBorder, 0 ])
             {
-                Field(boxHeight - topBoardHeight - top - tolerance);
+                eachGrid(size / 2)
+                {
+                    Field(boxHeight - topBoardHeight - top - tolerance);
+                }
             }
         }
     }
@@ -285,7 +298,6 @@ module BottomElectronic()
 
     // Wires for the reeds. (vertical)
     for (i = [0:1:size - 1]) {
-
         translate([
             i * fieldSize + bottomWallSize + 2 * tolerance + fieldBorder * 2,
             bottomWallSize + tolerance + fieldSize / 2,
@@ -337,13 +349,17 @@ module Bottom()
             // This are the four slots of the bottom module.
             translate([ gridOuter / 2 + 1 * tolerance,
                 gridOuter / 2 + 1 * tolerance,
-                0 ]) for (deg = [ 0, 90, 180, 270 ]) rotate(deg)
-                translate([ fieldBorder, fieldBorder, 0 ]) cube([
-                    gridOuter / 2 - fieldBorder + 1 * tolerance,
-                    gridOuter / 2 - fieldBorder + 1 * tolerance,
-                    boxHeight +
-                    c0
-                ]);
+                0 ])
+            {
+                for (deg = [ 0, 90, 180, 270 ])
+                    rotate(deg)
+                        translate([ fieldBorder, fieldBorder, 0 ]) cube([
+                            gridOuter / 2 - fieldBorder + 1 * tolerance,
+                            gridOuter / 2 - fieldBorder + 1 * tolerance,
+                            boxHeight +
+                            c0
+                        ]);
+            }
 
             // And cut it at the top, so that the inserted grid can take part of it.
             translate([ 0, 0, boxHeight / 2 ]) cube([
@@ -359,9 +375,9 @@ module Bottom()
 
     if (renderReedPins) {
         translate([
-                bottomWallSize + tolerance + fieldBorder,
-                bottomWallSize + tolerance + fieldBorder,
-                bottomHeight
+            bottomWallSize + tolerance + fieldBorder,
+            bottomWallSize + tolerance + fieldBorder,
+            bottomHeight
         ])
         {
             eachGrid()
