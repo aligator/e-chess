@@ -58,7 +58,7 @@ reedThickness = 3.3;
 reedWireThickness = 2;
 reedOffset = 5;
 
-tolerance = 0.3;
+tolerance = 0.4;
 
 ledWallCutout = 2.0;
 
@@ -197,6 +197,14 @@ module TopGrid()
     {
         Field(top);
     }
+
+    // Add middle borders around the 4 slots.
+    // But not down to the bottom, as that is done by the bottom part to improve glueability.
+    // Let a small tolerance between.
+    translate([ 0, (gridInner / 2), bottomHeight + boxHeight / 2 + tolerance ])
+        cube([ gridInner, fieldBorder * 2, boxHeight / 2 - tolerance ]);
+    translate([ (gridInner / 2), 0, bottomHeight + boxHeight / 2 + tolerance ])
+        cube([ fieldBorder * 2, gridInner, boxHeight / 2 - tolerance ]);
 }
 
 module Grid()
@@ -206,9 +214,11 @@ module Grid()
     // Between the instances is a gap which will be filled by the top grid and the bottom part.
 
     // This are the four slots of the bottom module.
-    translate([ gridOuter / 2 + 1 * tolerance,
-        gridOuter / 2 + 1 * tolerance,
-        0 ]) for (deg = [ 0, 90, 180, 270 ])
+    translate([
+        gridOuter / 2,
+        gridOuter / 2,
+        0
+    ]) for (deg = [ 0, 90, 180, 270 ])
         rotate(deg)
     {
 
@@ -219,8 +229,8 @@ module Grid()
         {
             // Base cube, cuts away the outer border
             translate([
-                fieldBorder * 2 + tolerance,
-                fieldBorder * 2 + tolerance,
+                fieldBorder * 1 + tolerance,
+                fieldBorder * 1 + tolerance,
                 0
             ])
                 // Note we make the grid even smaller (by tolerance) to make sure it
@@ -232,12 +242,9 @@ module Grid()
                 ]);
 
             // Grid itself
-            translate([ fieldBorder, fieldBorder, 0 ])
+            eachGrid(size / 2)
             {
-                eachGrid(size / 2)
-                {
-                    Field(boxHeight - topBoardHeight - top - tolerance);
-                }
+                Field(boxHeight - topBoardHeight - top - tolerance);
             }
         }
     }
