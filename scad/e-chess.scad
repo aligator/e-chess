@@ -140,35 +140,44 @@ module Field(height)
 
 module TopBoard()
 {
-    translate([ fieldBorder, fieldBorder, 0 ])
+    difference()
     {
-        cube([
-            gridInner - tolerance * 2 - fieldBorder * 2,
-            gridInner - tolerance * 2 - fieldBorder * 2,
-            topBoardHeight
-        ]);
+        translate([ fieldBorder, fieldBorder, 0 ])
+        {
+            cube([
+                gridInner - tolerance * 2 - fieldBorder * 2,
+                gridInner - tolerance * 2 - fieldBorder * 2,
+                topBoardHeight
+            ]);
 
-        if (renderMultiColorBoard) {
-            for (i = [0:1:size - 1]) {
-                for (j = [0:1:size - 1]) {
-                    if ((i + j) % 2 == (topBoardMultiColorEven ? 0 : 1)) {
+            if (renderMultiColorBoard) {
+                for (i = [0:1:size - 1]) {
+                    for (j = [0:1:size - 1]) {
+                        if ((i + j) % 2 == (topBoardMultiColorEven ? 0 : 1)) {
 
-                        translate([
-                            i * fieldSize,
-                            j * fieldSize,
-                            topBoardHeight
-                        ])
-                        {
-                            cube([
-                                fieldSize - tolerance * 2 - fieldBorder * 2,
-                                fieldSize - tolerance * 2 - fieldBorder * 2,
-                                topBoardMultiColorHeight
-                            ]);
-                        };
+                            translate([
+                                i * fieldSize,
+                                j * fieldSize,
+                                topBoardHeight
+                            ])
+                            {
+                                cube([
+                                    fieldSize - tolerance * 2 - fieldBorder * 2,
+                                    fieldSize - tolerance * 2 - fieldBorder * 2,
+                                    topBoardMultiColorHeight
+                                ]);
+                            };
+                        }
                     }
                 }
             }
-        }
+        };
+
+        // Cut away borders around the 4 slots.
+        translate([ 0, (gridInner / 2) - tolerance * 2 - fieldBorder, -c0 ])
+            cube([ gridInner, fieldBorder * 2 + tolerance * 2, topBoardHeight + c0 * 2 ]);
+        translate([ (gridInner / 2) - tolerance * 2 - fieldBorder, 0, -c0 ])
+            cube([ fieldBorder * 2 + tolerance * 2, gridInner, topBoardHeight + c0 * 2 ]);
     }
 }
 
