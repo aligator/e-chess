@@ -234,6 +234,10 @@ impl ChessGame {
         })
     }
 
+    pub fn game_id(&self) -> String {
+        self.id.clone()
+    }
+
     pub fn game(&self) -> Option<Game> {
         self.game.clone()
     }

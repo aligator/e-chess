@@ -50,9 +50,9 @@ fn run_game(
     info!("Created ChessGame");
 
     // Load standard local game initially
-    chess_game.reset("")?;
+    chess_game.reset("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")?;
 
-    let web = web::Web::new();
+    let web = web::Web::new(chess_game.game(), chess_game.game_id());
     let (state_tx, state_rx) = channel::<GameStateEvent>();
     info!("Created state channel: {:?}", state_tx);
     let command_rx = web.register(&mut server, state_rx)?;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess::{BoardStatus, File, Rank, Square};
+use chess::{BoardStatus, File, Game, Rank, Square};
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::html;
@@ -202,11 +202,12 @@ unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ch
 }
 
 impl Web {
-    pub fn new() -> Web {
+    pub fn new(initial_game: Option<Game>, initial_game_key: String) -> Web {
         // Create a channel for game ID changes
+        println!("{:?} {:?}", initial_game, initial_game_key);
         Web {
-            game: Arc::new(Mutex::new(None)),
-            game_key: Arc::new(Mutex::new(String::new())),
+            game: Arc::new(Mutex::new(initial_game)),
+            game_key: Arc::new(Mutex::new(initial_game_key)),
         }
     }
 
