@@ -31,6 +31,34 @@ enum Event {
     AppSettings(AppSettings),
 }
 
+
+unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/favicon.ico", Method::Get, move |request| -> Result<()> {
+        // Include the favicon file at compile time
+        const FAVICON: &[u8] = include_bytes!("../assets/favicon.ico");
+
+        let mut response = request.into_ok_response()?;
+        response.write_all(FAVICON)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/styles.css", Method::Get, move |request| -> Result<()> {
+        // Include the CSS file at compile time
+        const CSS: &[u8] = include_bytes!("../assets/styles.css");
+
+        let mut response = request.into_response(200, None, &[
+            ("Content-Type", "text/css"),
+        ])?;
+        response.write_all(CSS)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+
 pub fn page(body: String) -> String {
     html!(
         (DOCTYPE)
@@ -87,7 +115,7 @@ pub fn page(body: String) -> String {
     .into_string()
 }
 
-pub fn register_wifi_settings<T: NvsPartitionId + 'static>(
+pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
     server: &mut EspHttpServer,
     mut wifi_driver: EspWifi<'static>,
     mut storage: Storage<T>,
@@ -342,8 +370,21 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
 ) -> Result<EspHttpServer<'static>> {
     let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
         Ok(config) => {
-            info!("Current Configuration: {:?}", config);
-            config
+            let default_config = ap_config();
+            if let Some(current_ap_config) = config.as_ap_conf_ref() {
+                let default_config_config_ap = default_config.as_ap_conf_ref().unwrap();
+                if current_ap_config.ssid == default_config_config_ap.ssid {
+                    config
+                } else {
+                    info!("Wrong AP Configuration found, creating new one");
+                    wifi_driver.set_configuration(&default_config)?;
+                    default_config
+                }
+            } else {
+                info!("No Configuration found, creating new one");
+                wifi_driver.set_configuration(&default_config)?;
+                default_config
+            }
         }
         Err(_) => {
             info!("No Configuration found, creating new one");
@@ -378,8 +419,11 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
     }
 
     let mut server = EspHttpServer::new(&server::Configuration::default())?;
-
-    register_wifi_settings(&mut server, wifi_driver, storage)?;
+    unsafe { 
+        handle_favicon(&mut server)?;
+        handle_css(&mut server)?;
+    }
+    handle_wifi_settings(&mut server, wifi_driver, storage)?;
 
     Ok(server)
 }

@@ -63,32 +63,6 @@ unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<St
     Ok(())
 }
 
-unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
-    server.fn_handler_nonstatic("/favicon.ico", Method::Get, move |request| -> Result<()> {
-        // Include the favicon file at compile time
-        const FAVICON: &[u8] = include_bytes!("../assets/favicon.ico");
-
-        let mut response = request.into_ok_response()?;
-        response.write_all(FAVICON)?;
-        Ok(())
-    })?;
-    Ok(())
-}
-
-unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
-    server.fn_handler_nonstatic("/styles.css", Method::Get, move |request| -> Result<()> {
-        // Include the CSS file at compile time
-        const CSS: &[u8] = include_bytes!("../assets/styles.css");
-
-        let mut response = request.into_response(200, None, &[
-            ("Content-Type", "text/css"),
-        ])?;
-        response.write_all(CSS)?;
-        Ok(())
-    })?;
-    Ok(())
-}
-
 unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
     server.fn_handler_nonstatic("/board.js", Method::Get, move |request| -> Result<()> {
         // Include the JavaScript file at compile time
@@ -270,8 +244,6 @@ impl Web {
         });
 
         unsafe { 
-            handle_favicon(server)?;
-            handle_css(server)?;
             handle_js(server)?;
             handle_game(server, self.game_key.clone())?;
             handle_game_data(server, self.game.clone(), self.game_key.clone())?;

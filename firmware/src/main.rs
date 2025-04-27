@@ -228,7 +228,10 @@ fn main() -> Result<()> {
             }
         }
     } else {
-        error!("No token found");
-        Err(anyhow::anyhow!("No token found"))
+        error!("No token found - please configure it to connect to lichess.org");
+        // Still loop otherwise the web ui would stop
+        loop {
+            sleep(Duration::from_millis(1000));
+        }
     }
 }
