@@ -174,9 +174,15 @@ fn main() -> Result<()> {
 
     info!("Starting E-Chess!");
 
+    #[cfg(esp32)]
     let sda = peripherals.pins.gpio21;
-    // let scl = peripherals.pins.gpio22;
-    let scl = peripherals.pins.gpio2;
+    #[cfg(esp32s3)]
+    let sda = peripherals.pins.gpio8;
+
+    #[cfg(esp32)]
+    let scl = peripherals.pins.gpio22;
+    #[cfg(esp32s3)]
+    let scl = peripherals.pins.gpio9;
 
     let config = I2cConfig::new().baudrate(100.kHz().into());
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
@@ -184,11 +190,20 @@ fn main() -> Result<()> {
     let driver_config = TransmitConfig::new()
         .clock_divider(1) // Required parameter.
         .mem_block_num(8); // Increase the number depending on your code.
+
+    #[cfg(esp32)]
     let driver = TxRmtDriver::new(
         peripherals.rmt.channel0,
-        peripherals.pins.gpio3,
+        peripherals.pins.gpio23,
         &driver_config,
     )?;
+    #[cfg(esp32s3)]
+    let driver = TxRmtDriver::new(
+        peripherals.rmt.channel0,
+        peripherals.pins.gpio4,
+        &driver_config,
+    )?;
+
     let ws2812 = Ws2812Esp32Rmt::new_with_rmt_driver(driver)?;
 
     let nvs = EspDefaultNvsPartition::take()?;
