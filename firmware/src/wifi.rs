@@ -380,10 +380,10 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
                     wifi_driver.set_configuration(&default_config)?;
                     default_config
                 }
+
             } else {
-                info!("No Configuration found, creating new one");
-                wifi_driver.set_configuration(&default_config)?;
-                default_config
+                info!("Valid AP Configuration found - use it");
+                config
             }
         }
         Err(_) => {

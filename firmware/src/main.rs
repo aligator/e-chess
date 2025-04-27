@@ -173,6 +173,10 @@ fn main() -> Result<()> {
     let peripherals = Peripherals::take().unwrap();
 
     info!("Starting E-Chess!");
+    #[cfg(esp32)]
+    info!("Running on ESP32");
+    #[cfg(esp32s3)]
+    info!("Running on ESP32S3");
 
     #[cfg(esp32)]
     let sda = peripherals.pins.gpio21;
