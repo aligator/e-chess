@@ -175,7 +175,8 @@ fn main() -> Result<()> {
     info!("Starting E-Chess!");
 
     let sda = peripherals.pins.gpio21;
-    let scl = peripherals.pins.gpio22;
+    // let scl = peripherals.pins.gpio22;
+    let scl = peripherals.pins.gpio2;
 
     let config = I2cConfig::new().baudrate(100.kHz().into());
     let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
@@ -185,7 +186,7 @@ fn main() -> Result<()> {
         .mem_block_num(8); // Increase the number depending on your code.
     let driver = TxRmtDriver::new(
         peripherals.rmt.channel0,
-        peripherals.pins.gpio23,
+        peripherals.pins.gpio3,
         &driver_config,
     )?;
     let ws2812 = Ws2812Esp32Rmt::new_with_rmt_driver(driver)?;
