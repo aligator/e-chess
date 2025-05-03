@@ -54,9 +54,9 @@ electronicCaseCoverMagnetDiameter = 10;
 electronicCaseCoverMagnetHolderThickness = 3;
 electronicCaseCoverMagnetThickness = 3;
 electronicCaseCoverStamp = 3;
+electronicBreakThrough = 9;
 
-usbCutoutWidth = 10;
-usbCutoutHeight = 5;
+usbCutoutDia = 10;
 
 reedPinBorder = 3;
 metalPlateThickness = 0.3;
@@ -357,8 +357,8 @@ module BottomElectronic()
         ledHeight
     ])
         cube([
-            fieldSize + bottomWallSize * 2 + tolerance + electronicCaseWidth,
-            wireRadius * 4,
+            fieldSize + bottomWallSize * 2 + tolerance + electronicCaseWidth-bottomWallSize,
+            electronicBreakThrough,
             ledHeight +
             c0
         ]);
@@ -433,15 +433,12 @@ module ElectronicCase()
 
         // Hole for cable.
         translate([
-            electronicCaseWidth / 2 - usbCutoutWidth / 2,
-            fullOuterBoard - bottomWallSize - c0,
-            bottomHeight
+            (electronicCaseWidth - bottomWallSize) / 2,
+            fullOuterBoard + c0,
+            boxHeight/2
         ])
-            cube([
-                usbCutoutWidth,
-                bottomWallSize + 2 * c0,
-                usbCutoutHeight
-            ]);
+            rotate([90, 0, 0])
+            cylinder(h=bottomWallSize + 2 * c0, d=usbCutoutDia);
     }
 }
 
@@ -541,13 +538,13 @@ module ReedPin()
         }
     }
 
-#if (renderMetalPlate) {
-    translate([
-        metalPlateRadius, reedPinWidth / 2,
-        reedPinHeight
-    ])
-        cylinder(h = metalPlateThickness, r = metalPlateRadius);
-}
+    if (renderMetalPlate) {
+        translate([
+            metalPlateRadius, reedPinWidth / 2,
+            reedPinHeight
+        ])
+            cylinder(h = metalPlateThickness, r = metalPlateRadius);
+    }
 }
 
 if (!renderPrintable) {
