@@ -1,0 +1,4 @@
+partition_table = "partitions_8.csv"
+
+[flash]
+size = "8MB"

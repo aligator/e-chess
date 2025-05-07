@@ -14,6 +14,7 @@ use log::*;
 use maud::{html, PreEscaped, DOCTYPE};
 use std::thread::{self, sleep};
 use std::time::Duration;
+use esp_ota::OtaUpdate;
 
 use crate::storage::Storage;
 
@@ -58,6 +59,61 @@ unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
+unsafe fn handle_firmware_upload(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/upload-firmware", Method::Post, move |mut request| -> Result<()> {
+        // Initialize OTA update
+        let mut ota = OtaUpdate::begin()?;
+        
+        // Stream the firmware data in chunks
+        let mut buffer = [0u8; 1024];
+        let mut total_bytes = 0;
+        
+        loop {
+            let bytes_read = request.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break; // End of stream
+            }
+            
+            // Write the chunk to OTA
+            ota.write(&buffer[..bytes_read])?;
+            total_bytes += bytes_read;
+        }
+        
+        // Finalize the update
+        let mut completed_ota = ota.finalize()?;
+        
+        // Set the new partition as bootable
+        completed_ota.set_as_boot_partition()?;
+        
+        let mut response = request.into_ok_response()?;
+        response.write_all(format!("Firmware update successful ({} bytes). Restarting...", total_bytes).as_bytes())?;
+        
+        // Schedule a restart after a short delay
+        thread::spawn(|| {
+            thread::sleep(Duration::from_secs(2));
+            unsafe {
+                esp_idf_sys::esp_restart();
+            }
+        });
+        
+        Ok(())
+    })?;
+    Ok(())
+}
+
+unsafe fn handle_firmware_js(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/firmware.js", Method::Get, move |request| -> Result<()> {
+        // Include the JavaScript file at compile time
+        const JS: &[u8] = include_bytes!("../assets/firmware.js");
+
+        let mut response = request.into_response(200, None, &[
+            ("Content-Type", "application/javascript"),
+        ])?;
+        response.write_all(JS)?;
+        Ok(())
+    })?;
+    Ok(())
+}
 
 pub fn page(body: String) -> String {
     html!(
@@ -148,9 +204,19 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
                             label for="api_token" { "API Token:" }
                             input type="text" id="api_token" name="api_token" placeholder="API Token" maxlength="24" {}
                         }
-                            input type="submit" value="Save" {}
+                        input type="submit" value="Save" {}
                     }
                 }
+                div class="container" {
+                    p class="message" {
+                        "Firmware Update" 
+                    }
+                    div class="form-group" {
+                        label for="firmware-upload" { "Select firmware file:" }
+                        input type="file" id="firmware-upload" accept=".bin" onchange="uploadFirmware(this.files[0])" {}
+                    }
+                }
+                script src="/firmware.js" {}
             )
             .into_string(),
         );
@@ -422,6 +488,8 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
     unsafe { 
         handle_favicon(&mut server)?;
         handle_css(&mut server)?;
+        handle_firmware_js(&mut server)?;
+        handle_firmware_upload(&mut server)?;
     }
     handle_wifi_settings(&mut server, wifi_driver, storage)?;
 

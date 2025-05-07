@@ -25,6 +25,20 @@ pub struct Web {
     game_key: Arc<Mutex<String>>,
 }
 
+unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
+    server.fn_handler_nonstatic("/board.js", Method::Get, move |request| -> Result<()> {
+        // Include the JavaScript file at compile time
+        const JS: &[u8] = include_bytes!("../assets/board.js");
+
+        let mut response = request.into_response(200, None, &[
+            ("Content-Type", "application/javascript"),
+        ])?;
+        response.write_all(JS)?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
 unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/game", Method::Get, move |request| {
         let current_game_key = current_game_key.lock().unwrap().clone();
@@ -60,20 +74,6 @@ unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<St
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
-    Ok(())
-}
-
-unsafe fn handle_js(server: &mut EspHttpServer) -> Result<()> {
-    server.fn_handler_nonstatic("/board.js", Method::Get, move |request| -> Result<()> {
-        // Include the JavaScript file at compile time
-        const JS: &[u8] = include_bytes!("../assets/board.js");
-
-        let mut response = request.into_response(200, None, &[
-            ("Content-Type", "application/javascript"),
-        ])?;
-        response.write_all(JS)?;
-        Ok(())
-    })?;
     Ok(())
 }
 
