@@ -1,0 +1,18 @@
+{
+  "name": "circuit",
+  "version": "1.0.0",
+  "description": "A TSCircuit project",
+  "main": "index.tsx",
+  "keywords": [
+    "tscircuit",
+    "electronics"
+  ],
+  "scripts": {
+    "dev": "tsci dev"
+  },
+  "devDependencies": {
+    "@tscircuit/core": "^0.0.382",
+    "@types/react": "^19.1.2",
+    "tscircuit": "^0.0.450"
+  }
+}

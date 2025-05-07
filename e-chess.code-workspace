@@ -17,8 +17,9 @@
             "name": "OpenSCAD 3D model"
         },
         {
-            "path": "../chess-rs"
-        }
+            "path": "./circuit",
+            "name": "Circuit design"
+        },
     ],
     "settings": {
         "cSpell.words": [
