@@ -1,9 +1,15 @@
 use anyhow::Result;
 use chess::BitBoard;
 use chess_game::game::ChessGame;
+use embedded_graphics::mono_font::MonoTextStyleBuilder;
+use embedded_graphics::prelude::*;
+use embedded_graphics::prelude::{Point, Primitive, Size};
+use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
+use embedded_graphics::text::{Baseline, Text, TextStyleBuilder};
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
+use epd_waveshare::epd1in54::Display1in54;
 use epd_waveshare::epd1in54_v2::Epd1in54;
 use epd_waveshare::prelude::*;
 
@@ -47,6 +53,24 @@ where
         self.epd
             .display_frame(&mut self.spi, &mut self.delay)
             .unwrap();
+
+        // Setup the graphics
+        let mut display = Display1in54::default();
+        // Build the style
+        let style = MonoTextStyleBuilder::new()
+            .font(&embedded_graphics::mono_font::ascii::FONT_6X10)
+            .text_color(Color::Black)
+            .background_color(Color::White)
+            .build();
+        let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
+
+        // Draw some text at a certain point using the specified text style
+        let _ = Text::with_text_style("It's working-WoB!", Point::new(10, 10), style, text_style)
+            .draw(&mut display);
+
+        self.epd
+            .update_and_display_frame(&mut self.spi, display.buffer(), &mut self.delay)
+            .expect("display error");
 
         // Set the display to sleep mode
         self.epd.sleep(&mut self.spi, &mut self.delay).unwrap();
