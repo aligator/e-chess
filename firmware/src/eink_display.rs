@@ -12,6 +12,9 @@ use embedded_hal::spi::SpiDevice;
 use epd_waveshare::epd1in54::Display1in54;
 use epd_waveshare::epd1in54_v2::Epd1in54;
 use epd_waveshare::prelude::*;
+use esp_idf_hal::adc::AdcChannels;
+use log::{debug, info};
+use qrcode::QrCode;
 
 pub struct ChessEinkDisplay<SPI, BUSY, DC, RST, DELAY>
 where
@@ -47,6 +50,7 @@ where
     }
 
     pub fn setup(&mut self) -> Result<()> {
+        // Clear the display
         self.epd
             .clear_frame(&mut self.spi, &mut self.delay)
             .unwrap();
@@ -54,23 +58,7 @@ where
             .display_frame(&mut self.spi, &mut self.delay)
             .unwrap();
 
-        // Setup the graphics
-        let mut display = Display1in54::default();
-        // Build the style
-        let style = MonoTextStyleBuilder::new()
-            .font(&embedded_graphics::mono_font::ascii::FONT_6X10)
-            .text_color(Color::Black)
-            .background_color(Color::White)
-            .build();
-        let text_style = TextStyleBuilder::new().baseline(Baseline::Top).build();
-
-        // Draw some text at a certain point using the specified text style
-        let _ = Text::with_text_style("It's working-WoB!", Point::new(10, 10), style, text_style)
-            .draw(&mut display);
-
-        self.epd
-            .update_and_display_frame(&mut self.spi, display.buffer(), &mut self.delay)
-            .expect("display error");
+        self.display_wifi_qr("E-Chess", "1337_e-chess")?;
 
         // Set the display to sleep mode
         self.epd.sleep(&mut self.spi, &mut self.delay).unwrap();
@@ -80,93 +68,63 @@ where
     pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGame) -> Result<()> {
         Ok(())
     }
+
+    pub fn display_wifi_qr(&mut self, ssid: &str, password: &str) -> Result<()> {
+        let mut display = Display1in54::default();
+
+        // Fill the entire display with white
+        let background = Rectangle::new(Point::new(0, 0), Size::new(200, 200))
+            .into_styled(PrimitiveStyle::with_fill(Color::White));
+        background.draw(&mut display)?;
+
+        // Create WiFi QR code content in the format: WIFI:S:<SSID>;T:WPA;P:<PASSWORD>;;
+        let qr_content = format!("WIFI:S:{};T:WPA;P:{};;", ssid, password);
+        info!("Generating QR code for SSID: {}", ssid);
+
+        // Generate QR code
+        let qr = QrCode::new(qr_content.as_bytes())?;
+
+        // Calculate QR code size and position to center it on the display
+        let qr_size = qr.width() as u32;
+        let display_width = 200; // E-ink display width
+        let display_height = 200; // E-ink display height
+
+        // Calculate scale to fit the screen exactly
+        let scale = display_width / qr_size;
+        let qr_width = qr_size * scale;
+        let qr_height = qr_size * scale;
+        let x_offset = (display_width - qr_width) / 2;
+        let y_offset = (display_height - qr_height) / 2;
+
+        let colors = qr.to_colors();
+        for y in 0..qr_size {
+            for x in 0..qr_size {
+                if colors[y as usize * qr_size as usize + x as usize] == qrcode::Color::Dark {
+                    info!(
+                        "Drawing pixel at ({}, {}) size {}",
+                        (x_offset + x as u32 * scale) as i32,
+                        (x_offset + y as u32 * scale) as i32,
+                        scale
+                    );
+
+                    let rect = Rectangle::new(
+                        Point::new(
+                            (x_offset + x as u32 * scale) as i32,
+                            (y_offset + y as u32 * scale) as i32,
+                        ),
+                        Size::new(scale, scale),
+                    )
+                    .into_styled(PrimitiveStyle::with_fill(Color::Black));
+                    rect.draw(&mut display)?;
+                }
+            }
+        }
+
+        // Update the display
+        self.epd
+            .update_and_display_frame(&mut self.spi, display.buffer(), &mut self.delay)
+            .unwrap();
+
+        Ok(())
+    }
 }
-// impl<'a> ChessEinkDisplay<'a> {
-//     pub fn new(
-//         epd: Epd1in54<
-//             SpiDeviceDriver<'a, SpiDriver<'a>>,
-//             PinDriver<'a, Gpio14>,
-//             PinDriver<'a, Gpio13>,
-//             PinDriver<'a, Gpio7>,
-//             Ets,
-//         >,
-//     ) -> Self {
-//         Self {
-//             epd,
-//             display: Display1in54::default(),
-//             previous_state: None,
-//         }
-//     }
-
-//     pub fn setup(&mut self) -> Result<()> {
-//         // Clear the display
-//         self.epd.clear_frame(&mut self.epd.spi(), &mut Ets)?;
-//         self.epd.display_frame(&mut self.epd.spi(), &mut Ets)?;
-//         Ok(())
-//     }
-
-//     fn get_pixel(square: Square) -> Point {
-//         let rank = BOARD_SIZE - 1 - square.get_rank().to_index();
-//         let file = square.get_file().to_index();
-
-//         let x = file * 10; // 10 pixels per square
-//         let y = rank * 10;
-
-//         Point::new(x as i32, y as i32)
-//     }
-
-//     pub fn tick(&mut self, physical: BitBoard, game: &ChessGame) -> Result<()> {
-//         let expected = game.expected_physical();
-
-//         if self.previous_state != Some((physical, expected)) {
-//             let diff = expected.diff(physical);
-
-//             // Clear the display
-//             self.display = Display1in54::default();
-
-//             // Draw the board grid
-//             for rank in 0..BOARD_SIZE {
-//                 for file in 0..BOARD_SIZE {
-//                     let style = if (rank + file) % 2 == 0 {
-//                         PrimitiveStyle::with_fill(Color::White)
-//                     } else {
-//                         PrimitiveStyle::with_fill(Color::Black)
-//                     };
-
-//                     Rectangle::new(
-//                         Point::new(file as i32 * 10, rank as i32 * 10),
-//                         Size::new(10, 10),
-//                     )
-//                     .into_styled(style)
-//                     .draw(&mut self.display)?;
-//                 }
-//             }
-
-//             // Draw the pieces
-//             diff.missing.for_each(|square| {
-//                 let point = Self::get_pixel(square);
-//                 Rectangle::new(point, Size::new(8, 8))
-//                     .into_styled(PrimitiveStyle::with_fill(Color::Black))
-//                     .draw(&mut self.display)
-//                     .unwrap();
-//             });
-
-//             diff.added.for_each(|square| {
-//                 let point = Self::get_pixel(square);
-//                 Rectangle::new(point, Size::new(8, 8))
-//                     .into_styled(PrimitiveStyle::with_fill(Color::White))
-//                     .draw(&mut self.display)
-//                     .unwrap();
-//             });
-
-//             // Update the display
-//             self.epd
-//                 .update_frame(&mut self.epd.spi(), &self.display.buffer(), &mut Ets)?;
-//             self.epd.display_frame(&mut self.epd.spi(), &mut Ets)?;
-
-//             self.previous_state = Some((physical, expected));
-//         }
-
-//         Ok(())
-//     }
-// }
