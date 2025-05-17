@@ -305,8 +305,11 @@ for arg in "${CARGO_FLAGS[@]}"; do
     fi
 done
 
-print_step "Building target for $TARGET_CHIP ($BUILD_TYPE mode)"
-cargo build "${CARGO_FLAGS[@]}"
+# Only build if not using watch subcommand directly
+if [ "$SUBCOMMAND" != "watch" ]; then
+    print_step "Building target for $TARGET_CHIP ($BUILD_TYPE mode)"
+    cargo build "${CARGO_FLAGS[@]}"
+fi
 
 # Only continue with firmware creation/deployment if chip is specified and not just watching
 if [ -n "$TARGET_CHIP" ] && [ "$SUBCOMMAND" != "watch" ]; then

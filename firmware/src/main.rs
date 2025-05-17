@@ -3,11 +3,16 @@ use board::Board;
 use chess_game::chess_connector::LocalChessConnector;
 use chess_game::game::ChessGame;
 use chess_game::lichess::LichessConnector;
+use eink_display::ChessEinkDisplay;
+use embedded_hal::spi::SpiDevice;
 use embedded_svc::http::Method;
+use esp_idf_hal::gpio::{Gpio0, PinDriver};
 use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::rmt::TxRmtDriver;
+use esp_idf_hal::spi::config::DriverConfig;
+use esp_idf_hal::spi::{SpiConfig, SpiDeviceDriver, SpiDriver};
 use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::EspHttpServer;
@@ -26,17 +31,26 @@ use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 mod board;
 mod constants;
 mod display;
+mod eink_display;
 mod request;
 mod storage;
 mod web;
 mod wifi;
 
-fn run_game(
+fn run_game<'a, SPI, BUSY, DC, RST, DELAY>(
     token: String,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
+    eink_display: &mut ChessEinkDisplay<SPI, BUSY, DC, RST, DELAY>,
     mut server: &mut EspHttpServer<'static>,
-) -> Result<()> {
+) -> Result<()>
+where
+    SPI: SpiDevice,
+    BUSY: embedded_hal::digital::InputPin,
+    DC: embedded_hal::digital::OutputPin,
+    RST: embedded_hal::digital::OutputPin,
+    DELAY: embedded_hal::delay::DelayNs + 'a,
+{
     #[cfg(not(feature = "no_board"))]
     let mut board = Board::new(mcp23017, 0x20);
     #[cfg(not(feature = "no_board"))]
@@ -122,6 +136,7 @@ fn run_game(
                                     }
                                 }
                                 display.tick(physical, &chess_game)?;
+                                eink_display.tick(physical, &chess_game)?;
                             }
                             Err(e) => {
                                 warn!("Error in game tick: {:?}", e);
@@ -148,6 +163,8 @@ fn run_game(
                             }
                         }
                         display.tick(*game.clone().current_position().combined(), &chess_game)?;
+                        eink_display
+                            .tick(*game.clone().current_position().combined(), &chess_game)?;
                     }
                     Err(e) => {
                         warn!("Error in game tick: {:?}", e);
@@ -178,23 +195,26 @@ fn main() -> Result<()> {
     #[cfg(esp32s3)]
     info!("Running on ESP32S3");
 
-    #[cfg(esp32)]
-    let sda = peripherals.pins.gpio21;
-    #[cfg(esp32s3)]
-    let sda = peripherals.pins.gpio8;
-
-    #[cfg(esp32)]
-    let scl = peripherals.pins.gpio22;
-    #[cfg(esp32s3)]
-    let scl = peripherals.pins.gpio9;
-
+    // Initialize the I2C bus for the MCP23017
     let config = I2cConfig::new().baudrate(100.kHz().into());
-    let mcp23017: I2cDriver<'_> = I2cDriver::new(peripherals.i2c0, sda, scl, &config)?;
+    #[cfg(esp32)]
+    let mcp23017: I2cDriver<'_> = {
+        let sda = peripherals.pins.gpio21;
+        let scl = peripherals.pins.gpio22;
+        I2cDriver::new(peripherals.i2c0, sda, scl, &config)?
+    };
+    #[cfg(esp32s3)]
+    let mcp23017: I2cDriver<'_> = {
+        let sda = peripherals.pins.gpio8;
+        let scl = peripherals.pins.gpio9;
+        I2cDriver::new(peripherals.i2c0, sda, scl, &config)?
+    };
 
     let driver_config = TransmitConfig::new()
         .clock_divider(1) // Required parameter.
         .mem_block_num(8); // Increase the number depending on your code.
 
+    // Initialize the RMT driver for the WS2812
     #[cfg(esp32)]
     let driver = TxRmtDriver::new(
         peripherals.rmt.channel0,
@@ -207,8 +227,55 @@ fn main() -> Result<()> {
         peripherals.pins.gpio4,
         &driver_config,
     )?;
-
     let ws2812 = Ws2812Esp32Rmt::new_with_rmt_driver(driver)?;
+
+    // Initialize the SPI bus for the E-Paper display
+    let spi_config = SpiConfig::new()
+        .baudrate(Hertz(4_000_000))
+        .data_mode(esp_idf_hal::spi::config::MODE_0);
+    let driver_config = DriverConfig::new();
+    // Create delay provider
+    let delay = esp_idf_hal::delay::Ets;
+    #[cfg(esp32)]
+    let (spi_driver, cs, busy, dc, rst) = {
+        let spi = peripherals.spi2;
+        let sclk = peripherals.pins.gpio18;
+        let mosi = peripherals.pins.gpio23;
+        let cs = peripherals.pins.gpio5;
+        let dc = peripherals.pins.gpio2;
+        let busy = peripherals.pins.gpio4;
+        let rst = peripherals.pins.gpio0;
+
+        let spi_driver = SpiDriver::new(spi, sclk, mosi, Option::<Gpio0>::None, &driver_config)?;
+
+        (spi_driver, cs, busy, dc, rst)
+    };
+
+    #[cfg(esp32s3)]
+    let (spi_driver, cs, busy, dc, rst) = {
+        let spi = peripherals.spi2;
+        let sclk = peripherals.pins.gpio13;
+        let mosi = peripherals.pins.gpio14;
+        let cs = peripherals.pins.gpio2;
+        let dc = peripherals.pins.gpio3;
+        let busy = peripherals.pins.gpio5;
+        let rst = peripherals.pins.gpio11;
+
+        let spi_driver = SpiDriver::new(spi, sclk, mosi, Option::<Gpio0>::None, &driver_config)?;
+
+        (spi_driver, cs, busy, dc, rst)
+    };
+    let spi = SpiDeviceDriver::new(spi_driver, Some(cs), &spi_config)?;
+
+    let mut eink_display = eink_display::ChessEinkDisplay::new(
+        spi,
+        PinDriver::input(busy)?,
+        PinDriver::output(dc)?,
+        PinDriver::output(rst)?,
+        delay,
+        None,
+    )?;
+    eink_display.setup()?;
 
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -235,7 +302,7 @@ fn main() -> Result<()> {
     })?;
 
     if let Some(token) = token {
-        match run_game(token, mcp23017, ws2812, &mut server) {
+        match run_game(token, mcp23017, ws2812, &mut eink_display, &mut server) {
             Ok(_) => {
                 warn!("Stopping game loop");
                 Ok(())

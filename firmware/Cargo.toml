@@ -42,6 +42,9 @@ maud = "0.27.0"
 embedded-svc = "0.28.1"
 serde_json = {version = "1.0.140", default-features = false}
 esp-ota = "0.2.2"
+embedded-hal = "1"
+embedded-graphics = { version = "0.8" }
+epd-waveshare = { version = "0.6.0", features = ["graphics"]}
 
 [build-dependencies]
 embuild = "0.33"
