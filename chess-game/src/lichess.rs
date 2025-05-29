@@ -1,12 +1,14 @@
 use crate::{
-    chess_connector::{ChessConnector, ChessConnectorError, GameEvent, GameState},
+    chess_connector::{ChessConnector, ChessConnectorError},
+    event::{GameEvent, OnlineState},
     requester::Requester,
 };
 use chess::{ChessMove, Game};
 use serde::{Deserialize, Serialize};
 use std::{
     str::FromStr,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Sender},
+    thread,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,20 +43,11 @@ pub struct LichessConnector<R: Requester> {
     id: Option<String>,
 
     request: R,
-
-    upstream_rx: Receiver<String>,
-    upstream_tx: Sender<String>,
 }
 
 impl<R: Requester> LichessConnector<R> {
     pub fn new(request: R) -> Self {
-        let (tx, rx) = mpsc::channel();
-        Self {
-            id: None,
-            request,
-            upstream_rx: rx,
-            upstream_tx: tx,
-        }
+        Self { id: None, request }
     }
 
     fn create_game(&self, game_response: LichessGameResponse) -> Result<Game, ChessConnectorError> {
@@ -100,21 +93,20 @@ impl<R: Requester> LichessConnector<R> {
 }
 
 impl<R: Requester> ChessConnector for LichessConnector<R> {
-    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
+    fn load_game(
+        &mut self,
+        id: &str,
+        game_tx: Sender<GameEvent>,
+    ) -> Result<Game, ChessConnectorError> {
         let (tx, rx) = mpsc::channel();
-        self.upstream_rx = rx;
-        self.upstream_tx = tx;
 
         let url = format!("https://lichess.org/api/board/game/stream/{}", id);
         self.request
-            .stream(&mut self.upstream_tx.clone(), &url)
+            .stream(&mut tx.clone(), &url)
             .map_err(|e| ChessConnectorError::RequestError(e.to_string()))?;
 
         // Get first response from stream to check if game exists
-        let first_response = self
-            .upstream_rx
-            .recv()
-            .map_err(|_| ChessConnectorError::GameNotFound)?;
+        let first_response = rx.recv().map_err(|_| ChessConnectorError::GameNotFound)?;
 
         let response = self.parse_game(first_response)?;
         let game = match response {
@@ -125,6 +117,41 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
                 ))
             }
         };
+
+        thread::spawn(move || {
+            loop {
+                let event = rx.recv();
+                if let Ok(event) = rx.recv() {
+                    // parse_game now handles both game responses and game state updates
+                    let response = self.parse_game(event).unwrap();
+
+                    let state = match response {
+                        LichessResponse::Game(game) => Some(game.state), // Not sure if this can even happen after the first response...
+                        LichessResponse::GameState(state) => Some(state),
+                        LichessResponse::Other => None,
+                    };
+
+                    if let Some(state) = state {
+                        // Get the last move of the event
+                        let moves = state
+                            .moves
+                            .split(" ")
+                            .filter(|v| !v.is_empty())
+                            .map(|m| m.to_string());
+
+                        game_tx
+                            .send(GameEvent::NewOnlineState(OnlineState {
+                                moves: moves.collect(),
+                                white_request_take_back: state.wtakeback.unwrap_or(false),
+                                black_request_take_back: state.btakeback.unwrap_or(false),
+                            }))
+                            .unwrap();
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
 
         self.id = Some(id.to_string());
 
@@ -148,39 +175,6 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
             }
         } else {
             false
-        }
-    }
-
-    fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError> {
-        match self.upstream_rx.try_recv() {
-            Ok(event) => {
-                // parse_game now handles both game responses and game state updates
-                let response = self.parse_game(event)?;
-
-                let state = match response {
-                    LichessResponse::Game(game) => Some(game.state), // Not sure if this can even happen after the first response...
-                    LichessResponse::GameState(state) => Some(state),
-                    LichessResponse::Other => None,
-                };
-
-                if let Some(state) = state {
-                    // Get the last move of the event
-                    let moves = state
-                        .moves
-                        .split(" ")
-                        .filter(|v| !v.is_empty())
-                        .map(|m| m.to_string());
-
-                    Ok(Some(GameEvent::State(GameState {
-                        moves: moves.collect(),
-                        white_request_take_back: state.wtakeback.unwrap_or(false),
-                        black_request_take_back: state.btakeback.unwrap_or(false),
-                    })))
-                } else {
-                    Ok(None)
-                }
-            }
-            Err(_) => Ok(None),
         }
     }
 }

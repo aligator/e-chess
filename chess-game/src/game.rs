@@ -1,9 +1,12 @@
 use crate::bitboard_extensions::*;
-use crate::chess_connector::{ChessConnector, ChessConnectorError, GameEvent};
+use crate::chess_connector::{ChessConnector, ChessConnectorError};
+use crate::event::GameEvent;
 use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
 #[cfg(feature = "colored")]
 use colored::*;
 use std::cmp::Ordering::*;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread;
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
@@ -70,6 +73,9 @@ pub struct ChessGame {
     /// Current game id.
     /// Needed to reset the game in case of "undo" since the chess lib does not support undoing.
     id: String,
+
+    /// The sender for events to the connection.
+    connection_tx: Option<Sender<GameEvent>>,
 }
 
 impl fmt::Debug for ChessGame {
@@ -221,8 +227,8 @@ impl fmt::Debug for ChessGame {
 }
 
 impl ChessGame {
-    pub fn new(connection: Box<dyn ChessConnector>) -> Result<Self, ChessGameError> {
-        Ok(ChessGame {
+    pub fn new(connection: Box<dyn ChessConnector>) -> Self {
+        ChessGame {
             game: None,
             connection,
             expected_white: BitBoard(0),
@@ -231,7 +237,8 @@ impl ChessGame {
             state: ChessState::Idle,
             server_moves: Vec::new(),
             id: String::new(),
-        })
+            connection_tx: None,
+        }
     }
 
     pub fn game_id(&self) -> String {
@@ -259,7 +266,10 @@ impl ChessGame {
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
-        self.game = Some(self.connection.load_game(id)?);
+        self.game = Some(
+            self.connection
+                .load_game(id, self.connection_tx.as_ref().unwrap().clone())?,
+        );
         self.id = id.to_string();
 
         if let Some(game) = &self.game {
@@ -445,63 +455,83 @@ impl ChessGame {
         moves
     }
 
+    /// Starts the game and returns a receiver for the physical board state.
+    pub fn start<F>(connector_factory: F) -> (Receiver<BitBoard>, Sender<GameEvent>)
+    where
+        F: Fn() -> Box<dyn ChessConnector> + Send + 'static,
+    {
+        let (tx, rx) = channel::<BitBoard>();
+        let (game_tx, game_rx) = channel::<GameEvent>();
+
+        thread::spawn(move || {
+            let connector = connector_factory();
+            let mut game = ChessGame::new(connector);
+            let mut last_bitboard = BitBoard::new(0);
+            loop {
+                let event = game_rx.recv().unwrap();
+                if event == GameEvent::None {
+                    continue;
+                }
+                if let Ok(bitboard) = game.tick(event) {
+                    // Only send if the bitboard has changed.
+                    if bitboard != last_bitboard {
+                        tx.send(bitboard);
+                        last_bitboard = bitboard;
+                    }
+                }
+            }
+        });
+
+        (rx, game_tx)
+    }
+
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
-    pub fn tick(&mut self, physical_board: BitBoard) -> Result<BitBoard, ChessGameError> {
-        if self.game.is_none() {
-            return Ok(physical_board);
-        }
+    fn tick(&mut self, event: GameEvent) -> Result<BitBoard, ChessGameError> {
         let mut white_request_take_back = false;
         let mut black_request_take_back = false;
-        let mut reset = false;
 
-        {
-            let game: &mut Game = self.game.as_mut().unwrap();
+        let game: &mut Game = self.game.as_mut().unwrap();
+        let mut new_physical = self.physical;
 
-            // Tick the connection to get events until there is no more event.
-            while let Some(event) = self.connection.next_event()? {
-                match event {
-                    GameEvent::State(state) => {
-                        // Handle take-back.
-                        white_request_take_back = state.white_request_take_back;
-                        black_request_take_back = state.black_request_take_back;
-                        // If the new moves are less than before - it is a take back.
-                        if state.moves.len() <= self.server_moves.len() {
-                            // Do it after the while to avoid problems with multiple mut refs of self.
-                            reset = true;
-                            break;
-                        };
+        match event {
+            GameEvent::NewOnlineState(state) => {
+                // Handle take-back.
+                white_request_take_back = state.white_request_take_back;
+                black_request_take_back = state.black_request_take_back;
+                // If the new moves are less than before - it is a take back.
+                if state.moves.len() <= self.server_moves.len() {
+                    // Do it after the while to avoid problems with multiple mut refs of self.
+                    // reset and break this tick.
+                    self.reset(self.id.clone().as_str())?;
+                    return Ok(self.expected_physical());
+                };
 
-                        let last_move = state.moves.last();
+                let last_move = state.moves.last();
 
-                        if let Some(last_move) = last_move {
-                            // event is the last move
-                            match ChessMove::from_str(last_move) {
-                                Ok(chess_move) => {
-                                    game.make_move(chess_move);
-                                    self.server_moves.push(chess_move);
+                if let Some(last_move) = last_move {
+                    // event is the last move
+                    match ChessMove::from_str(last_move) {
+                        Ok(chess_move) => {
+                            game.make_move(chess_move);
+                            self.server_moves.push(chess_move);
 
-                                    self.expected_white =
-                                        *game.current_position().color_combined(Color::White);
-                                    self.expected_black =
-                                        *game.current_position().color_combined(Color::Black);
-                                }
-                                Err(e) => {
-                                    return Err(ChessGameError::LoadingFen(e));
-                                }
-                            }
+                            self.expected_white =
+                                *game.current_position().color_combined(Color::White);
+                            self.expected_black =
+                                *game.current_position().color_combined(Color::Black);
+                        }
+                        Err(e) => {
+                            return Err(ChessGameError::LoadingFen(e));
                         }
                     }
-                    _ => continue,
                 }
             }
-        }
-
-        if reset {
-            self.reset(self.id.clone().as_str())?;
-            // And do the tick again to avoid missing events
-            return self.tick(physical_board);
+            GameEvent::NewPhysicalState(physical_board) => {
+                new_physical = physical_board;
+            }
+            _ => return Ok(self.expected_physical()),
         }
 
         if white_request_take_back || black_request_take_back {
@@ -509,7 +539,7 @@ impl ChessGame {
         }
 
         // Save current physical board for visualization.
-        self.physical = physical_board;
+        self.physical = new_physical;
 
         // Update the game state based on the physical board
         let expected_occupied = self.expected_physical();
@@ -528,12 +558,12 @@ impl ChessGame {
             return Ok(expected_occupied);
         }
 
-        match physical_board.0.cmp(&expected_occupied.0) {
+        match new_physical.0.cmp(&expected_occupied.0) {
             Greater => {
                 // If more bits are set, a piece must have been placed.
                 self.place_physical(Square::new(
                     expected_occupied
-                        .get_different_bits(physical_board)
+                        .get_different_bits(new_physical)
                         .first_one(),
                 ));
                 Ok(self.expected_physical())
@@ -542,7 +572,7 @@ impl ChessGame {
                 // If fewer bits are set, a piece must have been removed.
                 self.remove_physical(Square::new(
                     expected_occupied
-                        .get_different_bits(physical_board)
+                        .get_different_bits(new_physical)
                         .first_one(),
                 ));
                 Ok(self.expected_physical())
@@ -563,32 +593,32 @@ mod tests {
 
     #[test]
     fn test_tick_invalid_board() -> Result<(), ChessGameError> {
-        let mut chess = ChessGame::new(LocalChessConnector::new()).unwrap();
+        let mut chess = ChessGame::new(LocalChessConnector::new());
         chess.reset("")?;
 
         let mut physical = chess.expected_physical();
 
         // Set initally correct
-        let initially_expected = chess.tick(physical)?;
+        let initially_expected = chess.tick(GameEvent::NewPhysicalState(physical))?;
         assert!(initially_expected == physical);
 
         // Take two black that shouldn't be taken
         physical = physical
             ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::A))
             ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::B));
-        let expected = chess.tick(physical)?;
+        let expected = chess.tick(GameEvent::NewPhysicalState(physical))?;
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 
         // Now take a2 - it should not try to make the move!
         physical = physical ^ BitBoard::from_square(Square::make_square(Rank::Second, File::A));
-        let expected = chess.tick(physical)?;
+        let expected = chess.tick(GameEvent::NewPhysicalState(physical))?;
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 
         // Try to place on a3
         physical = physical | BitBoard::from_square(Square::make_square(Rank::Third, File::A));
-        let expected = chess.tick(physical)?;
+        let expected = chess.tick(GameEvent::NewPhysicalState(physical))?;
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 

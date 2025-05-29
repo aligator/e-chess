@@ -1,0 +1,21 @@
+flowchart LR
+
+%% Komponenten
+WiFiSetup[WiFi Setup]
+Game
+Leechess
+GameLoop[Game Loop<br/>Events]
+Web
+Display[Display & Buttons]
+LED[LED Display]
+Matrix
+
+%% Beziehungen
+WiFiSetup -->|Startup<br/>New credentials| GameLoop
+Game -->|Startup<br/>New gameID<br/>Game action| GameLoop
+Leechess --> Game
+GameLoop -->|Game events<br/>New board| Web
+GameLoop -->|New settings<br/>New game action| Display
+GameLoop -->|New WiFi| WiFiSetup
+GameLoop -->|New game state| LED
+GameLoop -->|Physical change| Matrix

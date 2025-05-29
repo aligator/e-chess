@@ -8,6 +8,7 @@ use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::rmt::TxRmtDriver;
+use esp_idf_hal::task::thread;
 use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::EspHttpServer;
