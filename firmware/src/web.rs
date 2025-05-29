@@ -9,16 +9,6 @@ use std::{sync::{mpsc, Arc, Mutex}, thread};
 
 use crate::wifi::page;
 
-#[derive(Debug)]
-pub enum GameStateEvent {
-    UpdateGame(Option<chess::Game>),
-    GameLoaded(String),
-}
-
-#[derive(Debug)]
-pub enum GameCommandEvent {
-    LoadNewGame(String),
-}
 
 pub struct Web {
     game: Arc<Mutex<Option<chess::Game>>>,
@@ -202,12 +192,11 @@ unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ch
 }
 
 impl Web {
-    pub fn new(initial_game: Option<Game>, initial_game_key: String) -> Web {
+    pub fn new() -> Web {
         // Create a channel for game ID changes
-        println!("{:?} {:?}", initial_game, initial_game_key);
         Web {
-            game: Arc::new(Mutex::new(initial_game)),
-            game_key: Arc::new(Mutex::new(initial_game_key)),
+            game: Arc::new(Mutex::new(None)),
+            game_key: Arc::new(Mutex::new("".to_string())),
         }
     }
 

@@ -1,8 +1,5 @@
 use anyhow::Result;
 use board::Board;
-use chess_game::chess_connector::LocalChessConnector;
-use chess_game::game::ChessGame;
-use chess_game::lichess::LichessConnector;
 use embedded_svc::http::Method;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
@@ -13,19 +10,19 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
+use game::GameStateEvent;
 use log::*;
 use maud::html;
-use request::EspRequester;
 use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use storage::Storage;
-use web::{GameCommandEvent, GameStateEvent};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod board;
 mod constants;
 mod display;
+mod game;
 mod request;
 mod storage;
 mod web;
@@ -45,64 +42,44 @@ fn run_game(
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    // Use the game ID from the web interface
-    let mut chess_game = ChessGame::new(LocalChessConnector::new())?;
-    info!("Created ChessGame");
-
     // Load standard local game initially
-    chess_game.reset("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")?;
 
-    let web = web::Web::new(chess_game.game(), chess_game.game_id());
+    let settings = game::Settings { token };
+
+    let web = web::Web::new();
     let (state_tx, state_rx) = channel::<GameStateEvent>();
     info!("Created state channel: {:?}", state_tx);
     let command_rx = web.register(&mut server, state_rx)?;
     info!("Registered web interface");
 
+    game::run_game(settings, command_rx, state_tx);
+
     // Start the main loop
     info!("Start app loop");
     loop {
         // Check if event happens
-        if let Ok(event) = command_rx.try_recv() {
-            info!("Received command event: {:?}", event);
+        if let Ok(event) = state_rx.try_recv() {
+            info!("Received game state event: {:?}", event);
             match event {
-                GameCommandEvent::LoadNewGame(game_key) => {
-                    info!("Loading new game: {}", game_key);
-
-                    // If the game key is a FEN string, parse it and start a local game.
-                    // Otherwise, start a lichess game.
-                    chess_game = ChessGame::new(if game_key.contains(" ") {
-                        LocalChessConnector::new()
+                GameStateEvent::UpdateGame(updated_game) => {
+                    if let Some(updated_game) = updated_game {
+                        chess_game.replace(updated_game);
                     } else {
-                        let requester = EspRequester::new(token.clone());
-                        Box::new(LichessConnector::new(requester))
-                    })?;
-
-                    // Load the new game
-                    match chess_game.reset(&game_key) {
-                        Ok(_) => {
-                            info!("Successfully reset game with ID: {}", game_key);
-                            // Notify the UI about the new game
-                            match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                                Ok(_) => info!("Sent game update event (new game)"),
-                                Err(e) => warn!("Failed to send game update event: {:?}", e),
-                            }
-
-                            // Send the GameLoaded event with the game ID
-                            match state_tx.send(GameStateEvent::GameLoaded(game_key.clone())) {
-                                Ok(_) => info!("Sent game loaded event for ID: {}", game_key),
-                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
-                            }
+                        chess_game.take();
+                    }
+                }
+                GameStateEvent::GameLoaded(game_key) => {
+                    match load_game(game_key, &settings, &state_tx) {
+                        Ok(chess_game) => {
+                            chess_game.replace(chess_game);
                         }
                         Err(e) => {
-                            warn!("Failed to reset game: {:?}", e);
-
-                            // Send an empty GameLoaded event to indicate failure
-                            match state_tx.send(GameStateEvent::GameLoaded(String::new())) {
-                                Ok(_) => info!("Sent empty game loaded event to indicate failure"),
-                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
-                            }
+                            warn!("Error loading game: {:?}", e);
                         }
                     }
+                }
+                GameStateEvent::ExpectedPhysical(expected_physical) => {
+                    display.tick(expected_physical, &chess_game)?;
                 }
             }
         }
