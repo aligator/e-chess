@@ -190,37 +190,47 @@ module TopBoard()
 
 module TopGrid()
 {
-    // Render border
-    translate([ 0, 0, bottomHeight ]) difference()
-    {
-        cube([
-            gridInner + fieldBorder * 2, gridInner + fieldBorder * 2,
-            boxHeight
-        ]);
+    difference() {
+        union() {
+            // Render border
+            translate([ 0, 0, bottomHeight ]) difference()
+            {
+                cube([
+                    gridInner + fieldBorder * 2, gridInner + fieldBorder * 2,
+                    boxHeight
+                ]);
 
-        translate([ fieldBorder * 2, fieldBorder * 2,
-            -c0 ])
-            cube([
-                gridInner - fieldBorder * 2, // Use c0 here to fuse the grid with the border.
-                                             // Otherwise these are handled as two parts.
-                gridInner - fieldBorder * 2, boxHeight + topBoardHeight + c0 * 2 +
-                top
-            ]);
+                translate([ fieldBorder * 2, fieldBorder * 2,
+                    -c0 ])
+                    cube([
+                        gridInner - fieldBorder * 2, // Use c0 here to fuse the grid with the border.
+                                                     // Otherwise these are handled as two parts.
+                        gridInner - fieldBorder * 2, boxHeight + topBoardHeight + c0 * 2 +
+                        top
+                    ]);
+            }
+
+            translate([ fieldBorder, fieldBorder, boxHeight + bottomHeight - top ])
+                eachGrid()
+            {
+                Field(top);
+            }
+
+            // Add middle borders around the 4 slots.
+            // But not down to the bottom, as that is done by the bottom part to improve glueability.
+            // Let a small tolerance between.
+            translate([ 0, (gridInner / 2), bottomHeight + boxHeight / 2 + tolerance ])
+                cube([ gridInner, fieldBorder * 2, boxHeight / 2 - tolerance ]);
+            translate([ (gridInner / 2), 0, bottomHeight + boxHeight / 2 + tolerance ])
+                cube([ fieldBorder * 2, gridInner, boxHeight / 2 - tolerance ]);
+        };
+
+        // Cut from the outer wall which would collide with the borders that are in the bottom part
+        translate([ -tolerance, (gridInner / 2)-tolerance, bottomHeight ])
+            cube([ gridOuter+tolerance*2, fieldBorder * 2 + tolerance*2, boxHeight / 2 + tolerance ]);
+        translate([ (gridInner / 2)-tolerance, -tolerance, bottomHeight ])
+            cube([ fieldBorder * 2 + tolerance*2, gridOuter+tolerance*2, boxHeight / 2 + tolerance ]);
     }
-
-    translate([ fieldBorder, fieldBorder, boxHeight + bottomHeight - top ])
-        eachGrid()
-    {
-        Field(top);
-    }
-
-    // Add middle borders around the 4 slots.
-    // But not down to the bottom, as that is done by the bottom part to improve glueability.
-    // Let a small tolerance between.
-    translate([ 0, (gridInner / 2), bottomHeight + boxHeight / 2 + tolerance ])
-        cube([ gridInner, fieldBorder * 2, boxHeight / 2 - tolerance ]);
-    translate([ (gridInner / 2), 0, bottomHeight + boxHeight / 2 + tolerance ])
-        cube([ fieldBorder * 2, gridInner, boxHeight / 2 - tolerance ]);
 }
 
 module Grid()
