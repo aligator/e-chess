@@ -1,5 +1,20 @@
 renderTopBoard = true;
-renderMultiColorBoard = false;
+
+switchPrintableMultiColorBoard = false;
+
+// Enable multicolor using an extra layer.
+renderLayeredMultiColorBoard = true;
+// Switches the fields that get the extra layer. (e.g. to change the color on a specific layer manually.)
+// Cannot be used together with renderMultiColorBoardColorX.
+topBoardLayererdMultiColorEven = false;
+
+// Enables multi-color Color1 (e.g. support for mulit-color printers.)
+// Cannot be used together with topBoardLayererdMultiColorEven.
+renderMultiColorBoardColor1 = false;
+// Enables multi-color Color2 (e.g. support for mulit-color printers.)
+// Cannot be used together with topBoardLayererdMultiColorEven.
+renderMultiColorBoardColor2 = false;
+
 renderTopGrid = true;
 renderGrid = true;
 renderBottom = true;
@@ -31,7 +46,6 @@ top = 2.0;
 
 topBoardHeight = 0.4;
 topBoardMultiColorHeight = 0.2;
-topBoardMultiColorEven = false;
 
 // Border on each field.
 // Note that two borders side by side lead to an effective *2 border.
@@ -145,39 +159,112 @@ module Field(height)
     };
 }
 
-module TopBoard()
-{
-    difference()
-    {
-        translate([ fieldBorder, fieldBorder, 0 ])
-        {
-            cube([
-                gridInner - tolerance * 2 - fieldBorder * 2,
-                gridInner - tolerance * 2 - fieldBorder * 2,
-                topBoardHeight
-            ]);
+module LayeredMultiColorBoard() {
+    for (i = [0:1:size - 1]) {
+        for (j = [0:1:size - 1]) {
+            if ((i + j) % 2 == (topBoardLayererdMultiColorEven ? 0 : 1)) {
 
-            if (renderMultiColorBoard) {
-                for (i = [0:1:size - 1]) {
-                    for (j = [0:1:size - 1]) {
-                        if ((i + j) % 2 == (topBoardMultiColorEven ? 0 : 1)) {
+                translate([
+                    i * fieldSize,
+                    j * fieldSize,
+                    topBoardHeight
+                ])
+                {
+                    cube([
+                        fieldSize - tolerance * 2 - fieldBorder * 2,
+                        fieldSize - tolerance * 2 - fieldBorder * 2,
+                        topBoardMultiColorHeight
+                    ]);
+                };
+            }
+        }
+    }
+}
 
-                            translate([
-                                i * fieldSize,
-                                j * fieldSize,
-                                topBoardHeight
-                            ])
-                            {
-                                cube([
-                                    fieldSize - tolerance * 2 - fieldBorder * 2,
-                                    fieldSize - tolerance * 2 - fieldBorder * 2,
-                                    topBoardMultiColorHeight
-                                ]);
-                            };
-                        }
-                    }
+module MultiColorBoard1(count) {
+    difference() {
+        cube([
+            fieldSize * count,
+            fieldSize * count,
+            topBoardHeight
+        ]);
+        
+        for (i = [0:1:count - 1]) {
+            for (j = [0:1:count - 1]) {
+                if ((i + j) % 2 == (renderPrintable && switchPrintableMultiColorBoard ? 0 : 1)) {
+
+                    translate([
+                        i * fieldSize,
+                        j * fieldSize,
+                        topBoardHeight-topBoardMultiColorHeight
+                    ])
+                    {
+                        cube([
+                            fieldSize,
+                            fieldSize,
+                            topBoardMultiColorHeight+c0
+                        ]);
+                    };
                 }
             }
+        }
+    }
+}
+
+module MultiColorBoard2(count) {
+    for (i = [0:1:count - 1]) {
+        for (j = [0:1:count - 1]) {
+            if ((i + j) % 2 == (renderPrintable && switchPrintableMultiColorBoard ? 0 : 1)) {
+
+                translate([
+                    i * fieldSize,
+                    j * fieldSize,
+                    topBoardHeight-topBoardMultiColorHeight
+                ])
+                {
+                    cube([
+                        fieldSize,
+                        fieldSize,
+                        topBoardMultiColorHeight+c0
+                    ]);
+                };
+            }
+        }
+    }
+}
+
+module BaseBoard() {
+    cube([
+        gridInner - tolerance * 2 - fieldBorder * 2,
+        gridInner - tolerance * 2 - fieldBorder * 2,
+        topBoardHeight
+    ]);
+}
+
+module TopBoard()
+{
+    // When rendering printable and with the multi color approach - render only one of the 4 parts.
+    // Otherwise splitting it for printing would be hard.
+    // You have to print it 4 times with 2 different color patterns.
+    multiColorSize = renderPrintable ? size / 2 : size;
+    
+    difference()
+    {
+        union() {
+            if (!renderMultiColorBoardColor1  && !renderMultiColorBoardColor2) {
+                translate([ fieldBorder, fieldBorder, 0 ]) {
+                    BaseBoard();
+                    if (renderLayeredMultiColorBoard) {
+                        LayeredMultiColorBoard();
+                    }
+                }    
+            }
+            if (renderMultiColorBoardColor1) {
+                MultiColorBoard1(multiColorSize);
+            };
+            if (renderMultiColorBoardColor2) {
+                MultiColorBoard2(multiColorSize);
+            };
         };
 
         // Cut away borders around the 4 slots.
@@ -185,6 +272,22 @@ module TopBoard()
             cube([ gridInner, fieldBorder * 2 + tolerance * 2, topBoardHeight + c0 * 2 ]);
         translate([ (gridInner / 2) - tolerance * 2 - fieldBorder, 0, -c0 ])
             cube([ fieldBorder * 2 + tolerance * 2, gridInner, topBoardHeight + c0 * 2 ]);
+        
+        translate([0, 0, -c0])
+        difference() {
+            cube([
+                gridInner,
+                gridInner,
+                topBoardHeight+topBoardMultiColorHeight+ 2*c0
+            ]);
+            translate([ fieldBorder, fieldBorder, 0 ]) {
+            cube([
+                gridInner - tolerance * 2 - fieldBorder * 2,
+                gridInner - tolerance * 2 - fieldBorder * 2,
+                topBoardHeight+topBoardMultiColorHeight+ 2*c0
+            ]);
+            };
+        };
     }
 }
 
