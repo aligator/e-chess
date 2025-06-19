@@ -1,5 +1,6 @@
 use anyhow::Result;
-use chess::{BoardStatus, File, Game, Rank, Square};
+use chess::{BoardStatus, File, Rank, Square};
+use chess_game::game::ChessGameState;
 use esp_idf_hal::io::Write;
 use esp_idf_svc::http::{server::EspHttpServer, Method};
 use maud::html;
@@ -7,11 +8,11 @@ use serde_json::json;
 use core::panic;
 use std::{sync::{mpsc, Arc, Mutex}, thread};
 
-use crate::wifi::page;
+use crate::{event::EventManager, game::{GameCommandEvent, GameStateEvent}, wifi::page, Event};
 
 
 pub struct Web {
-    game: Arc<Mutex<Option<chess::Game>>>,
+    game: Arc<Mutex<Option<ChessGameState>>>,
     game_key: Arc<Mutex<String>>,
 }
 
@@ -67,7 +68,7 @@ unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<St
     Ok(())
 }
 
-unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<GameCommandEvent>, game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Event>, game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/load-game", Method::Get, move |request| -> Result<()> {
         let uri = request.uri();
         
@@ -82,7 +83,7 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
                     *game_id.lock().unwrap() = "".to_string();
                     
                     // Trigger event to load new game
-                    sender.send(GameCommandEvent::LoadNewGame(id.to_string())).unwrap();
+                    sender.send(Event::GameCommand(GameCommandEvent::LoadNewGame(id.to_string()))).unwrap();
                 }
             }
         }
@@ -96,7 +97,7 @@ unsafe fn handle_load_game(server: &mut EspHttpServer, sender: mpsc::Sender<Game
 }
 
 // Send game data to the client
-unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<chess::Game>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
+unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ChessGameState>>>, game_id: Arc<Mutex<String>>) -> Result<()> {
     server.fn_handler_nonstatic("/game-data", Method::Get, move |request| -> Result<()> {
         let game = game.lock().unwrap();
         let current_game_id = game_id.lock().unwrap().clone();
@@ -115,9 +116,9 @@ unsafe fn handle_game_data(server: &mut EspHttpServer, game: Arc<Mutex<Option<ch
             }).to_string()
         } else if let Some(game) = &*game {
             // Game is loaded and ready
-            let game_state = game.current_position();
-            let active_color = game.side_to_move();
-            let status = match game_state.status() {
+            let game_state = game.current_position;
+            let active_color = game.active_player;
+            let status = match game.current_position.status() {
                 BoardStatus::Checkmate => "Checkmate!",
                 BoardStatus::Stalemate => "Stalemate",
                 BoardStatus::Ongoing => "In progress",
@@ -200,30 +201,29 @@ impl Web {
         }
     }
 
-    pub fn register(&self, server: &mut EspHttpServer, event_rx: mpsc::Receiver<GameStateEvent>) -> Result<mpsc::Receiver<GameCommandEvent>> {
-        let (tx_cmd, rx_cmd) = mpsc::channel::<GameCommandEvent>();
+    pub fn register(&self, server: &mut EspHttpServer, event_manager: &EventManager<Event>) -> Result<()> {
+        let tx = event_manager.create_sender();
+        let rx = event_manager.create_receiver();
 
         let current_game_for_thread = self.game.clone();
         let game_id_for_thread = self.game_key.clone();
         thread::spawn(move || {
             println!("Starting web event processing thread");
             loop {
-                match event_rx.recv() {
-                    Ok(game_state_event) => {
+                match rx.recv() {
+                    Ok(Event::GameState(game_state_event)) => {
                         match game_state_event {
-                            GameStateEvent::UpdateGame(updated_game) => {
-                                if let Some(updated_game) = updated_game {
-                                    current_game_for_thread.lock().unwrap().replace(updated_game);
-                                } else {
-                                    current_game_for_thread.lock().unwrap().take();
-                                }
+                            GameStateEvent::UpdateGame(expected_physical, game_state) => {
+                                current_game_for_thread.lock().unwrap().replace(game_state);
+                              //  *game_id_for_thread.lock().unwrap() = expected_physical.to_string();
                             }
                             GameStateEvent::GameLoaded(id) => {
                                 // Update the game_id for the /game-info endpoint
                                 *game_id_for_thread.lock().unwrap() = id;
                             }
                         }
-                    }
+                    },
+                    Ok(_) => continue,
                     Err(e) => {
                         println!("Error receiving game state event: {:?}, exiting thread", e);
                         break;
@@ -237,9 +237,9 @@ impl Web {
             handle_js(server)?;
             handle_game(server, self.game_key.clone())?;
             handle_game_data(server, self.game.clone(), self.game_key.clone())?;
-            handle_load_game(server, tx_cmd, self.game_key.clone())?;
+            handle_load_game(server, tx, self.game_key.clone())?;
         };
 
-        Ok(rx_cmd)
+        Ok(())
     }
 }

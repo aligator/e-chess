@@ -1,9 +1,11 @@
 use crate::bitboard_extensions::*;
 use crate::chess_connector::{ChessConnector, ChessConnectorError, GameEvent};
 use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piece, Rank, Square};
+
 #[cfg(feature = "colored")]
 use colored::*;
 use std::cmp::Ordering::*;
+use std::fmt::Debug;
 use std::{fmt, str::FromStr};
 use thiserror::Error;
 
@@ -32,6 +34,26 @@ pub enum ChessGameError {
 pub enum ChessState {
     Idle,
     MovingPiece { piece: Piece, from: Square },
+}
+
+#[derive(Clone)]
+pub struct ChessGameState {
+    pub physical: BitBoard,
+    pub state: ChessState,
+    pub last_move: Option<ChessMove>,
+    pub possible_moves: BitBoard,
+    pub current_position: Board,
+    pub active_player: Color,
+}
+
+impl Debug for ChessGameState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "ChessGameState {{ physical: {:?}, last_move: {:?}, possible_moves: {:?} }}",
+            self.physical, self.last_move, self.possible_moves
+        )
+    }
 }
 
 pub struct ChessGame {
@@ -240,10 +262,6 @@ impl ChessGame {
 
     pub fn game(&self) -> Option<Game> {
         self.game.clone()
-    }
-
-    pub fn state(&self) -> ChessState {
-        self.state
     }
 
     pub fn last_move(&self) -> Option<ChessMove> {
@@ -552,6 +570,17 @@ impl ChessGame {
                 Ok(expected_occupied)
             }
         }
+    }
+
+    pub fn get_state(&self) -> Option<ChessGameState> {
+        Some(ChessGameState {
+            physical: self.physical,
+            state: self.state,
+            last_move: self.last_move(),
+            possible_moves: self.get_possible_moves(),
+            current_position: self.game.as_ref().unwrap().current_position(),
+            active_player: self.game.as_ref().unwrap().side_to_move(),
+        })
     }
 }
 

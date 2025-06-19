@@ -1,5 +1,7 @@
 use anyhow::Result;
 use board::Board;
+use chess::BitBoard;
+use chess_game::game::ChessGameState;
 use embedded_svc::http::Method;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
@@ -13,20 +15,32 @@ use esp_idf_svc::wifi::EspWifi;
 use game::GameStateEvent;
 use log::*;
 use maud::html;
-use std::sync::mpsc::channel;
 use std::thread::sleep;
 use std::time::Duration;
 use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
+use crate::event::EventManager;
+use crate::game::GameCommandEvent;
+
 mod board;
 mod constants;
 mod display;
+mod event;
 mod game;
 mod request;
 mod storage;
 mod web;
 mod wifi;
+
+#[derive(Debug, Clone)]
+enum Event {
+    GameState(GameStateEvent),
+    GameCommand(GameCommandEvent),
+}
+
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
 
 fn run_game(
     token: String,
@@ -43,95 +57,100 @@ fn run_game(
     display.setup()?;
 
     // Load standard local game initially
+    let event_manager = EventManager::<Event>::new();
+    event_manager.start_thread();
 
     let settings = game::Settings { token };
 
     let web = web::Web::new();
-    let (state_tx, state_rx) = channel::<GameStateEvent>();
-    info!("Created state channel: {:?}", state_tx);
-    let command_rx = web.register(&mut server, state_rx)?;
+    web.register(&mut server, &event_manager)?;
     info!("Registered web interface");
 
-    game::run_game(settings, command_rx, state_tx);
+    game::run_game(settings, &event_manager);
 
     // Start the main loop
     info!("Start app loop");
+    let rx = event_manager.create_receiver();
+
+    let mut last_physical = BitBoard::new(0);
+    let mut last_game_state: Option<ChessGameState> = None;
     loop {
+        // Tick the physical board
+        let physical = board.tick()?;
+        if physical != last_physical {
+            last_physical = physical;
+            if let Err(e) = event_manager.create_sender().send(Event::GameCommand(
+                GameCommandEvent::UpdatePhysical(physical),
+            )) {
+                warn!("Failed to send update physical event: {:?}", e);
+            }
+        }
+
         // Check if event happens
-        if let Ok(event) = state_rx.try_recv() {
-            info!("Received game state event: {:?}", event);
+        if let Ok(event) = rx.try_recv() {
             match event {
-                GameStateEvent::UpdateGame(updated_game) => {
-                    if let Some(updated_game) = updated_game {
-                        chess_game.replace(updated_game);
-                    } else {
-                        chess_game.take();
+                Event::GameState(game_state_event) => match game_state_event {
+                    GameStateEvent::UpdateGame(_expected_physical, game_state) => {
+                        last_game_state = Some(game_state);
                     }
-                }
-                GameStateEvent::GameLoaded(game_key) => {
-                    match load_game(game_key, &settings, &state_tx) {
-                        Ok(chess_game) => {
-                            chess_game.replace(chess_game);
-                        }
-                        Err(e) => {
-                            warn!("Error loading game: {:?}", e);
-                        }
-                    }
-                }
-                GameStateEvent::ExpectedPhysical(expected_physical) => {
-                    display.tick(expected_physical, &chess_game)?;
-                }
+                    _ => {}
+                },
+                _ => {}
             }
         }
 
-        #[cfg(not(feature = "no_board"))]
-        {
-            if let Some(_) = chess_game.game() {
-                match board.tick() {
-                    Ok(physical) => {
-                        match chess_game.tick(physical) {
-                            Ok(_expected) => {
-                                // TODO: not sure if this isn't a bit inefficient to do every tick...
-                                match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        warn!("Failed to send game update: {:?}", e);
-                                    }
-                                }
-                                display.tick(physical, &chess_game)?;
-                            }
-                            Err(e) => {
-                                warn!("Error in game tick: {:?}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Error in board tick: {:?}", e);
-                    }
-                }
-            }
+        if let Some(game_state) = last_game_state.clone() {
+            display.tick(physical, &game_state)?;
         }
 
-        #[cfg(feature = "no_board")]
-        {
-            if let Some(game) = chess_game.game() {
-                let new_expected = chess_game.tick(*game.clone().current_position().combined());
-                match new_expected {
-                    Ok(_expected) => {
-                        match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!("Failed to send game update: {:?}", e);
-                            }
-                        }
-                        display.tick(*game.clone().current_position().combined(), &chess_game)?;
-                    }
-                    Err(e) => {
-                        warn!("Error in game tick: {:?}", e);
-                    }
-                }
-            }
-        }
+        // #[cfg(not(feature = "no_board"))]
+        // {
+        //     if let Some(_) = chess_game.game() {
+        //         match board.tick() {
+        //             Ok(physical) => {
+        //                 match chess_game.tick(physical) {
+        //                     Ok(_expected) => {
+        //                         // TODO: not sure if this isn't a bit inefficient to do every tick...
+        //                         match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
+        //                             Ok(_) => {}
+        //                             Err(e) => {
+        //                                 warn!("Failed to send game update: {:?}", e);
+        //                             }
+        //                         }
+        //                         display.tick(physical, &chess_game)?;
+        //                     }
+        //                     Err(e) => {
+        //                         warn!("Error in game tick: {:?}", e);
+        //                     }
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 warn!("Error in board tick: {:?}", e);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // #[cfg(feature = "no_board")]
+        // {
+        //     if let Some(game) = chess_game.game() {
+        //         let new_expected = chess_game.tick(*game.clone().current_position().combined());
+        //         match new_expected {
+        //             Ok(_expected) => {
+        //                 match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
+        //                     Ok(_) => {}
+        //                     Err(e) => {
+        //                         warn!("Failed to send game update: {:?}", e);
+        //                     }
+        //                 }
+        //                 display.tick(*game.clone().current_position().combined(), &chess_game)?;
+        //             }
+        //             Err(e) => {
+        //                 warn!("Error in game tick: {:?}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
         // Sleep to reduce CPU usage
         sleep(Duration::from_millis(100));

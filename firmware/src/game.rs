@@ -1,43 +1,41 @@
-use std::sync::mpsc;
+use std::sync::mpsc::Sender;
 
 use chess::BitBoard;
 use chess_game::{
     chess_connector::LocalChessConnector,
-    game::{ChessGame, ChessGameError},
+    game::{ChessGame, ChessGameError, ChessGameState},
     lichess::LichessConnector,
 };
 use log::*;
 
-use crate::request::EspRequester;
+use crate::{event::EventManager, request::EspRequester, Event};
 
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub token: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Events that are sent from the game thread to the main thread
 pub enum GameStateEvent {
-    UpdateGame(Option<chess::Game>),
-    ExpectedPhysical(BitBoard),
+    UpdateGame(BitBoard, ChessGameState),
     GameLoaded(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Events that are sent from the main thread to the game thread
 pub enum GameCommandEvent {
     LoadNewGame(String),
     UpdatePhysical(BitBoard),
     RequestTakeBack,
     AcceptTakeBack,
-
     NewSettings(Settings),
 }
 
 fn load_game(
     game_key: String,
     settings: &Settings,
-    state_tx: mpsc::Sender<GameStateEvent>,
+    tx: Sender<Event>,
 ) -> Result<ChessGame, ChessGameError> {
     info!("Loading new game: {}", game_key);
 
@@ -55,15 +53,20 @@ fn load_game(
         Ok(_) => {
             info!("Successfully reset game with ID: {}", game_key);
             // Notify the UI about the new game
-            match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                Ok(_) => info!("Sent game update event (new game)"),
-                Err(e) => warn!("Failed to send game update event: {:?}", e),
+            if let Some(state) = chess_game.get_state() {
+                if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
+                    state.physical,
+                    state,
+                ))) {
+                    warn!("Failed to send game update event: {:?}", e);
+                }
             }
 
             // Send the GameLoaded event with the game ID
-            match state_tx.send(GameStateEvent::GameLoaded(game_key.clone())) {
-                Ok(_) => info!("Sent game loaded event for ID: {}", game_key),
-                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
+            if let Err(e) = tx.send(Event::GameState(GameStateEvent::GameLoaded(
+                game_key.clone(),
+            ))) {
+                warn!("Failed to send game loaded event: {:?}", e);
             }
             Ok(chess_game)
         }
@@ -71,42 +74,45 @@ fn load_game(
             warn!("Failed to reset game: {:?}", e);
 
             // Send an empty GameLoaded event to indicate failure
-            match state_tx.send(GameStateEvent::GameLoaded(String::new())) {
-                Ok(_) => info!("Sent empty game loaded event to indicate failure"),
-                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
+            if let Err(e) = tx.send(Event::GameState(GameStateEvent::GameLoaded(String::new()))) {
+                warn!("Failed to send game loaded event: {:?}", e);
             }
             Err(e)
         }
     }
 }
 
-pub fn run_game(
-    initial_settings: Settings,
-    rx: mpsc::Receiver<GameCommandEvent>,
-    tx: mpsc::Sender<GameStateEvent>,
-) {
+pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>) {
+    let tx = event_manager.create_sender();
+    let rx = event_manager.create_receiver();
+
     let _game_thread = std::thread::Builder::new()
         .spawn(move || {
             let mut settings = initial_settings;
 
             let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
             info!("Created ChessGame");
-            chess_game.reset("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+            load_game(
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+                &settings,
+                tx.clone(),
+            )
+            .unwrap();
 
             let mut physical = BitBoard::new(0);
             loop {
-                match rx.try_recv() {
-                    Ok(event) => match event {
-                        GameCommandEvent::UpdatePhysical(new_physical) => {
+                while let Ok(event) = rx.try_recv() {
+                    match event {
+                        Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
                             physical = new_physical;
                         }
-                        GameCommandEvent::RequestTakeBack => {
+                        Event::GameCommand(GameCommandEvent::RequestTakeBack) => {
                             warn!("Not implemented");
                         }
-                        GameCommandEvent::AcceptTakeBack => {
+                        Event::GameCommand(GameCommandEvent::AcceptTakeBack) => {
                             warn!("Not implemented");
                         }
-                        GameCommandEvent::LoadNewGame(game_id) => {
+                        Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                             match load_game(game_id, &settings, tx.clone()) {
                                 Ok(new_chess_game) => {
                                     chess_game = new_chess_game;
@@ -114,20 +120,24 @@ pub fn run_game(
                                 Err(e) => error!("Error loading game: {:?}", e),
                             }
                         }
-                        GameCommandEvent::NewSettings(new_settings) => {
+                        Event::GameCommand(GameCommandEvent::NewSettings(new_settings)) => {
                             settings = new_settings;
                         }
-                    },
-                    Err(e) => error!("Error receiving event: {:?}", e),
+                        _ => {}
+                    }
                 }
 
                 match chess_game.tick(physical) {
-                    Ok(new_physical) => {
-                        tx.send(GameStateEvent::ExpectedPhysical(new_physical))
-                            .unwrap();
+                    Ok(expected_physical) => {
+                        if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
+                            expected_physical,
+                            chess_game.get_state().unwrap(),
+                        ))) {
+                            error!("Failed to send new game state: {:?}", e);
+                        }
                     }
                     Err(e) => error!("Error ticking game: {:?}", e),
-                };
+                }
             }
         })
         .unwrap();

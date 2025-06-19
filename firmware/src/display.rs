@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chess::{BitBoard, Square};
-use chess_game::game::ChessGame;
+use chess_game::game::ChessGameState;
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
@@ -58,14 +58,14 @@ impl<'a> Display<'a> {
         pixel
     }
 
-    pub fn tick(&mut self, physical: BitBoard, game: &ChessGame) -> Result<()> {
-        let expected = game.expected_physical();
+    pub fn tick(&mut self, physical: BitBoard, game: &ChessGameState) -> Result<()> {
+        let expected = game.physical;
 
         if self.previous_state != Some((physical, expected)) {
             let diff = expected.diff(physical);
             let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
 
-            let last_move = game.last_move();
+            let last_move = game.last_move;
 
             // Colorize the last moved square.
             if let Some(last_move) = last_move {
@@ -74,7 +74,7 @@ impl<'a> Display<'a> {
             };
 
             // Colorize the currently moving piece in blue
-            if let chess_game::game::ChessState::MovingPiece { piece: _, from } = game.state() {
+            if let chess_game::game::ChessState::MovingPiece { piece: _, from } = game.state {
                 // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
                 pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
             }
@@ -87,7 +87,7 @@ impl<'a> Display<'a> {
                 pixels[Self::get_pixel(square)] = RGB { r: 20, g: 0, b: 0 };
             });
 
-            game.get_possible_moves().for_each(|square| {
+            game.possible_moves.for_each(|square| {
                 pixels[Self::get_pixel(square)] = RGB { r: 0, g: 20, b: 0 };
             });
 
