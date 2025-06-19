@@ -129,11 +129,15 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
 
                 match chess_game.tick(physical) {
                     Ok(expected_physical) => {
-                        if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
-                            expected_physical,
-                            chess_game.get_state().unwrap(),
-                        ))) {
-                            error!("Failed to send new game state: {:?}", e);
+                        if let Some(state) = chess_game.get_state() {
+                            if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
+                                expected_physical,
+                                state,
+                            ))) {
+                                error!("Failed to send new game state: {:?}", e);
+                            }
+                        } else {
+                            debug!("No game state found");
                         }
                     }
                     Err(e) => error!("Error ticking game: {:?}", e),

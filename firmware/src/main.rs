@@ -43,7 +43,7 @@ unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
 fn run_game(
-    token: String,
+    token: Option<String>,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     mut server: &mut EspHttpServer<'static>,
@@ -60,7 +60,9 @@ fn run_game(
     let event_manager = EventManager::<Event>::new();
     event_manager.start_thread();
 
-    let settings = game::Settings { token };
+    let settings = game::Settings {
+        token: token.unwrap_or_default(),
+    };
 
     let web = web::Web::new();
     web.register(&mut server, &event_manager)?;
@@ -230,24 +232,16 @@ fn main() -> Result<()> {
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
-    if let Some(token) = token {
-        match run_game(token, mcp23017, ws2812, &mut server) {
-            Ok(_) => {
-                warn!("Stopping game loop");
-                Ok(())
-            }
-            Err(e) => {
-                warn!("Stopping game loop due to error: {:?}", e);
-                loop {
-                    sleep(Duration::from_millis(1000));
-                }
-            }
+    match run_game(token, mcp23017, ws2812, &mut server) {
+        Ok(_) => {
+            warn!("Stopping game loop");
+            Ok(())
         }
-    } else {
-        error!("No token found - please configure it to connect to lichess.org");
-        // Still loop otherwise the web ui would stop
-        loop {
-            sleep(Duration::from_millis(1000));
+        Err(e) => {
+            warn!("Stopping game loop due to error: {:?}", e);
+            loop {
+                sleep(Duration::from_millis(1000));
+            }
         }
     }
 }

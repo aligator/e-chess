@@ -573,14 +573,17 @@ impl ChessGame {
     }
 
     pub fn get_state(&self) -> Option<ChessGameState> {
-        Some(ChessGameState {
-            physical: self.physical,
-            state: self.state,
-            last_move: self.last_move(),
-            possible_moves: self.get_possible_moves(),
-            current_position: self.game.as_ref().unwrap().current_position(),
-            active_player: self.game.as_ref().unwrap().side_to_move(),
-        })
+        if let Some(game) = &self.game {
+            return Some(ChessGameState {
+                physical: self.physical,
+                state: self.state,
+                last_move: self.last_move(),
+                possible_moves: self.get_possible_moves(),
+                current_position: game.current_position(),
+                active_player: game.side_to_move(),
+            });
+        }
+        None
     }
 }
 

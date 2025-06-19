@@ -2,7 +2,7 @@ use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
 use esp_idf_svc::nvs::NvsPartitionId;
-use esp_idf_svc::wifi::{self, Configuration};
+use esp_idf_svc::wifi;
 use esp_idf_svc::{
     http::{
         server::{self, EspHttpServer},
@@ -389,28 +389,11 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
 
     let mut count = 0;
     while !wifi_driver.is_connected()? {
-        if count > 30 {
+        if count > 15 {
             info!("Failed to connect to Wifi");
             info!("Starting Access Point while preserving settings");
-
-            // Get current configuration and extract client config
-            let current_config = wifi_driver.get_configuration()?;
-            let client_config = if let Configuration::Client(conf) = current_config {
-                conf
-            } else {
-                return Ok(());
-            };
-
-            // Create mixed configuration
-            let ap_config = if let Configuration::AccessPoint(conf) = ap_config() {
-                conf
-            } else {
-                return Ok(());
-            };
-
-            // Set mixed configuration
-            let config = wifi::Configuration::Mixed(client_config, ap_config);
-            wifi_driver.set_configuration(&config)?;
+            let ap_config = ap_config();
+            wifi_driver.set_configuration(&ap_config)?;
             wifi_driver.start()?;
 
             return Ok(());
@@ -479,7 +462,7 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
         }
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
         info!("Starting Access Point {}", ap_config.ssid);
-        info!("IP info: {:?}", wifi_driver.ap_netif().get_ip_info());
+        info!("IP info: {:?}", wifi_driver.ap_netif());
     } else {
         info!("Unknown Wifi Configuration");
     }

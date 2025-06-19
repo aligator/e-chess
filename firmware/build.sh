@@ -138,6 +138,16 @@ show_watch_help() {
     echo -e "  ${GREEN}$0 watch${NC}         # Watch debug logs"
 }
 
+# Function to show usage for clear subcommand
+show_clear_help() {
+    echo -e "\n${BOLD}Usage:${NC} $0 clear <chip> [options]"
+    echo -e "\n${BOLD}Description:${NC}"
+    echo -e "  Clear the flash memory of the ESP32 device"
+    echo -e "\n${BOLD}Options:${NC}"
+    echo -e "  ${CYAN}-h, --help${NC}     Show this help message"
+    echo -e "  ${CYAN}--flash-size${NC}    Flash size to use (8MB or 16MB, defaults to 16MB)"
+}
+
 # Function to show main usage
 show_usage() {
     echo -e "\n${BOLD}Usage:${NC} $0 <subcommand> [args] [options]"
@@ -145,14 +155,16 @@ show_usage() {
     echo -e "  ${CYAN}run <chip>${NC}           Build, flash and watch via USB"
     echo -e "  ${CYAN}ota <ip> <chip>${NC}      Build and deploy via OTA"
     echo -e "  ${CYAN}build <chip>${NC}         Build the firmware"
+    echo -e "  ${CYAN}clear${NC}                Clear the flash memory"
     echo -e "  ${CYAN}watch${NC}                Watch the debug logs"
     echo -e "\n${BOLD}Options:${NC}"
     echo -e "  ${CYAN}-h, --help${NC}     Show this help message"
-    echo -e "  ${CYAN}--help <cmd>${NC}   Show help for specific subcommand (run|ota|build|watch)"
+    echo -e "  ${CYAN}--help <cmd>${NC}   Show help for specific subcommand (run|ota|build|clear|watch)"
     echo -e "\n${BOLD}Examples:${NC}"
     echo -e "  ${GREEN}$0 --help run${NC}       # Show help for run subcommand"
     echo -e "  ${GREEN}$0 --help ota${NC}       # Show help for ota subcommand"
     echo -e "  ${GREEN}$0 --help build${NC}     # Show help for build subcommand"
+    echo -e "  ${GREEN}$0 --help clear${NC}     # Show help for clear subcommand"
     echo -e "  ${GREEN}$0 --help watch${NC}     # Show help for watch subcommand"
 }
 
@@ -166,7 +178,7 @@ ARGS=()
 FLASH_SIZE=""
 
 # Parse subcommand and positional arguments
-if [[ $# -gt 0 && ( "$1" == "run" || "$1" == "ota" || "$1" == "build" || "$1" == "watch" ) ]]; then
+if [[ $# -gt 0 && ( "$1" == "run" || "$1" == "ota" || "$1" == "build" || "$1" == "clear" || "$1" == "watch" ) ]]; then
     SUBCOMMAND="$1"
     shift
 fi
@@ -188,6 +200,9 @@ if [[ "$SUBCOMMAND" == "ota" ]]; then
         shift
     fi
 elif [[ "$SUBCOMMAND" == "watch" ]]; then
+    # No arguments needed for watch
+    :
+elif [[ "$SUBCOMMAND" == "clear" ]]; then
     # No arguments needed for watch
     :
 else
@@ -216,6 +231,11 @@ while [[ $# -gt 0 ]]; do
                     build)
                         print_banner
                         show_build_help
+                        exit 0
+                        ;;
+                    clear)
+                        print_banner
+                        show_clear_help
                         exit 0
                         ;;
                     watch)
@@ -265,8 +285,8 @@ if [ -z "$SUBCOMMAND" ]; then
     exit 0
 fi
 
-# Check if chip is specified and valid (for run/ota/build)
-if [[ "$SUBCOMMAND" == "run" || "$SUBCOMMAND" == "ota" || "$SUBCOMMAND" == "build" ]]; then
+# Check if chip is specified and valid (for run/ota/build/clear)
+if [[ "$SUBCOMMAND" == "run" || "$SUBCOMMAND" == "ota" || "$SUBCOMMAND" == "build" || "$SUBCOMMAND" == "clear" ]]; then
     if [ -z "$TARGET_CHIP" ]; then
         print_error "Chip name is required as a positional argument for $SUBCOMMAND (${SUPPORTED_CHIPS[*]})"
         show_usage
@@ -305,59 +325,78 @@ for arg in "${CARGO_FLAGS[@]}"; do
     fi
 done
 
-print_step "Building target for $TARGET_CHIP ($BUILD_TYPE mode)"
-cargo build "${CARGO_FLAGS[@]}"
+if [[ "$SUBCOMMAND" != "watch" && "$SUBCOMMAND" != "clear" ]]; then
+    print_step "Building target for $TARGET_CHIP ($BUILD_TYPE mode)"
+    cargo build "${CARGO_FLAGS[@]}"
+fi
 
 # Only continue with firmware creation/deployment if chip is specified and not just watching
 if [ -n "$TARGET_CHIP" ] && [ "$SUBCOMMAND" != "watch" ]; then
     # Set target directory for the specific chip
     TARGET_DIR="target/xtensa-${TARGET_CHIP}-espidf/${BUILD_TYPE}/e-chess"
-    if [ ! -f "$TARGET_DIR" ]; then
-        print_error "Build target not found at $TARGET_DIR"
-        exit 1
-    fi
-    print_step "Creating firmware image"
-    # Create firmware file name with chip in the target directory
-    TARGET_BASE=$(dirname "$TARGET_DIR")
-    FIRMWARE_FILE="${TARGET_BASE}/e-chess_ota_${TARGET_CHIP}.bin"
-    print_progress "Generating firmware file: ${FIRMWARE_FILE}"
-    # Use espflash to create the ESP32 app image
-    if [ -n "$FLASH_SIZE" ]; then
-        PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
-        espflash save-image --chip "$TARGET_CHIP" --partition-table "$PARTITION_TABLE" --flash-size "$FLASH_SIZE" "$TARGET_DIR" "$FIRMWARE_FILE"
-    else
-        espflash save-image --chip "$TARGET_CHIP" "$TARGET_DIR" "$FIRMWARE_FILE"
-    fi
-    print_success "Firmware file created successfully!"
+    
+    if [[ "$SUBCOMMAND" == "clear" ]]; then
+        print_step "Clearing flash memory for $TARGET_CHIP"
+        print_warning "This will erase all data on the device flash memory!"
+        print_warning "Make sure the device is connected and in bootloader mode"
+        read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Flash clear operation cancelled"
+            exit 0
+        fi
+    
+        espflash erase-flash
 
-    if [[ "$SUBCOMMAND" == "ota" ]]; then
-        print_step "Deploying firmware to $OTA_ADDRESS"
-        print_progress "Uploading firmware..."
-        
-        # Create a temporary file for the response
-        RESPONSE_FILE=$(mktemp)
-        
-        # Upload with progress bar
-        curl -X POST \
-             -H "Content-Type: application/octet-stream" \
-             --data-binary "@$FIRMWARE_FILE" \
-             -w "\nUpload complete!\n" \
-             -o "$RESPONSE_FILE" \
-             "${OTA_PROTOCOL}://${OTA_ADDRESS}/upload-firmware"
-        
-        # Clean up temp file
-        rm -f "$RESPONSE_FILE"
-        
-        print_success "Firmware deployment initiated"
-        print_info "Device will restart automatically"
-    fi
-    if [[ "$SUBCOMMAND" == "run" ]]; then
-        print_step "Running cargo run..."
+        print_success "Flash memory cleared successfully!"
+    else
+        if [ ! -f "$TARGET_DIR" ]; then
+            print_error "Build target not found at $TARGET_DIR"
+            exit 1
+        fi
+        print_step "Creating firmware image"
+        # Create firmware file name with chip in the target directory
+        TARGET_BASE=$(dirname "$TARGET_DIR")
+        FIRMWARE_FILE="${TARGET_BASE}/e-chess_ota_${TARGET_CHIP}.bin"
+        print_progress "Generating firmware file: ${FIRMWARE_FILE}"
+        # Use espflash to create the ESP32 app image
         if [ -n "$FLASH_SIZE" ]; then
             PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
-            cargo run "${CARGO_FLAGS[@]}" -- --flash-size "$FLASH_SIZE" --partition-table "$PARTITION_TABLE"
+            espflash save-image --chip "$TARGET_CHIP" --partition-table "$PARTITION_TABLE" --flash-size "$FLASH_SIZE" "$TARGET_DIR" "$FIRMWARE_FILE"
         else
-            cargo run "${CARGO_FLAGS[@]}"
+            espflash save-image --chip "$TARGET_CHIP" "$TARGET_DIR" "$FIRMWARE_FILE"
+        fi
+        print_success "Firmware file created successfully!"
+
+        if [[ "$SUBCOMMAND" == "ota" ]]; then
+            print_step "Deploying firmware to $OTA_ADDRESS"
+            print_progress "Uploading firmware..."
+            
+            # Create a temporary file for the response
+            RESPONSE_FILE=$(mktemp)
+            
+            # Upload with progress bar
+            curl -X POST \
+                 -H "Content-Type: application/octet-stream" \
+                 --data-binary "@$FIRMWARE_FILE" \
+                 -w "\nUpload complete!\n" \
+                 -o "$RESPONSE_FILE" \
+                 "${OTA_PROTOCOL}://${OTA_ADDRESS}/upload-firmware"
+            
+            # Clean up temp file
+            rm -f "$RESPONSE_FILE"
+            
+            print_success "Firmware deployment initiated"
+            print_info "Device will restart automatically"
+        fi
+        if [[ "$SUBCOMMAND" == "run" ]]; then
+            print_step "Running cargo run..."
+            if [ -n "$FLASH_SIZE" ]; then
+                PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
+                cargo run "${CARGO_FLAGS[@]}" -- --flash-size "$FLASH_SIZE" --partition-table "$PARTITION_TABLE"
+            else
+                cargo run "${CARGO_FLAGS[@]}"
+            fi
         fi
     fi
 fi
