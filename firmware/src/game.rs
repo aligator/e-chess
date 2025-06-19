@@ -1,4 +1,4 @@
-use std::sync::mpsc::Sender;
+use std::{sync::mpsc::Sender, time::Duration};
 
 use chess::BitBoard;
 use chess_game::{
@@ -7,6 +7,8 @@ use chess_game::{
     lichess::LichessConnector,
 };
 use log::*;
+use std::thread;
+use std::thread::sleep;
 
 use crate::{event::EventManager, request::EspRequester, Event};
 
@@ -86,63 +88,67 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
-    let _game_thread = std::thread::Builder::new()
-        .spawn(move || {
-            let mut settings = initial_settings;
+    info!("Starting game thread");
+    thread::spawn(move || {
+        let mut settings = initial_settings;
 
-            let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
-            info!("Created ChessGame");
-            load_game(
-                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
-                &settings,
-                tx.clone(),
-            )
-            .unwrap();
+        let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
+        info!("Created ChessGame");
+        load_game(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+            &settings,
+            tx.clone(),
+        )
+        .unwrap();
+        info!("Loaded initial game");
 
-            let mut physical = BitBoard::new(0);
-            loop {
-                while let Ok(event) = rx.try_recv() {
-                    match event {
-                        Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
-                            physical = new_physical;
-                        }
-                        Event::GameCommand(GameCommandEvent::RequestTakeBack) => {
-                            warn!("Not implemented");
-                        }
-                        Event::GameCommand(GameCommandEvent::AcceptTakeBack) => {
-                            warn!("Not implemented");
-                        }
-                        Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
-                            match load_game(game_id, &settings, tx.clone()) {
-                                Ok(new_chess_game) => {
-                                    chess_game = new_chess_game;
-                                }
-                                Err(e) => error!("Error loading game: {:?}", e),
-                            }
-                        }
-                        Event::GameCommand(GameCommandEvent::NewSettings(new_settings)) => {
-                            settings = new_settings;
-                        }
-                        _ => {}
+        let mut physical = BitBoard::new(0);
+        loop {
+            // Sleep for 100ms to avoid busy-waiting
+            sleep(Duration::from_millis(100));
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
+                        physical = new_physical;
                     }
-                }
-
-                match chess_game.tick(physical) {
-                    Ok(expected_physical) => {
-                        if let Some(state) = chess_game.get_state() {
-                            if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
-                                expected_physical,
-                                state,
-                            ))) {
-                                error!("Failed to send new game state: {:?}", e);
+                    Event::GameCommand(GameCommandEvent::RequestTakeBack) => {
+                        warn!("Not implemented");
+                    }
+                    Event::GameCommand(GameCommandEvent::AcceptTakeBack) => {
+                        warn!("Not implemented");
+                    }
+                    Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
+                        match load_game(game_id, &settings, tx.clone()) {
+                            Ok(new_chess_game) => {
+                                chess_game = new_chess_game;
                             }
-                        } else {
-                            debug!("No game state found");
+                            Err(e) => error!("Error loading game: {:?}", e),
                         }
                     }
-                    Err(e) => error!("Error ticking game: {:?}", e),
+                    Event::GameCommand(GameCommandEvent::NewSettings(new_settings)) => {
+                        settings = new_settings;
+                    }
+                    _ => {}
                 }
             }
-        })
-        .unwrap();
+
+            match chess_game.tick(physical) {
+                Ok(expected_physical) => {
+                    if let Some(state) = chess_game.get_state() {
+                        if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
+                            expected_physical,
+                            state,
+                        ))) {
+                            error!("Failed to send new game state: {:?}", e);
+                        }
+                    } else {
+                        debug!("No game state found");
+                    }
+                }
+                Err(e) => error!("Error ticking game: {:?}", e),
+            }
+        }
+    });
+
+    info!("Game thread started");
 }

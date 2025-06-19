@@ -74,6 +74,7 @@ fn run_game(
     info!("Start app loop");
     let rx = event_manager.create_receiver();
 
+    let tx = event_manager.create_sender();
     let mut last_physical = BitBoard::new(0);
     let mut last_game_state: Option<ChessGameState> = None;
     loop {
@@ -81,15 +82,16 @@ fn run_game(
         let physical = board.tick()?;
         if physical != last_physical {
             last_physical = physical;
-            if let Err(e) = event_manager.create_sender().send(Event::GameCommand(
-                GameCommandEvent::UpdatePhysical(physical),
-            )) {
+            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical(
+                physical,
+            ))) {
                 warn!("Failed to send update physical event: {:?}", e);
             }
         }
 
         // Check if event happens
         if let Ok(event) = rx.try_recv() {
+            info!("Received event: {:?}", event);
             match event {
                 Event::GameState(game_state_event) => match game_state_event {
                     GameStateEvent::UpdateGame(_expected_physical, game_state) => {

@@ -7,6 +7,7 @@ use maud::html;
 use serde_json::json;
 use core::panic;
 use std::{sync::{mpsc, Arc, Mutex}, thread};
+use log::*;
 
 use crate::{event::EventManager, game::{GameCommandEvent, GameStateEvent}, wifi::page, Event};
 
@@ -208,7 +209,7 @@ impl Web {
         let current_game_for_thread = self.game.clone();
         let game_id_for_thread = self.game_key.clone();
         thread::spawn(move || {
-            println!("Starting web event processing thread");
+            info!("Starting web event processing thread");
             loop {
                 match rx.recv() {
                     Ok(Event::GameState(game_state_event)) => {
@@ -232,6 +233,8 @@ impl Web {
             }
             println!("Web event processing thread exited");
         });
+
+        info!("Web event processing thread started");
 
         unsafe { 
             handle_js(server)?;
