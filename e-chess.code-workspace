@@ -10,15 +10,16 @@
         },
         {
             "path": "./chess-game",
-            "name": "Rust Chess game"
+            "name": "Rust Chess game lib"
         },
         {
             "path": "./scad",
             "name": "OpenSCAD 3D model"
         },
         {
-            "path": "../chess-rs"
-        }
+            "path": "./electronics",
+            "name": "Electronics"
+        },
     ],
     "settings": {
         "cSpell.words": [

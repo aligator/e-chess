@@ -2,6 +2,11 @@
 
 This is the firmware for the E-Chess project, written in Rust using the ESP-IDF framework.
 
+**This project works best with the ESP32-S3 (with 16mb flash) dev board.**
+**The ESP32 is currently still in the firmware, but not recommended.**
+
+For OTA to work, see the requirements in the [OTA Support](#ota-support) section.
+
 ## Prerequisites
 
 - Rust (latest stable)
@@ -27,7 +32,7 @@ For more options and commands, run:
 
 ## OTA Support
 
-For OTA updates, you need a flash size of at least 8MB since the firmware is already > 2MB.
+For OTA updates, you need a flash size of at least 8MB *(16MB recommended!)* since the firmware is already > 2MB.
 The flash must be partitioned with two slots.
 
 **16MB is recommended!**  
@@ -57,5 +62,5 @@ cp espflash_ota_16mb.toml espflash.toml
 
 1. Make sure you have all prerequisites installed
 2. Connect your ESP32 via USB
-3. Use `./build.sh run esp32` to build, flash and watch logs
+3. Use `./build.sh run esp32s3 --watch` to build, flash and watch logs
 4. Use `./build.sh watch` to just watch logs without building/flashing
