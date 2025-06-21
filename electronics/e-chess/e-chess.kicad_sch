@@ -2707,7 +2707,7 @@
 		)
 		(uuid "2f1c8adb-66ce-4978-a10e-1833dfa43279")
 	)
-	(text "In total 64 LEDs:\nRunning in horízontal snake lines \nfrom the top right to the bottom left."
+	(text "In total 64 LEDs:\nRunning in horízontal snake lines \nfrom the top right to the bottom right."
 		(exclude_from_sim no)
 		(at 37.846 66.548 0)
 		(effects

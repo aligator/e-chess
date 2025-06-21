@@ -8,7 +8,7 @@ Currently it is wired completely manually. Therefore it does not contain a PCB y
 ## LEDs
 
 The schematic contains one single LED as placeholder for all 64 WS2812 LEDs.  
-They are routed in a snake pattern from the top right to the bottom left.
+They are routed in a snake pattern from the top right to the bottom right.
 ```
 ┌💡─💡─💡─💡─💡─💡─💡─💡 <- START
 └💡─💡─💡─💡─💡─💡─💡─💡┐
