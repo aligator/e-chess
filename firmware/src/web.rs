@@ -43,6 +43,7 @@ unsafe fn handle_game(server: &mut EspHttpServer, current_game_key: Arc<Mutex<St
                     label for="gameKey" { "Game ID or FEN: " }
                     input type="text" id="gameKey" value=(current_game_key) {}
                     button id="loadGame" { "Load Game" }
+                    button id="newGame" { "New" }
                 }
                
                 // Game info section - will be shown/hidden via JS
@@ -240,7 +241,7 @@ impl Web {
             handle_js(server)?;
             handle_game(server, self.game_key.clone())?;
             handle_game_data(server, self.game.clone(), self.game_key.clone())?;
-            handle_load_game(server, tx, self.game_key.clone())?;
+            handle_load_game(server, tx.clone(), self.game_key.clone())?;
         };
 
         Ok(())
