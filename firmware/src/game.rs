@@ -20,7 +20,7 @@ pub struct Settings {
 #[derive(Debug, Clone)]
 /// Events that are sent from the game thread to the main thread
 pub enum GameStateEvent {
-    UpdateGame(BitBoard, ChessGameState),
+    UpdateGame(ChessGameState),
     GameLoaded(String),
 }
 
@@ -55,10 +55,7 @@ fn load_game(
             // Notify the UI about the new game
             if let Some(state) = chess_game.get_state() {
                 info!("Sending game update event: {:?}", state);
-                if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(
-                    state.physical,
-                    state,
-                ))) {
+                if let Err(e) = tx.send(Event::GameState(GameStateEvent::UpdateGame(state))) {
                     warn!("Failed to send game update event: {:?}", e);
                 }
             }
@@ -128,7 +125,7 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
             }
 
             match chess_game.tick(physical) {
-                Ok(expected_physical) => {
+                Ok(()) => {
                     if let Some(state) = chess_game.get_state() {
                         if let Some(last_game_state_extracted) = last_game_state {
                             if last_game_state_extracted == state {
@@ -136,8 +133,7 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
                             }
                         }
 
-                        let event =
-                            Event::GameState(GameStateEvent::UpdateGame(expected_physical, state));
+                        let event = Event::GameState(GameStateEvent::UpdateGame(state));
                         if let Err(e) = tx.send(event) {
                             error!("Failed to send new game state: {:?}", e);
                         }

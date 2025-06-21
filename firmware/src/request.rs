@@ -75,13 +75,13 @@ impl EspRequester {
         offset: usize,
     ) -> Result<(usize, String, usize), RequestError> {
         // Read into the buffer starting at the offset
-        info!("Reading ...");
+        debug!("Reading ...");
         let bytes_read = match response.read(&mut buf[offset..]) {
             Ok(size) => {
                 if size == 0 {
                     return Ok((0, String::new(), offset));
                 }
-                info!("Receiving Chunks of data");
+                debug!("Receiving Chunks of data");
 
                 size
             }
@@ -93,12 +93,12 @@ impl EspRequester {
 
         let total_size = bytes_read + offset;
 
-        info!("Parse utf8");
+        debug!("Parse utf8");
         // Try to convert the entire buffer to a UTF-8 string
         match str::from_utf8(&buf[..total_size]) {
             Ok(s) => {
                 // All data is valid UTF-8
-                info!("Parsing done");
+                debug!("Parsing done");
                 Ok((bytes_read, s.to_string(), 0))
             }
             Err(e) => {

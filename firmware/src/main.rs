@@ -106,7 +106,7 @@ fn run_game(
         if let Ok(event) = rx.try_recv() {
             match event {
                 Event::GameState(game_state_event) => match game_state_event {
-                    GameStateEvent::UpdateGame(_expected_physical, game_state) => {
+                    GameStateEvent::UpdateGame(game_state) => {
                         info!("Received update game state event: {:?}", game_state);
 
                         last_game_state = Some(game_state);
@@ -118,7 +118,7 @@ fn run_game(
         }
 
         if let Some(game_state) = last_game_state.clone() {
-            display.tick(last_physical, &game_state)?;
+            display.tick(&game_state)?;
         }
 
         // #[cfg(not(feature = "no_board"))]

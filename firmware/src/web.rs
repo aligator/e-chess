@@ -214,7 +214,7 @@ impl Web {
                 match rx.recv() {
                     Ok(Event::GameState(game_state_event)) => {
                         match game_state_event {
-                            GameStateEvent::UpdateGame(expected_physical, game_state) => {
+                            GameStateEvent::UpdateGame(game_state) => {
                                 current_game_for_thread.lock().unwrap().replace(game_state);
                               //  *game_id_for_thread.lock().unwrap() = expected_physical.to_string();
                             }

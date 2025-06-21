@@ -39,6 +39,7 @@ pub enum PlayingState {
 #[derive(Clone, Copy, PartialEq)]
 pub struct ChessGameState {
     pub physical: BitBoard,
+    pub expected_physical: BitBoard,
     pub playing_state: PlayingState,
     pub last_move: Option<ChessMove>,
     pub possible_moves: BitBoard,
@@ -50,8 +51,8 @@ impl Debug for ChessGameState {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "ChessGameState {{ physical: {:?}, last_move: {:?}, possible_moves: {:?} }}",
-            self.physical, self.last_move, self.possible_moves
+            "ChessGameState {{ physical: {:?}, expected_physical: {:?}, last_move: {:?}, possible_moves: {:?} }}",
+            self.physical, self.expected_physical, self.last_move, self.possible_moves
         )
     }
 }
@@ -466,9 +467,9 @@ impl ChessGame {
     /// Updates the game state based on the current board state
     /// The input bitboard represents the physical state of the board
     /// where 1 means a piece is present and 0 means empty
-    pub fn tick(&mut self, physical_board: BitBoard) -> Result<BitBoard, ChessGameError> {
+    pub fn tick(&mut self, physical_board: BitBoard) -> Result<(), ChessGameError> {
         if self.game.is_none() {
-            return Ok(physical_board);
+            return Ok(());
         }
         let mut white_request_take_back = false;
         let mut black_request_take_back = false;
@@ -535,7 +536,7 @@ impl ChessGame {
         // If there is already a winner, just do nothing.
         let game: &mut Game = self.game.as_mut().unwrap();
         if game.result().is_some() {
-            return Ok(expected_occupied);
+            return Ok(());
         }
 
         let diff = expected_occupied.get_different_bits(self.physical);
@@ -543,7 +544,7 @@ impl ChessGame {
             // If more than one bit differs - do nothing,
             // as there would be no way to determine what happens.
             // In this case the previous physical board state has to be restored before continuing.
-            return Ok(expected_occupied);
+            return Ok(());
         }
 
         match physical_board.0.cmp(&expected_occupied.0) {
@@ -554,7 +555,6 @@ impl ChessGame {
                         .get_different_bits(physical_board)
                         .first_one(),
                 ));
-                Ok(self.expected_physical())
             }
             Less => {
                 // If fewer bits are set, a piece must have been removed.
@@ -563,19 +563,20 @@ impl ChessGame {
                         .get_different_bits(physical_board)
                         .first_one(),
                 ));
-                Ok(self.expected_physical())
             }
             Equal => {
                 // If the same number of bits are set, do nothing.
-                Ok(expected_occupied)
             }
         }
+
+        Ok(())
     }
 
     pub fn get_state(&self) -> Option<ChessGameState> {
         if let Some(game) = &self.game {
             return Some(ChessGameState {
                 physical: self.physical,
+                expected_physical: self.expected_physical(),
                 playing_state: self.playing_state,
                 last_move: self.last_move(),
                 possible_moves: self.get_possible_moves(),
@@ -601,26 +602,30 @@ mod tests {
         let mut physical = chess.expected_physical();
 
         // Set initally correct
-        let initially_expected = chess.tick(physical)?;
+        chess.tick(physical)?;
+        let initially_expected = chess.expected_physical();
         assert!(initially_expected == physical);
 
         // Take two black that shouldn't be taken
         physical = physical
             ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::A))
             ^ BitBoard::from_square(Square::make_square(Rank::Eighth, File::B));
-        let expected = chess.tick(physical)?;
+        chess.tick(physical)?;
+        let expected = chess.expected_physical();
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 
         // Now take a2 - it should not try to make the move!
         physical = physical ^ BitBoard::from_square(Square::make_square(Rank::Second, File::A));
-        let expected = chess.tick(physical)?;
+        chess.tick(physical)?;
+        let expected = chess.expected_physical();
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 
         // Try to place on a3
         physical = physical | BitBoard::from_square(Square::make_square(Rank::Third, File::A));
-        let expected = chess.tick(physical)?;
+        chess.tick(physical)?;
+        let expected = chess.expected_physical();
         println!("{:?}", chess);
         assert!(expected == initially_expected);
 
