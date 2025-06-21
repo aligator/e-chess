@@ -1,8 +1,7 @@
 use anyhow::Result;
 use board::Board;
-use chess_game::chess_connector::LocalChessConnector;
-use chess_game::game::ChessGame;
-use chess_game::lichess::LichessConnector;
+use chess::BitBoard;
+use chess_game::game::ChessGameState;
 use embedded_svc::http::Method;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
@@ -13,26 +12,38 @@ use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::http::server::EspHttpServer;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
+use game::GameStateEvent;
 use log::*;
 use maud::html;
-use request::EspRequester;
-use std::sync::mpsc::channel;
-use std::thread::sleep;
 use std::time::Duration;
+use std::{thread, thread::sleep};
 use storage::Storage;
-use web::{GameCommandEvent, GameStateEvent};
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
+
+use crate::event::EventManager;
+use crate::game::GameCommandEvent;
 
 mod board;
 mod constants;
 mod display;
+mod event;
+mod game;
 mod request;
 mod storage;
 mod web;
 mod wifi;
 
+#[derive(Debug, Clone)]
+enum Event {
+    GameState(GameStateEvent),
+    GameCommand(GameCommandEvent),
+}
+
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
+
 fn run_game(
-    token: String,
+    token: Option<String>,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     mut server: &mut EspHttpServer<'static>,
@@ -45,116 +56,119 @@ fn run_game(
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    // Use the game ID from the web interface
-    let mut chess_game = ChessGame::new(LocalChessConnector::new())?;
-    info!("Created ChessGame");
-
     // Load standard local game initially
-    chess_game.reset("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")?;
+    let event_manager = EventManager::<Event>::new();
 
-    let web = web::Web::new(chess_game.game(), chess_game.game_id());
-    let (state_tx, state_rx) = channel::<GameStateEvent>();
-    info!("Created state channel: {:?}", state_tx);
-    let command_rx = web.register(&mut server, state_rx)?;
+    let test_rx = event_manager.create_receiver();
+    thread::spawn(move || {
+        while let Ok(event) = test_rx.recv() {
+            info!("Received event: {:?}", event);
+        }
+    });
+
+    let settings = game::Settings {
+        token: token.unwrap_or_default(),
+    };
+
+    let web = web::Web::new();
+    web.register(&mut server, &event_manager)?;
     info!("Registered web interface");
+
+    game::run_game(settings, &event_manager);
 
     // Start the main loop
     info!("Start app loop");
+
+    let rx = event_manager.create_receiver();
+    let tx = event_manager.create_sender();
+    let mut last_physical = BitBoard::new(0);
+    let mut last_game_state: Option<ChessGameState> = None;
+
+    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+    )))?;
+
+    // Start the event manager after setting up everything.
+    event_manager.start_thread();
     loop {
+        // Tick the physical board
+        let physical = board.tick()?;
+        if physical != last_physical {
+            last_physical = physical;
+            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical(
+                physical,
+            ))) {
+                warn!("Failed to send update physical event: {:?}", e);
+            }
+        }
+
         // Check if event happens
-        if let Ok(event) = command_rx.try_recv() {
-            info!("Received command event: {:?}", event);
+        if let Ok(event) = rx.try_recv() {
             match event {
-                GameCommandEvent::LoadNewGame(game_key) => {
-                    info!("Loading new game: {}", game_key);
+                Event::GameState(game_state_event) => match game_state_event {
+                    GameStateEvent::UpdateGame(game_state) => {
+                        info!("Received update game state event: {:?}", game_state);
 
-                    // If the game key is a FEN string, parse it and start a local game.
-                    // Otherwise, start a lichess game.
-                    chess_game = ChessGame::new(if game_key.contains(" ") {
-                        LocalChessConnector::new()
-                    } else {
-                        let requester = EspRequester::new(token.clone());
-                        Box::new(LichessConnector::new(requester))
-                    })?;
-
-                    // Load the new game
-                    match chess_game.reset(&game_key) {
-                        Ok(_) => {
-                            info!("Successfully reset game with ID: {}", game_key);
-                            // Notify the UI about the new game
-                            match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                                Ok(_) => info!("Sent game update event (new game)"),
-                                Err(e) => warn!("Failed to send game update event: {:?}", e),
-                            }
-
-                            // Send the GameLoaded event with the game ID
-                            match state_tx.send(GameStateEvent::GameLoaded(game_key.clone())) {
-                                Ok(_) => info!("Sent game loaded event for ID: {}", game_key),
-                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Failed to reset game: {:?}", e);
-
-                            // Send an empty GameLoaded event to indicate failure
-                            match state_tx.send(GameStateEvent::GameLoaded(String::new())) {
-                                Ok(_) => info!("Sent empty game loaded event to indicate failure"),
-                                Err(e) => warn!("Failed to send game loaded event: {:?}", e),
-                            }
-                        }
+                        last_game_state = Some(game_state);
                     }
-                }
+                    _ => {}
+                },
+                _ => {}
             }
         }
 
-        #[cfg(not(feature = "no_board"))]
-        {
-            if let Some(_) = chess_game.game() {
-                match board.tick() {
-                    Ok(physical) => {
-                        match chess_game.tick(physical) {
-                            Ok(_expected) => {
-                                // TODO: not sure if this isn't a bit inefficient to do every tick...
-                                match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        warn!("Failed to send game update: {:?}", e);
-                                    }
-                                }
-                                display.tick(physical, &chess_game)?;
-                            }
-                            Err(e) => {
-                                warn!("Error in game tick: {:?}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Error in board tick: {:?}", e);
-                    }
-                }
-            }
+        if let Some(game_state) = last_game_state.clone() {
+            display.tick(&game_state)?;
         }
 
-        #[cfg(feature = "no_board")]
-        {
-            if let Some(game) = chess_game.game() {
-                let new_expected = chess_game.tick(*game.clone().current_position().combined());
-                match new_expected {
-                    Ok(_expected) => {
-                        match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                warn!("Failed to send game update: {:?}", e);
-                            }
-                        }
-                        display.tick(*game.clone().current_position().combined(), &chess_game)?;
-                    }
-                    Err(e) => {
-                        warn!("Error in game tick: {:?}", e);
-                    }
-                }
-            }
-        }
+        // #[cfg(not(feature = "no_board"))]
+        // {
+        //     if let Some(_) = chess_game.game() {
+        //         match board.tick() {
+        //             Ok(physical) => {
+        //                 match chess_game.tick(physical) {
+        //                     Ok(_expected) => {
+        //                         // TODO: not sure if this isn't a bit inefficient to do every tick...
+        //                         match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
+        //                             Ok(_) => {}
+        //                             Err(e) => {
+        //                                 warn!("Failed to send game update: {:?}", e);
+        //                             }
+        //                         }
+        //                         display.tick(physical, &chess_game)?;
+        //                     }
+        //                     Err(e) => {
+        //                         warn!("Error in game tick: {:?}", e);
+        //                     }
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 warn!("Error in board tick: {:?}", e);
+        //             }
+        //         }
+        //     }
+        // }
+
+        // #[cfg(feature = "no_board")]
+        // {
+        //     if let Some(game) = chess_game.game() {
+        //         let new_expected = chess_game.tick(*game.clone().current_position().combined());
+        //         match new_expected {
+        //             Ok(_expected) => {
+        //                 match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
+        //                     Ok(_) => {}
+        //                     Err(e) => {
+        //                         warn!("Failed to send game update: {:?}", e);
+        //                     }
+        //                 }
+        //                 display.tick(*game.clone().current_position().combined(), &chess_game)?;
+        //             }
+        //             Err(e) => {
+        //                 warn!("Error in game tick: {:?}", e);
+        //             }
+        //         }
+        //     }
+        // }
 
         // Sleep to reduce CPU usage
         sleep(Duration::from_millis(100));
@@ -234,24 +248,16 @@ fn main() -> Result<()> {
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
-    if let Some(token) = token {
-        match run_game(token, mcp23017, ws2812, &mut server) {
-            Ok(_) => {
-                warn!("Stopping game loop");
-                Ok(())
-            }
-            Err(e) => {
-                warn!("Stopping game loop due to error: {:?}", e);
-                loop {
-                    sleep(Duration::from_millis(1000));
-                }
-            }
+    match run_game(token, mcp23017, ws2812, &mut server) {
+        Ok(_) => {
+            warn!("Stopping game loop");
+            Ok(())
         }
-    } else {
-        error!("No token found - please configure it to connect to lichess.org");
-        // Still loop otherwise the web ui would stop
-        loop {
-            sleep(Duration::from_millis(1000));
+        Err(e) => {
+            warn!("Stopping game loop due to error: {:?}", e);
+            loop {
+                sleep(Duration::from_millis(1000));
+            }
         }
     }
 }
