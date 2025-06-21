@@ -74,7 +74,9 @@ impl<'a> Display<'a> {
             };
 
             // Colorize the currently moving piece in blue
-            if let chess_game::game::ChessState::MovingPiece { piece: _, from } = game.state {
+            if let chess_game::game::PlayingState::MovingPiece { piece: _, from } =
+                game.playing_state
+            {
                 // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
                 pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
             }

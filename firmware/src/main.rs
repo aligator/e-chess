@@ -15,8 +15,8 @@ use esp_idf_svc::wifi::EspWifi;
 use game::GameStateEvent;
 use log::*;
 use maud::html;
-use std::thread::sleep;
 use std::time::Duration;
+use std::{thread, thread::sleep};
 use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
@@ -58,7 +58,13 @@ fn run_game(
 
     // Load standard local game initially
     let event_manager = EventManager::<Event>::new();
-    event_manager.start_thread();
+
+    let test_rx = event_manager.create_receiver();
+    thread::spawn(move || {
+        while let Ok(event) = test_rx.recv() {
+            info!("Received event: {:?}", event);
+        }
+    });
 
     let settings = game::Settings {
         token: token.unwrap_or_default(),
@@ -72,11 +78,18 @@ fn run_game(
 
     // Start the main loop
     info!("Start app loop");
-    let rx = event_manager.create_receiver();
 
+    let rx = event_manager.create_receiver();
     let tx = event_manager.create_sender();
     let mut last_physical = BitBoard::new(0);
     let mut last_game_state: Option<ChessGameState> = None;
+
+    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+    )))?;
+
+    // Start the event manager after setting up everything.
+    event_manager.start_thread();
     loop {
         // Tick the physical board
         let physical = board.tick()?;
@@ -91,10 +104,11 @@ fn run_game(
 
         // Check if event happens
         if let Ok(event) = rx.try_recv() {
-            info!("Received event: {:?}", event);
             match event {
                 Event::GameState(game_state_event) => match game_state_event {
                     GameStateEvent::UpdateGame(_expected_physical, game_state) => {
+                        info!("Received update game state event: {:?}", game_state);
+
                         last_game_state = Some(game_state);
                     }
                     _ => {}
@@ -104,7 +118,7 @@ fn run_game(
         }
 
         if let Some(game_state) = last_game_state.clone() {
-            display.tick(physical, &game_state)?;
+            display.tick(last_physical, &game_state)?;
         }
 
         // #[cfg(not(feature = "no_board"))]

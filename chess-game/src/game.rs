@@ -30,16 +30,16 @@ pub enum ChessGameError {
     LoadingGame(#[from] ChessConnectorError),
 }
 
-#[derive(Clone, Copy)]
-pub enum ChessState {
+#[derive(Clone, Copy, PartialEq)]
+pub enum PlayingState {
     Idle,
     MovingPiece { piece: Piece, from: Square },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct ChessGameState {
     pub physical: BitBoard,
-    pub state: ChessState,
+    pub playing_state: PlayingState,
     pub last_move: Option<ChessMove>,
     pub possible_moves: BitBoard,
     pub current_position: Board,
@@ -82,7 +82,7 @@ pub struct ChessGame {
 
     /// The current physical state of the game.
     /// It indicates if a pice is currently being moved physically.
-    state: ChessState,
+    playing_state: PlayingState,
 
     /// The last move that was made online.
     /// This is used to avoid sending the same moves multiple times.
@@ -111,11 +111,11 @@ impl fmt::Debug for ChessGame {
         };
         writeln!(f, "{}", turn)?;
 
-        match self.state {
-            ChessState::MovingPiece { piece, from } => {
+        match self.playing_state {
+            PlayingState::MovingPiece { piece, from } => {
                 writeln!(f, "Moving piece: {:?} at {:?}", piece, from)?;
             }
-            ChessState::Idle => {
+            PlayingState::Idle => {
                 writeln!(f, "No action in progress")?;
             }
         }
@@ -191,7 +191,7 @@ impl fmt::Debug for ChessGame {
 
                     // Colorize the moving piece.
                     let colored_symbol =
-                        if let ChessState::MovingPiece { piece: _, from } = self.state {
+                        if let PlayingState::MovingPiece { piece: _, from } = self.playing_state {
                             if square == from {
                                 // Highlight moving square in green
                                 format!(" {} ", symbol).on_green()
@@ -250,7 +250,7 @@ impl ChessGame {
             expected_white: BitBoard(0),
             expected_black: BitBoard(0),
             physical: BitBoard::new(0),
-            state: ChessState::Idle,
+            playing_state: PlayingState::Idle,
             server_moves: Vec::new(),
             id: String::new(),
         })
@@ -339,8 +339,8 @@ impl ChessGame {
             return;
         }
 
-        match self.state {
-            ChessState::MovingPiece { piece, from } => {
+        match self.playing_state {
+            PlayingState::MovingPiece { piece, from } => {
                 // Only set promotion if it's a pawn moving to the last rank
                 let promotion = if piece == Piece::Pawn {
                     let rank_idx = to.get_rank().to_index();
@@ -367,7 +367,7 @@ impl ChessGame {
                 }
 
                 // Update the state with the moving piece
-                self.state = ChessState::Idle;
+                self.playing_state = PlayingState::Idle;
 
                 // Update the expected physical board states.
                 // This includes any remove or castled pieces.
@@ -375,7 +375,7 @@ impl ChessGame {
                 self.expected_white = *game.current_position().color_combined(Color::White);
                 self.expected_black = *game.current_position().color_combined(Color::Black);
             }
-            ChessState::Idle => {
+            PlayingState::Idle => {
                 // Illegal to place piece without removing one first
             }
         }
@@ -387,8 +387,8 @@ impl ChessGame {
             return;
         }
 
-        match self.state {
-            ChessState::MovingPiece { piece: _, from } => {
+        match self.playing_state {
+            PlayingState::MovingPiece { piece: _, from } => {
                 // This is only allowed if a piece is removed because it gets destroyed.
                 // So if it is enemy and target of an attack by te moving piece.
 
@@ -408,7 +408,7 @@ impl ChessGame {
                 }
 
                 // Update the state with the moving piece
-                self.state = ChessState::Idle;
+                self.playing_state = PlayingState::Idle;
 
                 // Update the expected physical board states.
                 // This includes any remove pieces.
@@ -417,7 +417,7 @@ impl ChessGame {
                 self.expected_white = *game.current_position().color_combined(Color::White);
                 self.expected_black = *game.current_position().color_combined(Color::Black);
             }
-            ChessState::Idle => {
+            PlayingState::Idle => {
                 let game: &Game = self.game.as_ref().unwrap();
                 // Check if it is a piece of the current player.
                 if game.current_position().color_on(square) != Some(game.side_to_move()) {
@@ -427,7 +427,7 @@ impl ChessGame {
 
                 // Update the state with the moving piece
                 if let Some(piece) = game.current_position().piece_on(square) {
-                    self.state = ChessState::MovingPiece {
+                    self.playing_state = PlayingState::MovingPiece {
                         piece,
                         from: square,
                     };
@@ -452,7 +452,7 @@ impl ChessGame {
 
         let mut moves = BitBoard::new(0);
 
-        if let ChessState::MovingPiece { piece: _, from } = self.state {
+        if let PlayingState::MovingPiece { piece: _, from } = self.playing_state {
             let game: &Game = self.game.as_ref().unwrap();
             for m in MoveGen::new_legal(&game.current_position()).filter(|m| m.get_source() == from)
             {
@@ -576,7 +576,7 @@ impl ChessGame {
         if let Some(game) = &self.game {
             return Some(ChessGameState {
                 physical: self.physical,
-                state: self.state,
+                playing_state: self.playing_state,
                 last_move: self.last_move(),
                 possible_moves: self.get_possible_moves(),
                 current_position: game.current_position(),
