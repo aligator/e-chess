@@ -47,6 +47,7 @@ fn run_game(
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     mut server: &mut EspHttpServer<'static>,
+    event_manager: &EventManager<Event>,
 ) -> Result<()> {
     #[cfg(not(feature = "no_board"))]
     let mut board = Board::new(mcp23017, 0x20);
@@ -55,9 +56,6 @@ fn run_game(
 
     let mut display = display::Display::new(ws2812);
     display.setup()?;
-
-    // Load standard local game initially
-    let event_manager = EventManager::<Event>::new();
 
     let test_rx = event_manager.create_receiver();
     thread::spawn(move || {
@@ -232,7 +230,9 @@ fn main() -> Result<()> {
     let token = storage.get_str::<25>("api_token")?;
     info!("API Token: {:?}", token);
 
-    let mut server = wifi::start_wifi(wifi_driver, storage)?;
+    let event_manager = EventManager::<Event>::new();
+
+    let mut server = wifi::start_wifi(&event_manager, wifi_driver, storage)?;
 
     server.fn_handler("/", Method::Get, |request| {
         let html = wifi::page(
@@ -248,7 +248,7 @@ fn main() -> Result<()> {
         request.into_ok_response()?.write_all(html.as_bytes())
     })?;
 
-    match run_game(token, mcp23017, ws2812, &mut server) {
+    match run_game(token, mcp23017, ws2812, &mut server, &event_manager) {
         Ok(_) => {
             warn!("Stopping game loop");
             Ok(())

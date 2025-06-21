@@ -12,11 +12,15 @@ use esp_idf_svc::{
 };
 use log::*;
 use maud::{html, PreEscaped, DOCTYPE};
+use std::sync::mpsc::Sender;
 use std::thread::{self, sleep};
 use std::time::Duration;
 use esp_ota::OtaUpdate;
 
+use crate::event::EventManager;
+use crate::game::{GameCommandEvent, Settings};
 use crate::storage::Storage;
+use crate::Event;
 
 struct WifiSettings {
     ssid: String,
@@ -27,7 +31,7 @@ struct AppSettings {
     api_token: String,
 }
 
-enum Event {
+enum WifiEvent {
     WifiSettings(WifiSettings),
     AppSettings(AppSettings),
 }
@@ -175,6 +179,7 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
     server: &mut EspHttpServer,
     mut wifi_driver: EspWifi<'static>,
     mut storage: Storage<T>,
+    tx_event: Sender<Event>,
 ) -> Result<()> {
     server.fn_handler("/settings", Method::Get, |request| {
         let html: String = page(
@@ -265,7 +270,7 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
 
         if !ssid.is_empty() && !password.is_empty() {
             // Send credentials through channel
-            let _ = tx_wifi.send(Event::WifiSettings(WifiSettings { ssid, password }));
+            let _ = tx_wifi.send(WifiEvent::WifiSettings(WifiSettings { ssid, password }));
 
             // Return success page
             let html = page(
@@ -325,7 +330,7 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
             }
         }
         // Save api token
-        let _ = tx_settings.send(Event::AppSettings(AppSettings { api_token }));
+        let _ = tx_settings.send(WifiEvent::AppSettings(AppSettings { api_token }));
 
         // Return success page
         let html = page(
@@ -344,7 +349,7 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
         // Wait for events from the handler
         match rx.recv() {
             Ok(event) => match event {
-                Event::WifiSettings(settings) => {
+                WifiEvent::WifiSettings(settings) => {
                     let config = wifi::Configuration::Client(wifi::ClientConfiguration {
                         ssid: heapless::String::try_from(settings.ssid.as_str()).unwrap(),
                         password: heapless::String::try_from(settings.password.as_str()).unwrap(),
@@ -358,10 +363,13 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
                         .expect("Failed to set configuration");
                     reset::restart();
                 }
-                Event::AppSettings(settings) => {
+                WifiEvent::AppSettings(settings) => {
                     info!("Received new api token: {}", settings.api_token);
                     storage.set_str("api_token", &settings.api_token).unwrap();
-                    reset::restart();
+
+                    let _ = tx_event.send(Event::GameCommand(GameCommandEvent::NewSettings(Settings {
+                        token: settings.api_token,
+                    })));
                 }
             },
             Err(_) => {
@@ -414,6 +422,7 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
 }
 
 pub fn start_wifi<T: NvsPartitionId + 'static>(
+    event_manager: &EventManager<Event>,
     mut wifi_driver: EspWifi<'static>,
     storage: Storage<T>,
 ) -> Result<EspHttpServer<'static>> {
@@ -468,13 +477,15 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
     }
 
     let mut server = EspHttpServer::new(&server::Configuration::default())?;
+    let tx_event = event_manager.create_sender();
+
     unsafe { 
         handle_favicon(&mut server)?;
         handle_css(&mut server)?;
         handle_firmware_js(&mut server)?;
         handle_firmware_upload(&mut server)?;
     }
-    handle_wifi_settings(&mut server, wifi_driver, storage)?;
+    handle_wifi_settings(&mut server, wifi_driver, storage, tx_event)?;
 
     Ok(server)
 }

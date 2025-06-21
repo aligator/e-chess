@@ -112,6 +112,10 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
 
                         match load_game(game_id, &settings, tx.clone()) {
                             Ok(new_chess_game) => {
+                                // Reset the game state so that it updates on the next tick
+                                last_game_state = None;
+
+                                // Replace the game instance.
                                 chess_game = new_chess_game;
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
