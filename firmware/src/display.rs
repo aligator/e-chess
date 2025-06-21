@@ -32,6 +32,7 @@ impl BitBoardDiff for BitBoard {
 pub struct Display<'a> {
     leds: Ws2812Esp32Rmt<'a>,
     previous_state: Option<(BitBoard, BitBoard)>,
+    brightness: f32,
 }
 
 impl<'a> Display<'a> {
@@ -39,6 +40,7 @@ impl<'a> Display<'a> {
         Self {
             leds,
             previous_state: None,
+            brightness: 0.15,
         }
     }
 
@@ -67,8 +69,16 @@ impl<'a> Display<'a> {
 
             // Colorize the last moved square.
             if let Some(last_move) = last_move {
-                pixels[Self::get_pixel(last_move.get_source())] = RGB { r: 0, g: 5, b: 5 };
-                pixels[Self::get_pixel(last_move.get_dest())] = RGB { r: 0, g: 20, b: 20 };
+                pixels[Self::get_pixel(last_move.get_source())] = RGB {
+                    r: 0,
+                    g: (127 as f32 * self.brightness) as u8,
+                    b: (127 as f32 * self.brightness) as u8,
+                };
+                pixels[Self::get_pixel(last_move.get_dest())] = RGB {
+                    r: 0,
+                    g: (255 as f32 * self.brightness) as u8,
+                    b: (255 as f32 * self.brightness) as u8,
+                };
             };
 
             // Colorize the currently moving piece in blue
@@ -76,19 +86,35 @@ impl<'a> Display<'a> {
                 game.playing_state
             {
                 // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
-                pixels[Self::get_pixel(from)] = RGB { r: 0, g: 20, b: 0 };
+                pixels[Self::get_pixel(from)] = RGB {
+                    r: 0,
+                    g: (255 as f32 * self.brightness) as u8,
+                    b: 0,
+                };
             }
 
             diff.missing.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB { r: 20, g: 20, b: 0 };
+                pixels[Self::get_pixel(square)] = RGB {
+                    r: (255 as f32 * self.brightness) as u8,
+                    g: (255 as f32 * self.brightness) as u8,
+                    b: 0,
+                };
             });
 
             diff.added.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB { r: 20, g: 0, b: 0 };
+                pixels[Self::get_pixel(square)] = RGB {
+                    r: (255 as f32 * self.brightness) as u8,
+                    g: 0,
+                    b: 0,
+                };
             });
 
             game.possible_moves.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB { r: 0, g: 20, b: 0 };
+                pixels[Self::get_pixel(square)] = RGB {
+                    r: 0,
+                    g: (255 as f32 * self.brightness) as u8,
+                    b: 0,
+                };
             });
 
             self.leds.write_nocopy(pixels)?;
