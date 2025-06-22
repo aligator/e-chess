@@ -2757,6 +2757,16 @@
 		)
 		(uuid "cbd5afd9-d33e-4259-a8d2-da40d6165026")
 	)
+	(text "See https://www.instructables.com/Low-Cost-Automation-ESP32-and-16-Relays/"
+		(exclude_from_sim no)
+		(at 240.538 30.48 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "ea43cd02-c73c-4195-a3f7-73fb93555e14")
+	)
 	(junction
 		(at 193.04 34.29)
 		(diameter 0)
