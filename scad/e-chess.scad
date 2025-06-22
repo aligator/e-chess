@@ -475,14 +475,14 @@ module BottomElectronic() {
     translate(
       [
         i * fieldSize + bottomWallSize + 2 * tolerance + fieldBorder * 2,
-        bottomWallSize + tolerance + fieldSize / 2,
+        bottomWallSize + tolerance,
         bottomHeight - wireRadius * 2,
       ]
     )
       cube(
         [
           wireRadius * 2,
-          (size - 1) * fieldSize,
+          size * fieldSize,
           cutoutHeight,
         ]
       );
@@ -493,13 +493,13 @@ module BottomElectronic() {
     translate(
       [
         bottomWallSize + tolerance + fieldSize / 2,
-        i * fieldSize + bottomWallSize + 2 * tolerance + fieldBorder * 2,
+        i * fieldSize + bottomWallSize + (fieldSize - (fieldBorder * 2 + fieldBorder * 2)), // + bottomWallSize + 2 * tolerance + fieldBorder * 2,
         bottomHeight - wireRadius * 2,
       ]
     )
       cube(
         [
-          (size - 1) * fieldSize,
+          (size) * fieldSize - fieldSize / 2,
           wireRadius * 2,
           cutoutHeight,
         ]
