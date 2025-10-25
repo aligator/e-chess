@@ -1,0 +1,4 @@
+{
+    // This screws up internal terminal colors needed for the debug output of the chess game.
+    "terminal.integrated.minimumContrastRatio": 1
+}
