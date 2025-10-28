@@ -138,9 +138,6 @@ where
             display.tick(&game_state)?;
             eink_display.tick(physical, &game_state)?;
         }
-
-        // Sleep to reduce CPU usage
-        sleep(Duration::from_millis(100));
     }
 }
 

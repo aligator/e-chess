@@ -427,7 +427,7 @@ fn ap_config() -> wifi::Configuration {
         ssid: heapless::String::try_from("E-Chess").unwrap(),
         password: heapless::String::try_from("1337_e-chess").unwrap(),
         auth_method: wifi::AuthMethod::WPA2WPA3Personal,
-        channel: 1,
+        channel: 3,
         max_connections: 4,
         ..Default::default()
     })
@@ -512,7 +512,7 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
 
         tx_event.send(Event::ConnectionState(ConnectionStateEvent::Wifi(WifiInfo { 
             ssid: client_config.ssid.to_string(), 
-            ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
+            ip: wifi_driver.sta_netif().get_ip_info()?.ip.to_string(),
         })))?;
 
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
