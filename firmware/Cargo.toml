@@ -30,6 +30,7 @@ esp-idf-hal = { version = "0.45", default-features = false, features = ["rmt-leg
 esp-idf-sys = { version = "0.36", default-features = false, features = [
     "binstart",
 ] }
+qrcode = { version = "0.14.1", default-features = false }
 
 anyhow = { version = "1.0.86" }
 smart-leds = { version = "0.4.0", default-features = false }
