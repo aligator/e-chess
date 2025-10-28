@@ -4,17 +4,23 @@ use esp_idf_hal::{delay::BLOCK, i2c::*};
 
 use crate::constants::BOARD_SIZE;
 
-pub struct Board<'a> {
+pub trait Board {
+    fn setup(&mut self) -> Result<()>;
+    fn tick(&mut self, last_physical: BitBoard) -> Result<BitBoard>;
+}
+
+pub struct MCP23017Board<'a> {
     i2c: I2cDriver<'a>,
     addr: u8,
 }
-
-impl<'a> Board<'a> {
+impl<'a> MCP23017Board<'a> {
     pub fn new(i2c: I2cDriver<'a>, addr: u8) -> Self {
         Self { i2c, addr }
     }
+}
 
-    pub fn setup(&mut self) -> Result<()> {
+impl<'a> Board for MCP23017Board<'a> {
+    fn setup(&mut self) -> Result<()> {
         // Configure GPA = input
         // Configure GPB = output
         let msg = &[0x00, 0xFF, 0x00];
@@ -25,7 +31,7 @@ impl<'a> Board<'a> {
         Ok(())
     }
 
-    pub fn tick(&mut self) -> Result<BitBoard> {
+    fn tick(&mut self, _last_physical: BitBoard) -> Result<BitBoard> {
         let mut board: u64 = 0;
 
         for col in 0..BOARD_SIZE {
@@ -60,5 +66,19 @@ impl<'a> Board<'a> {
         }
 
         Ok(BitBoard::new(board))
+    }
+}
+
+#[cfg(feature = "no_board")]
+pub struct FakeBoard {}
+
+#[cfg(feature = "no_board")]
+impl Board for FakeBoard {
+    fn setup(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn tick(&mut self, last_physical: BitBoard) -> Result<BitBoard> {
+        Ok(last_physical)
     }
 }

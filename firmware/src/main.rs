@@ -1,5 +1,10 @@
+use crate::board::Board;
+#[cfg(feature = "no_board")]
+use crate::board::FakeBoard;
+use crate::event::EventManager;
+use crate::game::GameCommandEvent;
 use anyhow::Result;
-use board::Board;
+use board::MCP23017Board;
 use chess::BitBoard;
 use chess_game::game::ChessGameState;
 use eink_display::ChessEinkDisplay;
@@ -24,9 +29,6 @@ use std::time::Duration;
 use std::{thread, thread::sleep};
 use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
-
-use crate::event::EventManager;
-use crate::game::GameCommandEvent;
 
 mod board;
 mod constants;
@@ -64,8 +66,10 @@ where
     DELAY: embedded_hal::delay::DelayNs + 'a,
 {
     #[cfg(not(feature = "no_board"))]
-    let mut board = Board::new(mcp23017, 0x20);
-    #[cfg(not(feature = "no_board"))]
+    let mut board: Box<dyn Board> = Box::from(MCP23017Board::new(mcp23017, 0x20));
+    #[cfg(feature = "no_board")]
+    let mut board: Box<dyn Board> = Box::from(FakeBoard {});
+
     board.setup()?;
 
     let mut display = display::Display::new(ws2812);
@@ -104,7 +108,7 @@ where
     event_manager.start_thread();
     loop {
         // Tick the physical board
-        let physical = board.tick()?;
+        let physical = board.tick(last_physical)?;
         if physical != last_physical {
             last_physical = physical;
             if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical(
@@ -131,59 +135,8 @@ where
 
         if let Some(game_state) = last_game_state.clone() {
             display.tick(&game_state)?;
+            eink_display.tick(physical, &game_state)?;
         }
-
-        // #[cfg(not(feature = "no_board"))]
-        // {
-        //     if let Some(_) = chess_game.game() {
-        //         match board.tick() {
-        //             Ok(physical) => {
-        //                 match chess_game.tick(physical) {
-        //                     Ok(_expected) => {
-        //                         // TODO: not sure if this isn't a bit inefficient to do every tick...
-        //                         match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-        //                             Ok(_) => {}
-        //                             Err(e) => {
-        //                                 warn!("Failed to send game update: {:?}", e);
-        //                             }
-        //                         }
-        //                         display.tick(physical, &chess_game)?;
-        //                         eink_display.tick(physical, &chess_game)?;
-        //                     }
-        //                     Err(e) => {
-        //                         warn!("Error in game tick: {:?}", e);
-        //                     }
-        //                 }
-        //             }
-        //             Err(e) => {
-        //                 warn!("Error in board tick: {:?}", e);
-        //             }
-        //         }
-        //     }
-        // }
-
-        // #[cfg(feature = "no_board")]
-        // {
-        //     if let Some(game) = chess_game.game() {
-        //         let new_expected = chess_game.tick(*game.clone().current_position().combined());
-        //         match new_expected {
-        //             Ok(_expected) => {
-        //                 match state_tx.send(GameStateEvent::UpdateGame(chess_game.game())) {
-        //                     Ok(_) => {}
-        //                     Err(e) => {
-        //                         warn!("Failed to send game update: {:?}", e);
-        //                     }
-        //                 }
-        //                 display.tick(*game.clone().current_position().combined(), &chess_game)?;
-        //                 eink_display
-        //                     .tick(*game.clone().current_position().combined(), &chess_game)?;
-        //             }
-        //             Err(e) => {
-        //                 warn!("Error in game tick: {:?}", e);
-        //             }
-        //         }
-        //     }
-        // }
 
         // Sleep to reduce CPU usage
         sleep(Duration::from_millis(100));
