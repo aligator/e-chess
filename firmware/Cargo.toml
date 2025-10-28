@@ -46,6 +46,7 @@ esp-ota = "0.2.2"
 embedded-hal = "1"
 embedded-graphics = { version = "0.8" }
 epd-waveshare = { version = "0.6.0", features = ["graphics"]}
+debouncr = "0.2.2"
 
 [build-dependencies]
 embuild = "0.33"

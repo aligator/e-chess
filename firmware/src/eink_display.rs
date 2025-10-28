@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chess::BitBoard;
 use chess_game::game::ChessGameState;
+use debouncr::{debounce_2, Debouncer, Edge, Repeat2};
 use embedded_graphics::mono_font::iso_8859_14::FONT_6X13;
 use embedded_graphics::mono_font::iso_8859_4::FONT_4X6;
 use embedded_graphics::mono_font::MonoTextStyle;
@@ -18,7 +19,7 @@ use log::info;
 use qrcode::QrCode;
 
 use crate::event::EventManager;
-use crate::wifi::{AccessPointInfo, ConnectionStateEvent};
+use crate::wifi::{AccessPointInfo, ConnectionStateEvent, WifiInfo};
 use crate::Event;
 
 #[derive(Default)]
@@ -41,14 +42,21 @@ where
 {
     button_a: ButtonA,
     button_b: ButtonB,
+
+    debouncer_a: Debouncer<u8, Repeat2>,
+    debouncer_b: Debouncer<u8, Repeat2>,
+
     epd: Epd1in54<SPI, BUSY, DC, RST, DELAY>,
     spi: SPI,
     delay: DELAY,
+
+    dirty: bool,
 
     display: Display1in54,
     small_text_style: MonoTextStyle<'static, Color>,
     normal_text_style: MonoTextStyle<'static, Color>,
 
+    connection: Option<ConnectionStateEvent>,
     state: MenuState,
 
     event_rx: std::sync::mpsc::Receiver<Event>,
@@ -82,15 +90,22 @@ where
         Ok(Self {
             button_a,
             button_b,
+            debouncer_a: debounce_2(true),
+            debouncer_b: debounce_2(true),
+
             epd,
             spi,
             delay,
+
+            dirty: true,
 
             display: Display1in54::default(),
             small_text_style: MonoTextStyle::new(&FONT_4X6, Color::Black),
             normal_text_style: MonoTextStyle::new(&FONT_6X13, Color::Black),
 
+            connection: Option::None,
             state: MenuState::default(),
+
             event_rx: event_manager.create_receiver(),
             event_tx: event_manager.create_sender(),
         })
@@ -109,21 +124,83 @@ where
     }
 
     pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGameState) -> Result<()> {
+        // Get debounced button states
+        let button_a = self
+            .debouncer_a
+            .update(
+                self.button_a
+                    .is_high()
+                    .map_err(|err| anyhow::format_err!("could not read button a {:?}", err))?,
+            )
+            .is_some_and(|v| v == Edge::Rising);
+
+        let button_b = self
+            .debouncer_b
+            .update(
+                self.button_b
+                    .is_high()
+                    .map_err(|err| anyhow::format_err!("could not read button a {:?}", err))?,
+            )
+            .is_some_and(|v| v == Edge::Rising);
+
+        if button_a {
+            self.state = match self.state {
+                MenuState::ConnectionInfo => MenuState::WebsiteQR,
+                MenuState::WebsiteQR => MenuState::GameInfo,
+                MenuState::GameInfo => MenuState::ConnectionInfo,
+            };
+            self.dirty = true;
+        }
+
         match self.event_rx.try_recv() {
             Ok(event) => match event {
-                Event::ConnectionState(connection_event) => match connection_event {
-                    ConnectionStateEvent::Wifi(wifi_info) => {
-                        self.display_wifi_info(&wifi_info)?;
-                    }
-                    ConnectionStateEvent::AccessPoint(access_point) => {
-                        self.display_access_point_info(access_point)?;
-                    }
-                    _ => {}
-                },
+                Event::ConnectionState(connection_event) => {
+                    self.connection = Some(connection_event);
+                    self.dirty = true;
+                }
                 _ => {}
             },
             Err(_) => {}
         }
+
+        if self.dirty {
+            self.dirty = false;
+            match self.state {
+                MenuState::ConnectionInfo => {
+                    if let Some(connection) = self.connection.clone() {
+                        match connection {
+                            ConnectionStateEvent::Wifi(wifi_info) => {
+                                self.display_wifi_info(&wifi_info)?
+                            }
+                            ConnectionStateEvent::AccessPoint(access_point) => {
+                                self.display_access_point_info(&access_point)?
+                            }
+                            ConnectionStateEvent::NotConnected => {
+                                // Display not connected message
+                                self.fill_empty()?;
+                                Text::new(
+                                    "Not connected",
+                                    Point::new(10, 10),
+                                    self.normal_text_style,
+                                )
+                                .draw(&mut self.display)?;
+                                self.update_and_display_frame()?;
+                            }
+                        }
+                    }
+                }
+                MenuState::WebsiteQR => {
+                    self.display_website_info()?;
+                }
+                MenuState::GameInfo => {
+                    self.fill_empty()?;
+                    Text::new("TODO", Point::new(10, 10), self.normal_text_style)
+                        .draw(&mut self.display)?;
+                    self.update_and_display_frame()?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -155,26 +232,6 @@ where
         .into_styled(PrimitiveStyle::with_fill(Color::White))
         .draw(&mut self.display)?;
 
-        Ok(())
-    }
-
-    fn display_wifi_info(&mut self, wifi_info: &crate::wifi::WifiInfo) -> Result<()> {
-        self.fill_empty()?;
-
-        Text::new(
-            &format!("SSID: {}", wifi_info.ssid),
-            Point::new(10, 10),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-        Text::new(
-            &format!("IP: {}", wifi_info.ip.as_deref().unwrap_or("N/A")),
-            Point::new(10, 30),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        self.update_and_display_frame()?;
         Ok(())
     }
 
@@ -213,7 +270,44 @@ where
         Ok((x_offset, y_offset, qr_scaled))
     }
 
-    fn display_access_point_info(&mut self, access_point_info: AccessPointInfo) -> Result<()> {
+    fn display_website_info(&mut self) -> Result<()> {
+        let ip = self
+            .connection
+            .clone()
+            .map_or("N/A".to_string(), |conn| match conn {
+                ConnectionStateEvent::Wifi(wifi_info) => wifi_info.ip.clone(),
+                ConnectionStateEvent::AccessPoint(ap_info) => ap_info.ip.clone(),
+                ConnectionStateEvent::NotConnected => "N/A".to_string(),
+            });
+        self.fill_empty()?;
+
+        self.draw_qr_to_frame(format!("http://{}", ip).as_str(), 0)?;
+
+        self.update_and_display_frame()?;
+        Ok(())
+    }
+
+    fn display_wifi_info(&mut self, wifi_info: &WifiInfo) -> Result<()> {
+        self.fill_empty()?;
+
+        Text::new(
+            &format!("SSID: {}", wifi_info.ssid),
+            Point::new(10, 10),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+        Text::new(
+            &format!("IP: {}", wifi_info.ip),
+            Point::new(10, 30),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+
+        self.update_and_display_frame()?;
+        Ok(())
+    }
+
+    fn display_access_point_info(&mut self, access_point_info: &AccessPointInfo) -> Result<()> {
         self.fill_empty()?;
 
         // Create WiFi QR code content in the format: WIFI:S:<SSID>;T:WPA;P:<PASSWORD>;;
@@ -227,7 +321,7 @@ where
 
         // Show ip address below the QR code
         Text::new(
-            &format!("IP: {}", access_point_info.ip.as_deref().unwrap_or("N/A")),
+            &format!("IP: {}", access_point_info.ip),
             Point::new(x_offset as i32, (y_offset + qr_size + padding) as i32),
             self.normal_text_style,
         )

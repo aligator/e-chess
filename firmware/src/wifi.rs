@@ -43,7 +43,7 @@ enum WifiEvent {
 pub struct AccessPointInfo {
     pub ssid: String,
     pub password: String,
-    pub ip: Option<String>,
+    pub ip: String,
 }
 
 /// Information about the current Wifi connection.
@@ -51,7 +51,7 @@ pub struct AccessPointInfo {
 #[derive(Debug, Clone)]
 pub struct WifiInfo {
     pub ssid: String,
-    pub ip: Option<String>,
+    pub ip: String,
 }
 
 #[derive(Debug, Clone)]
@@ -474,15 +474,10 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
     let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
         Ok(config) => {
             let default_config = ap_config();
-            if let Some(current_ap_config) = config.as_ap_conf_ref() {
-                let default_config_config_ap = default_config.as_ap_conf_ref().unwrap();
-                if current_ap_config.ssid == default_config_config_ap.ssid {
-                    config
-                } else {
-                    info!("Wrong AP Configuration found, creating new one");
-                    wifi_driver.set_configuration(&default_config)?;
-                    default_config
-                }
+            if let Some(_current_ap_config) = config.as_ap_conf_ref() {
+                // Always reset to the default AP config to ensure known credentials.
+                wifi_driver.set_configuration(&default_config)?;
+                default_config
 
             } else {
                 info!("Valid AP Configuration found - use it");
@@ -517,7 +512,7 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
 
         tx_event.send(Event::ConnectionState(ConnectionStateEvent::Wifi(WifiInfo { 
             ssid: client_config.ssid.to_string(), 
-            ip: Some(wifi_driver.ap_netif().get_ip_info()?.ip.to_string()),
+            ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
         })))?;
 
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
@@ -526,7 +521,7 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
         tx_event.send(Event::ConnectionState(ConnectionStateEvent::AccessPoint(AccessPointInfo { 
             ssid: ap_config.ssid.to_string(), 
             password: ap_config.password.to_string(), 
-            ip: Some(wifi_driver.ap_netif().get_ip_info()?.ip.to_string()),
+            ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
         })))?;
     } else {
         info!("Unknown Wifi Configuration");
