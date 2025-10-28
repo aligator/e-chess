@@ -2,14 +2,9 @@ use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
 use esp_idf_svc::nvs::NvsPartitionId;
-use esp_idf_svc::wifi;
-use esp_idf_svc::{
-    http::{
-        server::{self, EspHttpServer},
-        Method,
-    },
-    wifi::EspWifi,
-};
+use esp_idf_svc::{http::{
+        Method, server::{self, EspHttpServer}
+    }, wifi::{self, EspWifi}};
 use log::*;
 use maud::{html, PreEscaped, DOCTYPE};
 use std::sync::mpsc::Sender;
@@ -501,11 +496,13 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
         // Wait until dns is available.
         loop {
             let dns_res = wifi_driver.sta_netif().get_dns();
+            let ip = wifi_driver.sta_netif().get_ip_info()?.ip.to_string();
             info!("DNS: {:?}", dns_res);
-            if !dns_res.is_unspecified() {
+            info!("IP : {}", ip);
+            if !dns_res.is_unspecified() && ip != "0.0.0.0" {
                 break;
             }
-            info!("Waiting for DNS...");
+            info!("Waiting for IP and DNS...");
 
             sleep(Duration::from_secs(1));
         }
