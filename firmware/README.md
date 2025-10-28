@@ -10,7 +10,7 @@ For OTA to work, see the requirements in the [OTA Support](#ota-support) section
 ## Prerequisites
 
 - Rust (latest stable)
-- ESP-IDF (see docs `espup install`)
+- ESP-IDF ([see the docs](https://docs.espressif.com/projects/rust/book/getting-started/toolchain.html))
 
 ## Quick Start
 
