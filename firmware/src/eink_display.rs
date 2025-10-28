@@ -1,36 +1,47 @@
 use anyhow::Result;
 use chess::BitBoard;
-use chess_game::game::ChessGame;
-use embedded_graphics::mono_font::MonoTextStyleBuilder;
+use chess_game::game::ChessGameState;
 use embedded_graphics::prelude::*;
 use embedded_graphics::prelude::{Point, Primitive, Size};
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
-use embedded_graphics::text::{Baseline, Text, TextStyleBuilder};
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
 use epd_waveshare::epd1in54::Display1in54;
 use epd_waveshare::epd1in54_v2::Epd1in54;
 use epd_waveshare::prelude::*;
-use esp_idf_hal::adc::AdcChannels;
-use log::{debug, info};
+use log::info;
 use qrcode::QrCode;
 
-pub struct ChessEinkDisplay<SPI, BUSY, DC, RST, DELAY>
+enum MenuState {
+    GameInfo,
+    HotspotQR,
+    WebsiteQR,
+}
+
+pub struct ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
 where
+    ButtonA: InputPin,
+    ButtonB: InputPin,
     SPI: SpiDevice,
     BUSY: InputPin,
     DC: OutputPin,
     RST: OutputPin,
     DELAY: DelayNs,
 {
+    button_a: ButtonA,
+    button_b: ButtonB,
     epd: Epd1in54<SPI, BUSY, DC, RST, DELAY>,
     spi: SPI,
     delay: DELAY,
 }
 
-impl<SPI, BUSY, DC, RST, DELAY> ChessEinkDisplay<SPI, BUSY, DC, RST, DELAY>
+impl<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
+    ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
 where
+    ButtonA: InputPin,
+    ButtonB: InputPin,
+    BUSY: InputPin,
     SPI: SpiDevice,
     BUSY: InputPin,
     DC: OutputPin,
@@ -38,6 +49,8 @@ where
     DELAY: DelayNs,
 {
     pub fn new(
+        button_a: ButtonA,
+        button_b: ButtonB,
         mut spi: SPI,
         busy: BUSY,
         dc: DC,
@@ -46,10 +59,18 @@ where
         delay_us: Option<u32>,
     ) -> Result<Self> {
         let epd = Epd1in54::new(&mut spi, busy, dc, rst, &mut delay, delay_us).unwrap();
-        Ok(Self { epd, spi, delay })
+        Ok(Self {
+            button_a,
+            button_b,
+            epd,
+            spi,
+            delay,
+        })
     }
 
     pub fn setup(&mut self) -> Result<()> {
+        info!("Setup E-Paper display");
+
         // Clear the display
         self.epd
             .clear_frame(&mut self.spi, &mut self.delay)
@@ -65,7 +86,7 @@ where
         Ok(())
     }
 
-    pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGame) -> Result<()> {
+    pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGameState) -> Result<()> {
         Ok(())
     }
 

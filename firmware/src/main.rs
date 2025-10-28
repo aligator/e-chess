@@ -50,15 +50,17 @@ enum Event {
 unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
-fn run_game<'a, SPI, BUSY, DC, RST, DELAY>(
+fn run_game<'a, ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>(
     token: Option<String>,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
-    eink_display: &mut ChessEinkDisplay<SPI, BUSY, DC, RST, DELAY>,
+    eink_display: &mut ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>,
     mut server: &mut EspHttpServer<'static>,
     event_manager: &EventManager<Event>,
 ) -> Result<()>
 where
+    ButtonA: embedded_hal::digital::InputPin,
+    ButtonB: embedded_hal::digital::InputPin,
     SPI: SpiDevice,
     BUSY: embedded_hal::digital::InputPin,
     DC: embedded_hal::digital::OutputPin,
@@ -202,7 +204,7 @@ fn main() -> Result<()> {
     // Create delay provider
     let delay = esp_idf_hal::delay::Ets;
     #[cfg(esp32)]
-    let (spi_driver, cs, busy, dc, rst) = {
+    let (spi_driver, cs, busy, dc, rst, button_a, button_b) = {
         let spi = peripherals.spi2;
         let sclk = peripherals.pins.gpio18;
         let mosi = peripherals.pins.gpio23;
@@ -213,11 +215,14 @@ fn main() -> Result<()> {
 
         let spi_driver = SpiDriver::new(spi, sclk, mosi, Option::<Gpio0>::None, &driver_config)?;
 
-        (spi_driver, cs, busy, dc, rst)
+        let button_a = peripherals.pins.gpio35;
+        let button_b = peripherals.pins.gpio36;
+
+        (spi_driver, cs, busy, dc, rst, button_a, button_b)
     };
 
     #[cfg(esp32s3)]
-    let (spi_driver, cs, busy, dc, rst) = {
+    let (spi_driver, cs, busy, dc, rst, button_a, button_b) = {
         let spi = peripherals.spi2;
         let sclk = peripherals.pins.gpio13;
         let mosi = peripherals.pins.gpio14;
@@ -228,11 +233,22 @@ fn main() -> Result<()> {
 
         let spi_driver = SpiDriver::new(spi, sclk, mosi, Option::<Gpio0>::None, &driver_config)?;
 
-        (spi_driver, cs, busy, dc, rst)
+        let button_a = peripherals.pins.gpio35;
+        let button_b = peripherals.pins.gpio36;
+
+        (spi_driver, cs, busy, dc, rst, button_a, button_b)
     };
     let spi = SpiDeviceDriver::new(spi_driver, Some(cs), &spi_config)?;
 
+    // Setup the button pins and enable the internal pullup.
+    let mut button_a_driver = PinDriver::input(button_a)?;
+    button_a_driver.set_pull(esp_idf_hal::gpio::Pull::Up);
+    let mut button_b_driver = PinDriver::input(button_b)?;
+    button_b_driver.set_pull(esp_idf_hal::gpio::Pull::Up);
+
     let mut eink_display = eink_display::ChessEinkDisplay::new(
+        button_a_driver,
+        button_b_driver,
         spi,
         PinDriver::input(busy)?,
         PinDriver::output(dc)?,
