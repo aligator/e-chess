@@ -194,6 +194,13 @@ where
                 }
                 MenuState::GameInfo => {
                     self.fill_empty()?;
+                    Text::new(
+                        &format!("Game Info"),
+                        Point::new(1, 1),
+                        self.normal_text_style,
+                    )
+                    .draw(&mut self.display)?;
+
                     Text::new("TODO", Point::new(10, 10), self.normal_text_style)
                         .draw(&mut self.display)?;
                     self.update_and_display_frame()?;
@@ -219,7 +226,7 @@ where
             .map_err(|err| anyhow::format_err!("could not update and display frame: {:?}", err))?;
         self.epd
             .sleep(&mut self.spi, &mut self.delay)
-            .map_err(|err| anyhow::format_err!("could not wake up display: {:?}", err))?;
+            .map_err(|err| anyhow::format_err!("could not sleep display: {:?}", err))?;
 
         Ok(())
     }
@@ -281,7 +288,23 @@ where
             });
         self.fill_empty()?;
 
-        self.draw_qr_to_frame(format!("http://{}", ip).as_str(), 0)?;
+        let padding: u32 = 14;
+        let url = format!("http://{}", ip);
+        let (x_offset, y_offset, qr_size) = self.draw_qr_to_frame(url.as_str(), padding)?;
+
+        Text::new(
+            &format!("Management UI"),
+            Point::new(1, 1),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+
+        Text::new(
+            &format!("URL: {}", url),
+            Point::new(x_offset as i32, (y_offset + qr_size + padding) as i32),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
 
         self.update_and_display_frame()?;
         Ok(())
@@ -289,6 +312,13 @@ where
 
     fn display_wifi_info(&mut self, wifi_info: &WifiInfo) -> Result<()> {
         self.fill_empty()?;
+
+        Text::new(
+            &format!("Wifi Connected"),
+            Point::new(1, 1),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
 
         Text::new(
             &format!("SSID: {}", wifi_info.ssid),
@@ -318,6 +348,13 @@ where
 
         let padding: u32 = 14;
         let (x_offset, y_offset, qr_size) = self.draw_qr_to_frame(&qr_content, padding)?;
+
+        Text::new(
+            &format!("Access Point"),
+            Point::new(1, 1),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
 
         // Show ip address below the QR code
         Text::new(
