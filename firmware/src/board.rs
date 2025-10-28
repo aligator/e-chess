@@ -32,14 +32,20 @@ impl<'a> Board<'a> {
             // Set the col LOW that should be read.
             // Set all other cols HIGH.
             let enable_col = &[0x13, !(0x1 << col)];
-            self.i2c.write(self.addr, enable_col, BLOCK)?;
+            self.i2c
+                .write(self.addr, enable_col, BLOCK)
+                .map_err(|err| anyhow::format_err!("set all high {}", err))?;
 
             // Set register pointer to GPIOA (0x12)
-            self.i2c.write(self.addr, &[0x12], BLOCK)?;
+            self.i2c
+                .write(self.addr, &[0x12], BLOCK)
+                .map_err(|err| anyhow::format_err!("set low {}", err))?;
 
             // Read from Port A (inputs)
             let mut col_data = [0u8; 1];
-            self.i2c.read(self.addr, &mut col_data, BLOCK)?;
+            self.i2c
+                .read(self.addr, &mut col_data, BLOCK)
+                .map_err(|err| anyhow::format_err!("read {}", err))?;
             let column = !col_data[0] as u64;
             // Shift the column data to the correct position.
             board |= ((column & 0b00000001)
