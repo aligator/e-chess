@@ -1,9 +1,13 @@
 use anyhow::Result;
 use chess::BitBoard;
 use chess_game::game::ChessGameState;
+use embedded_graphics::mono_font::iso_8859_14::FONT_6X13;
+use embedded_graphics::mono_font::iso_8859_4::FONT_4X6;
+use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::prelude::*;
 use embedded_graphics::prelude::{Point, Primitive, Size};
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
+use embedded_graphics::text::Text;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
@@ -13,10 +17,16 @@ use epd_waveshare::prelude::*;
 use log::info;
 use qrcode::QrCode;
 
+use crate::event::EventManager;
+use crate::wifi::{AccessPointInfo, ConnectionStateEvent};
+use crate::Event;
+
+#[derive(Default)]
 enum MenuState {
-    GameInfo,
-    HotspotQR,
+    #[default]
+    ConnectionInfo,
     WebsiteQR,
+    GameInfo,
 }
 
 pub struct ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
@@ -34,6 +44,15 @@ where
     epd: Epd1in54<SPI, BUSY, DC, RST, DELAY>,
     spi: SPI,
     delay: DELAY,
+
+    display: Display1in54,
+    small_text_style: MonoTextStyle<'static, Color>,
+    normal_text_style: MonoTextStyle<'static, Color>,
+
+    state: MenuState,
+
+    event_rx: std::sync::mpsc::Receiver<Event>,
+    event_tx: std::sync::mpsc::Sender<Event>,
 }
 
 impl<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
@@ -57,6 +76,7 @@ where
         rst: RST,
         mut delay: DELAY,
         delay_us: Option<u32>,
+        event_manager: &EventManager<Event>,
     ) -> Result<Self> {
         let epd = Epd1in54::new(&mut spi, busy, dc, rst, &mut delay, delay_us).unwrap();
         Ok(Self {
@@ -65,69 +85,118 @@ where
             epd,
             spi,
             delay,
+
+            display: Display1in54::default(),
+            small_text_style: MonoTextStyle::new(&FONT_4X6, Color::Black),
+            normal_text_style: MonoTextStyle::new(&FONT_6X13, Color::Black),
+
+            state: MenuState::default(),
+            event_rx: event_manager.create_receiver(),
+            event_tx: event_manager.create_sender(),
         })
     }
 
     pub fn setup(&mut self) -> Result<()> {
         info!("Setup E-Paper display");
 
+        self.epd.set_background_color(Color::White);
+
         // Clear the display
-        self.epd
-            .clear_frame(&mut self.spi, &mut self.delay)
-            .unwrap();
-        self.epd
-            .display_frame(&mut self.spi, &mut self.delay)
-            .unwrap();
+        self.clear_frame()?;
+        self.update_and_display_frame()?;
 
-        self.display_wifi_qr("E-Chess", "1337_e-chess")?;
-
-        // Set the display to sleep mode
-        self.epd.sleep(&mut self.spi, &mut self.delay).unwrap();
         Ok(())
     }
 
     pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGameState) -> Result<()> {
+        match self.event_rx.try_recv() {
+            Ok(event) => match event {
+                Event::ConnectionState(connection_event) => match connection_event {
+                    ConnectionStateEvent::Wifi(wifi_info) => {
+                        self.display_wifi_info(&wifi_info)?;
+                    }
+                    ConnectionStateEvent::AccessPoint(access_point) => {
+                        self.display_access_point_info(access_point)?;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            },
+            Err(_) => {}
+        }
         Ok(())
     }
 
-    pub fn display_wifi_qr(&mut self, ssid: &str, password: &str) -> Result<()> {
-        let mut display = Display1in54::default();
+    fn clear_frame(&mut self) -> Result<()> {
+        self.epd
+            .clear_frame(&mut self.spi, &mut self.delay)
+            .map_err(|err| anyhow::format_err!("could not clear the frame: {:?}", err))
+    }
 
-        // Fill the entire display with white
-        let background = Rectangle::new(Point::new(0, 0), Size::new(200, 200))
-            .into_styled(PrimitiveStyle::with_fill(Color::White));
-        background.draw(&mut display)?;
+    fn update_and_display_frame(&mut self) -> Result<()> {
+        self.epd
+            .wake_up(&mut self.spi, &mut self.delay)
+            .map_err(|err| anyhow::format_err!("could not wake up display: {:?}", err))?;
+        self.epd
+            .update_and_display_frame(&mut self.spi, self.display.buffer(), &mut self.delay)
+            .map_err(|err| anyhow::format_err!("could not update and display frame: {:?}", err))?;
+        self.epd
+            .sleep(&mut self.spi, &mut self.delay)
+            .map_err(|err| anyhow::format_err!("could not wake up display: {:?}", err))?;
 
-        // Create WiFi QR code content in the format: WIFI:S:<SSID>;T:WPA;P:<PASSWORD>;;
-        let qr_content = format!("WIFI:S:{};T:WPA;P:{};;", ssid, password);
-        info!("Generating QR code for SSID: {}", ssid);
+        Ok(())
+    }
 
+    fn fill_empty(&mut self) -> Result<()> {
+        Rectangle::new(
+            Point::new(0, 0),
+            Size::new(self.epd.width(), self.epd.height()),
+        )
+        .into_styled(PrimitiveStyle::with_fill(Color::White))
+        .draw(&mut self.display)?;
+
+        Ok(())
+    }
+
+    fn display_wifi_info(&mut self, wifi_info: &crate::wifi::WifiInfo) -> Result<()> {
+        self.fill_empty()?;
+
+        Text::new(
+            &format!("SSID: {}", wifi_info.ssid),
+            Point::new(10, 10),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+        Text::new(
+            &format!("IP: {}", wifi_info.ip.as_deref().unwrap_or("N/A")),
+            Point::new(10, 30),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+
+        self.update_and_display_frame()?;
+        Ok(())
+    }
+
+    fn draw_qr_to_frame(&mut self, qr_content: &str, padding: u32) -> Result<(u32, u32, u32)> {
         // Generate QR code
         let qr = QrCode::new(qr_content.as_bytes())?;
 
         // Calculate QR code size and position to center it on the display
         let qr_size = qr.width() as u32;
-        let display_width = 200; // E-ink display width
-        let display_height = 200; // E-ink display height
+        let display_width = self.epd.width();
+        let display_height = self.epd.height();
 
         // Calculate scale to fit the screen exactly
-        let scale = display_width / qr_size;
-        let qr_width = qr_size * scale;
-        let qr_height = qr_size * scale;
-        let x_offset = (display_width - qr_width) / 2;
-        let y_offset = (display_height - qr_height) / 2;
+        let scale = (display_width - padding * 2) / qr_size;
+        let qr_scaled = qr_size * scale;
+        let x_offset = (display_width - qr_scaled) / 2;
+        let y_offset = (display_height - qr_scaled) / 2;
 
         let colors = qr.to_colors();
         for y in 0..qr_size {
             for x in 0..qr_size {
                 if colors[y as usize * qr_size as usize + x as usize] == qrcode::Color::Dark {
-                    info!(
-                        "Drawing pixel at ({}, {}) size {}",
-                        (x_offset + x as u32 * scale) as i32,
-                        (x_offset + y as u32 * scale) as i32,
-                        scale
-                    );
-
                     let rect = Rectangle::new(
                         Point::new(
                             (x_offset + x as u32 * scale) as i32,
@@ -136,15 +205,36 @@ where
                         Size::new(scale, scale),
                     )
                     .into_styled(PrimitiveStyle::with_fill(Color::Black));
-                    rect.draw(&mut display)?;
+                    rect.draw(&mut self.display)?;
                 }
             }
         }
 
+        Ok((x_offset, y_offset, qr_scaled))
+    }
+
+    fn display_access_point_info(&mut self, access_point_info: AccessPointInfo) -> Result<()> {
+        self.fill_empty()?;
+
+        // Create WiFi QR code content in the format: WIFI:S:<SSID>;T:WPA;P:<PASSWORD>;;
+        let qr_content = format!(
+            "WIFI:S:{};T:WPA;P:{};;",
+            access_point_info.ssid, access_point_info.password
+        );
+
+        let padding: u32 = 14;
+        let (x_offset, y_offset, qr_size) = self.draw_qr_to_frame(&qr_content, padding)?;
+
+        // Show ip address below the QR code
+        Text::new(
+            &format!("IP: {}", access_point_info.ip.as_deref().unwrap_or("N/A")),
+            Point::new(x_offset as i32, (y_offset + qr_size + padding) as i32),
+            self.normal_text_style,
+        )
+        .draw(&mut self.display)?;
+
         // Update the display
-        self.epd
-            .update_and_display_frame(&mut self.spi, display.buffer(), &mut self.delay)
-            .unwrap();
+        self.update_and_display_frame()?;
 
         Ok(())
     }

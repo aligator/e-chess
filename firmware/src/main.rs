@@ -3,15 +3,14 @@ use crate::board::Board;
 use crate::board::FakeBoard;
 use crate::event::EventManager;
 use crate::game::GameCommandEvent;
+use crate::wifi::ConnectionStateEvent;
 use anyhow::Result;
 use board::MCP23017Board;
 use chess::BitBoard;
 use chess_game::game::ChessGameState;
 use eink_display::ChessEinkDisplay;
 use embedded_hal::spi::SpiDevice;
-use embedded_svc::http::Method;
 use esp_idf_hal::gpio::{Gpio0, PinDriver};
-use esp_idf_hal::io::Write;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_hal::prelude::*;
 use esp_idf_hal::rmt::TxRmtDriver;
@@ -24,7 +23,6 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
 use game::GameStateEvent;
 use log::*;
-use maud::html;
 use std::time::Duration;
 use std::{thread, thread::sleep};
 use storage::Storage;
@@ -45,6 +43,7 @@ mod wifi;
 enum Event {
     GameState(GameStateEvent),
     GameCommand(GameCommandEvent),
+    ConnectionState(ConnectionStateEvent),
 }
 
 unsafe impl Send for Event {}
@@ -246,6 +245,8 @@ fn main() -> Result<()> {
     let mut button_b_driver = PinDriver::input(button_b)?;
     button_b_driver.set_pull(esp_idf_hal::gpio::Pull::Up)?;
 
+    let event_manager = EventManager::<Event>::new();
+
     let mut eink_display = eink_display::ChessEinkDisplay::new(
         button_a_driver,
         button_b_driver,
@@ -255,8 +256,8 @@ fn main() -> Result<()> {
         PinDriver::output(rst)?,
         delay,
         None,
+        &event_manager,
     )?;
-    eink_display.setup()?;
 
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
@@ -266,23 +267,9 @@ fn main() -> Result<()> {
     let token = storage.get_str::<25>("api_token")?;
     info!("API Token: {:?}", token);
 
-    let event_manager = EventManager::<Event>::new();
+    eink_display.setup()?;
 
     let mut server = wifi::start_wifi(&event_manager, wifi_driver, storage)?;
-
-    server.fn_handler("/", Method::Get, |request| {
-        let html = wifi::page(
-            html!(
-                h1 { "E-Chess" }
-                p { "Welcome to E-Chess!" }
-                a href="/settings" { "Settings" }
-                a href="/game" { "Game" }
-            )
-            .into_string(),
-        );
-
-        request.into_ok_response()?.write_all(html.as_bytes())
-    })?;
 
     match run_game(
         token,
