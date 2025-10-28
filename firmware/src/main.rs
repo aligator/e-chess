@@ -242,9 +242,9 @@ fn main() -> Result<()> {
 
     // Setup the button pins and enable the internal pullup.
     let mut button_a_driver = PinDriver::input(button_a)?;
-    button_a_driver.set_pull(esp_idf_hal::gpio::Pull::Up);
+    button_a_driver.set_pull(esp_idf_hal::gpio::Pull::Up)?;
     let mut button_b_driver = PinDriver::input(button_b)?;
-    button_b_driver.set_pull(esp_idf_hal::gpio::Pull::Up);
+    button_b_driver.set_pull(esp_idf_hal::gpio::Pull::Up)?;
 
     let mut eink_display = eink_display::ChessEinkDisplay::new(
         button_a_driver,
