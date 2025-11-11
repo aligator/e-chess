@@ -62,12 +62,22 @@ bottomHeight = 5;
 bottomWallSize = 5;
 
 electronicCaseWidth = 50;
-electronicCaseCover = 1;
-electronicCaseCoverMagnetDiameter = 10;
-electronicCaseCoverMagnetHolderThickness = 3;
-electronicCaseCoverMagnetThickness = 3;
-electronicCaseCoverStamp = 3;
 electronicBreakThrough = 9;
+
+electronicCaseCover = 1;
+
+// I use this display:
+// Waveshare 1.54 Inch E-Paper Display Panel Module Kit 200 * 200
+// https://www.amazon.de/dp/B0728BJTZC?ref=ppx_yo2ov_dt_b_fed_asin_title
+
+displayWidth = 32;
+displayHeight = 38;
+displayScrewDiameter = 3;
+displayScrewOffsetX = -1.75;
+displayScrewOffsetY = 2.8;
+displaySpacerHeight = 1.5;
+
+displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
 usbCutoutDia = 10;
 
@@ -89,8 +99,8 @@ reedPinHeight = boxHeight - topBoardHeight - top - metalPlateThickness;
 // Just a constant to make cutouts larger for better preview rendering.
 c0 = 0.01 + 0;
 
-$fa = 12;
-$fs = 1;
+$fa = 3;
+$fs = 0.2;
 
 gridInner = size * fieldSize;
 gridOuter = gridInner + 2 * fieldBorder;
@@ -609,6 +619,23 @@ module ElectronicCase() {
 }
 
 module ElectronicCaseCover() {
+  // Position the children at the screw positions.
+  module screwPosition() {
+    // Screw holes around the display
+    for (dx = [-1, 1]) {
+      for (dy = [-1, 1]) {
+        translate(
+          [
+            (coverWidth - displayWidth) / 2 + (displayWidth / 2) + dx * (displayWidth / 2 + displayScrewOffsetX),
+            (gridOuter - displayHeight) / 2 + (displayHeight / 2) + dy * (displayHeight / 2 + displayScrewOffsetY),
+            -c0,
+          ]
+        )
+          children(0);
+      }
+    }
+  }
+
   translate(
     [
       tolerance,
@@ -616,67 +643,29 @@ module ElectronicCaseCover() {
       bottomHeight + boxHeight - electronicCaseCover,
     ]
   ) {
-    cube([coverWidth, gridOuter, electronicCaseCover]);
+    difference() {
+      union() {
+        cube([coverWidth, gridOuter, electronicCaseCover]);
 
-    // Magnets
-    translate(
-      [
-        -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-        electronicCaseCoverMagnetThickness,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
+        // Screw hole spacers
+        translate([0, 0, -displaySpacerHeight])
+          screwPosition() cylinder(h=electronicCaseCover + displaySpacerHeight, d=displaySpacerDiameter);
+      }
+      // Cut out the display area
+      translate(
         [
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
+          (coverWidth - displayWidth) / 2 - c0,
+          (gridOuter - displayHeight) / 2 - c0,
+          -c0,
         ]
-      );
-    translate(
-      [
-        -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-        gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
-        [
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
-        ]
-      );
+      ) {
+        cube([displayWidth + 2 * c0, displayHeight + 2 * c0, electronicCaseCover + 2 * c0]);
+      }
 
-    // Stamps at the center
-    translate(
-      [
-        0,
-        gridOuter / 2 - electronicCaseCoverStamp / 2,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
-        [
-          electronicCaseCoverStamp,
-          electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
-        ]
-      );
-    translate(
-      [
-        coverWidth - electronicCaseCoverStamp,
-        gridOuter / 2 - electronicCaseCoverStamp / 2,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
-        [
-          electronicCaseCoverStamp,
-          electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
-        ]
-      );
+      // Screw holes
+      translate([0, 0, -displaySpacerHeight])
+        screwPosition() cylinder(h=electronicCaseCover + displaySpacerHeight + 2 * c0, d=displayScrewDiameter);
+    }
   }
 }
 
