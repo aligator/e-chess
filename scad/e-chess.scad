@@ -65,11 +65,13 @@ electronicCaseWidth = 50;
 electronicBreakThrough = 9;
 
 electronicCaseCover = 1;
+electronicCaseCoverBorder = 1;
+// Maybe use screws in the next version?
+// However my current printed prototype doesn't have this yet.
+// electronicCaseCoverScrewsDiameter = 4;
+// electronicCaseCoverScrewsOuterDiameter = 8;
 
-// I use this display:
-// Waveshare 1.54 Inch E-Paper Display Panel Module Kit 200 * 200
-// https://www.amazon.de/dp/B0728BJTZC?ref=ppx_yo2ov_dt_b_fed_asin_title
-
+// I use this display: Waveshare 1.54 Inch E-Paper Display Panel Module Kit 200 * 200 https://www.amazon.de/dp/B0728BJTZC?ref=ppx_yo2ov_dt_b_fed_asin_title
 displayWidth = 32;
 displayHeight = 38;
 displayScrewDiameter = 3;
@@ -99,6 +101,8 @@ tolerance = 0.4;
 ledWallCutout = 2.0;
 
 coverWidth = electronicCaseWidth - bottomWallSize - 2 * tolerance;
+
+echo("available electronic width: ", coverWidth - 2 * electronicCaseCoverBorder);
 
 reedPinHeight = boxHeight - topBoardHeight - top - metalPlateThickness;
 
@@ -609,6 +613,7 @@ module ElectronicCase() {
         ]
       );
 
+    // Cuts the electronic that peeks into the electronic case.
     translate([-fullOuterBoard, 0, 0]) BottomElectronic();
 
     // Hole for cable.
@@ -683,6 +688,56 @@ module ElectronicCaseCover() {
         )
           cylinder(h=electronicCaseCover + 2 * c0, d=displayButtonDiameter);
       }
+    }
+  }
+
+  // For now just add a wall around the cover.
+  translate(
+    [
+      tolerance,
+      bottomWallSize + tolerance,
+      electronicCaseCover - electronicCaseCoverBorder + bottomHeight,
+    ]
+  ) {
+    difference() {
+      translate([0, 0, 0])
+        cube(
+          [
+            coverWidth,
+            gridOuter,
+            boxHeight,
+          ]
+        );
+
+      translate(
+        [
+          electronicCaseCoverBorder,
+          electronicCaseCoverBorder,
+          -c0,
+        ]
+      )
+        cube(
+          [
+            coverWidth - electronicCaseCoverBorder * 2,
+            gridOuter - electronicCaseCoverBorder * 2,
+            boxHeight + c0 * 2,
+          ]
+        );
+
+      // Slot for the cable
+      translate(
+        [
+          (coverWidth) / 2,
+          gridOuter + c0,
+          boxHeight / 2 - bottomWallSize,
+        ]
+      )
+        rotate([90, 0, 0]) {
+          translate([-usbCutoutDia / 2, (boxHeight / 2 + bottomWallSize) - boxHeight, c0])
+            cube([usbCutoutDia, boxHeight / 2 - bottomWallSize, electronicCaseCoverBorder + 2 * c0]);
+
+          cylinder(h=bottomWallSize + 2 * c0, d=usbCutoutDia);
+        }
     }
   }
 }
