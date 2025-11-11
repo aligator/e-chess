@@ -79,6 +79,12 @@ displaySpacerHeight = 1.5;
 
 displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
+// Offset of the buttons from the display edge (below the display).
+displayButtonsOffsetY = 15;
+// Spacing between the buttons.
+displayButtonsSpacing = 15;
+displayButtonDiameter = 5;
+
 usbCutoutDia = 10;
 
 reedPinBorder = 3;
@@ -665,6 +671,18 @@ module ElectronicCaseCover() {
       // Screw holes
       translate([0, 0, -displaySpacerHeight])
         screwPosition() cylinder(h=electronicCaseCover + displaySpacerHeight + 2 * c0, d=displayScrewDiameter);
+
+      // Button holes
+      for (i = [0:1:1]) {
+        translate(
+          [
+            coverWidth / 2 + i * (displayButtonDiameter + displayButtonsSpacing) - (displayButtonDiameter + displayButtonsSpacing) / 2,
+            (gridOuter + displayHeight) / 2 - displayHeight - displayButtonDiameter / 2 - displayButtonsOffsetY,
+            -c0,
+          ]
+        )
+          cylinder(h=electronicCaseCover + 2 * c0, d=displayButtonDiameter);
+      }
     }
   }
 }
