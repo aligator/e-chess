@@ -85,7 +85,7 @@ displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, display
 displayButtonsOffsetY = 15;
 // Spacing between the buttons.
 displayButtonsSpacing = 15;
-displayButtonDiameter = 5;
+displayButtonDiameter = 7;
 
 usbCutoutDia = 10;
 
