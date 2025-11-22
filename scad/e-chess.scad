@@ -86,6 +86,7 @@ displayScrewOffsetX = -1.75;
 displayScrewOffsetY = 2.8;
 displaySpacerHeight = 1.5;
 displayBottomSpacing = 3;
+displayBottomOverlap = 6;
 
 displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
@@ -676,11 +677,11 @@ module ElectronicCaseCover() {
       translate(
         [
           (coverWidth - displayWidth) / 2,
-          displaySpacerDiameter + displayBottomSpacing,
+          displaySpacerDiameter + displayBottomSpacing + displayBottomOverlap,
           -c0,
         ]
       ) {
-        cube([displayWidth + 2 * c0, displayHeight + 2 * c0, electronicCaseCover + 2 * c0]);
+        cube([displayWidth + 2 * c0, displayHeight - displayBottomOverlap + 2 * c0, electronicCaseCover + 2 * c0]);
       }
 
       // Screw holes
