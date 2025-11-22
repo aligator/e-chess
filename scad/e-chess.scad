@@ -23,7 +23,7 @@ flipElectronicCaseCover = false;
 renderPCB = false;
 pcbWidth = 179.4;
 pcbHeight = 40.02;
-pcbTopSpacing = 10;
+pcbTopSpacing = 15;
 pcbHoles = [
   [4.3, 4.3],
   [4.3, pcbHeight - 4.3],
@@ -85,12 +85,12 @@ displayScrewDiameter = 3.3;
 displayScrewOffsetX = -1.75;
 displayScrewOffsetY = 2.8;
 displaySpacerHeight = 1.5;
-displayBottomSpacing = 5;
+displayBottomSpacing = 3;
 
 displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
 // Offset of the buttons from the display edge (below the display).
-displayButtonsOffsetY = 10;
+displayButtonsOffsetY = 8;
 // Spacing between the buttons.
 displayButtonsSpacing = 15;
 displayButtonDiameter = 7;
