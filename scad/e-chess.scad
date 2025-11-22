@@ -20,6 +20,10 @@ renderReedPins = true;
 // Just for debugging
 renderMetalPlate = false;
 flipElectronicCaseCover = false;
+renderPCB = false;
+pcbWidth = 179.4;
+pcbHeight = 40.02;
+pcbTopSpacing = 10;
 
 // Experimental - not really nice...
 extraReedPinCutout = false;
@@ -78,12 +82,13 @@ displayBottomSpacing = 5;
 displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
 // Offset of the buttons from the display edge (below the display).
-displayButtonsOffsetY = 15;
+displayButtonsOffsetY = 10;
 // Spacing between the buttons.
 displayButtonsSpacing = 15;
 displayButtonDiameter = 7;
 
 usbCutoutDia = 10;
+usbCutoutDiaCover = 15;
 
 reedPinBorder = 3;
 metalPlateThickness = 0.3;
@@ -651,7 +656,6 @@ module ElectronicCaseCover() {
       bottomHeight + boxHeight - electronicCaseCover,
     ]
   ) {
-
     difference() {
       union() {
         cube([coverWidth, gridOuter, electronicCaseCover]);
@@ -687,6 +691,16 @@ module ElectronicCaseCover() {
           cylinder(h=electronicCaseCover + 2 * c0, d=displayButtonDiameter);
       }
     }
+    translate(
+      [
+        coverWidth / 2,
+        gridOuter - pcbWidth / 2 - electronicCaseCoverBorder - pcbTopSpacing,
+        -electronicCaseCover,
+      ]
+    )
+      rotate([0, 180, 90])
+        color("green")
+          PCB();
   }
 
   // For now just add a wall around the cover.
@@ -731,10 +745,10 @@ module ElectronicCaseCover() {
         ]
       )
         rotate([90, 0, 0]) {
-          translate([-usbCutoutDia / 2, (boxHeight / 2 + bottomWallSize) - boxHeight, c0])
-            cube([usbCutoutDia, boxHeight / 2 - bottomWallSize, electronicCaseCoverBorder + 2 * c0]);
+          translate([-usbCutoutDiaCover / 2, (boxHeight / 2 + bottomWallSize) - boxHeight, c0])
+            cube([usbCutoutDiaCover, boxHeight / 2 - bottomWallSize, electronicCaseCoverBorder + 2 * c0]);
 
-          cylinder(h=bottomWallSize + 2 * c0, d=usbCutoutDia);
+          cylinder(h=bottomWallSize + 2 * c0, d=usbCutoutDiaCover);
         }
     }
   }
@@ -786,6 +800,21 @@ module ReedPin() {
       ]
     )
       cylinder(h=metalPlateThickness, r=metalPlateRadius);
+  }
+}
+
+module PCB() {
+  if (renderPCB) {
+    translate(
+      // translate as centered not 0,0
+      [
+        -pcbWidth / 2,
+        -pcbHeight / 2,
+        0,
+      ]
+    )
+      translate([-92.8, 114.5, 0]) // magic numbers as the pcb is not centered
+        import("pcb.stl");
   }
 }
 
@@ -851,7 +880,6 @@ if (!renderPrintable) {
         cutPartsSize
       ) ElectronicCase();
   }
-  ;
 
   translate(
     [cutParts ? cutPartsSize : 0, 0, 0]
