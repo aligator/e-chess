@@ -24,6 +24,14 @@ renderPCB = false;
 pcbWidth = 179.4;
 pcbHeight = 40.02;
 pcbTopSpacing = 10;
+pcbHoles = [
+  [4.3, 4.3],
+  [4.3, pcbHeight - 4.3],
+  [148.7, pcbHeight / 2 + 0.45],
+];
+pcbSpacerHeight = 5;
+pcbHolderDiameter = 4;
+pcbSpacerDiameter = 8;
 
 // Experimental - not really nice...
 extraReedPinCutout = false;
@@ -699,8 +707,17 @@ module ElectronicCaseCover() {
       ]
     )
       rotate([0, 180, 90])
-        color("green")
-          PCB();
+        color("green") {
+
+          placePCBHoles() {
+            difference() {
+              cylinder(h=pcbSpacerHeight, d=pcbSpacerDiameter);
+              cylinder(h=pcbSpacerHeight + c0, d=pcbHolderDiameter);
+            }
+          }
+          translate([0, 0, 5])
+            PCB();
+        }
   }
 
   // For now just add a wall around the cover.
@@ -815,6 +832,13 @@ module PCB() {
     )
       translate([-92.8, 114.5, 0]) // magic numbers as the pcb is not centered
         import("pcb.stl");
+  }
+}
+
+module placePCBHoles() {
+  for (i = [0:1:len(pcbHoles) - 1]) {
+    translate([pcbHoles[i][0] - pcbWidth / 2, pcbHoles[i][1] - pcbHeight / 2, 0])
+      children(0);
   }
 }
 
