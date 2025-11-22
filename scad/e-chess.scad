@@ -30,7 +30,7 @@ pcbHoles = [
   [148.7, pcbHeight / 2 + 0.45],
 ];
 pcbSpacerHeight = 5;
-pcbHolderDiameter = 4;
+pcbScrewDiameter = 4;
 pcbSpacerDiameter = 8;
 
 // Experimental - not really nice...
@@ -704,7 +704,7 @@ module ElectronicCaseCover() {
       [
         coverWidth / 2,
         gridOuter - pcbWidth / 2 - electronicCaseCoverBorder - pcbTopSpacing,
-        -electronicCaseCover,
+        0,
       ]
     )
       rotate([0, 180, 90])
@@ -713,7 +713,7 @@ module ElectronicCaseCover() {
           placePCBHoles() {
             difference() {
               cylinder(h=pcbSpacerHeight, d=pcbSpacerDiameter);
-              cylinder(h=pcbSpacerHeight + c0, d=pcbHolderDiameter);
+              cylinder(h=pcbSpacerHeight + c0, d=pcbScrewDiameter);
             }
           }
           translate([0, 0, 5])
