@@ -73,6 +73,7 @@ displayScrewDiameter = 3.3;
 displayScrewOffsetX = -1.75;
 displayScrewOffsetY = 2.8;
 displaySpacerHeight = 1.5;
+displayBottomSpacing = 5;
 
 displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
 
@@ -627,13 +628,14 @@ module ElectronicCase() {
 module ElectronicCaseCover() {
   // Position the children at the screw positions.
   module screwPosition() {
+    translate([0, displaySpacerDiameter + displayBottomSpacing, 0])
     // Screw holes around the display
     for (dx = [-1, 1]) {
       for (dy = [-1, 1]) {
         translate(
           [
             (coverWidth - displayWidth) / 2 + (displayWidth / 2) + dx * (displayWidth / 2 + displayScrewOffsetX),
-            (gridOuter - displayHeight) / 2 + (displayHeight / 2) + dy * (displayHeight / 2 + displayScrewOffsetY),
+            (displayHeight / 2) + dy * (displayHeight / 2 + displayScrewOffsetY),
             -c0,
           ]
         )
@@ -649,6 +651,7 @@ module ElectronicCaseCover() {
       bottomHeight + boxHeight - electronicCaseCover,
     ]
   ) {
+
     difference() {
       union() {
         cube([coverWidth, gridOuter, electronicCaseCover]);
@@ -660,8 +663,8 @@ module ElectronicCaseCover() {
       // Cut out the display area
       translate(
         [
-          (coverWidth - displayWidth) / 2 - c0,
-          (gridOuter - displayHeight) / 2 - c0,
+          (coverWidth - displayWidth) / 2,
+          displaySpacerDiameter + displayBottomSpacing,
           -c0,
         ]
       ) {
@@ -677,7 +680,7 @@ module ElectronicCaseCover() {
         translate(
           [
             coverWidth / 2 + i * (displayButtonDiameter + displayButtonsSpacing) - (displayButtonDiameter + displayButtonsSpacing) / 2,
-            (gridOuter + displayHeight) / 2 - displayHeight - displayButtonDiameter / 2 - displayButtonsOffsetY,
+            displayHeight + displaySpacerDiameter + displayBottomSpacing + displayButtonDiameter / 2 + displayButtonsOffsetY,
             -c0,
           ]
         )
