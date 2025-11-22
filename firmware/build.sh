@@ -203,7 +203,7 @@ elif [[ "$SUBCOMMAND" == "watch" ]]; then
     # No arguments needed for watch
     :
 elif [[ "$SUBCOMMAND" == "clear" ]]; then
-    # No arguments needed for watch
+    # No arguments needed for clear
     :
 else
     if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
@@ -286,7 +286,7 @@ if [ -z "$SUBCOMMAND" ]; then
 fi
 
 # Check if chip is specified and valid (for run/ota/build/clear)
-if [[ "$SUBCOMMAND" == "run" || "$SUBCOMMAND" == "ota" || "$SUBCOMMAND" == "build" || "$SUBCOMMAND" == "clear" ]]; then
+if [[ "$SUBCOMMAND" == "run" || "$SUBCOMMAND" == "ota" || "$SUBCOMMAND" == "build" ]]; then
     if [ -z "$TARGET_CHIP" ]; then
         print_error "Chip name is required as a positional argument for $SUBCOMMAND (${SUPPORTED_CHIPS[*]})"
         show_usage
@@ -335,70 +335,69 @@ if [ -n "$TARGET_CHIP" ] && [ "$SUBCOMMAND" != "watch" ]; then
     # Set target directory for the specific chip
     TARGET_DIR="target/xtensa-${TARGET_CHIP}-espidf/${BUILD_TYPE}/e-chess"
     
-    if [[ "$SUBCOMMAND" == "clear" ]]; then
-        print_step "Clearing flash memory for $TARGET_CHIP"
-        print_warning "This will erase all data on the device flash memory!"
-        print_warning "Make sure the device is connected and in bootloader mode"
-        read -p "Are you sure you want to continue? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Flash clear operation cancelled"
-            exit 0
-        fi
-    
-        espflash erase-flash
-
-        print_success "Flash memory cleared successfully!"
+    if [ ! -f "$TARGET_DIR" ]; then
+        print_error "Build target not found at $TARGET_DIR"
+        exit 1
+    fi
+    print_step "Creating firmware image"
+    # Create firmware file name with chip in the target directory
+    TARGET_BASE=$(dirname "$TARGET_DIR")
+    FIRMWARE_FILE="${TARGET_BASE}/e-chess_ota_${TARGET_CHIP}.bin"
+    print_progress "Generating firmware file: ${FIRMWARE_FILE}"
+    # Use espflash to create the ESP32 app image
+    if [ -n "$FLASH_SIZE" ]; then
+        PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
+        espflash save-image --chip "$TARGET_CHIP" --partition-table "$PARTITION_TABLE" --flash-size "$FLASH_SIZE" "$TARGET_DIR" "$FIRMWARE_FILE"
     else
-        if [ ! -f "$TARGET_DIR" ]; then
-            print_error "Build target not found at $TARGET_DIR"
-            exit 1
-        fi
-        print_step "Creating firmware image"
-        # Create firmware file name with chip in the target directory
-        TARGET_BASE=$(dirname "$TARGET_DIR")
-        FIRMWARE_FILE="${TARGET_BASE}/e-chess_ota_${TARGET_CHIP}.bin"
-        print_progress "Generating firmware file: ${FIRMWARE_FILE}"
-        # Use espflash to create the ESP32 app image
+        espflash save-image --chip "$TARGET_CHIP" "$TARGET_DIR" "$FIRMWARE_FILE"
+    fi
+    print_success "Firmware file created successfully!"
+
+    if [[ "$SUBCOMMAND" == "ota" ]]; then
+        print_step "Deploying firmware to $OTA_ADDRESS"
+        print_progress "Uploading firmware..."
+        
+        # Create a temporary file for the response
+        RESPONSE_FILE=$(mktemp)
+        
+        # Upload with progress bar
+        curl -X POST \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@$FIRMWARE_FILE" \
+                -w "\nUpload complete!\n" \
+                -o "$RESPONSE_FILE" \
+                "${OTA_PROTOCOL}://${OTA_ADDRESS}/upload-firmware"
+        
+        # Clean up temp file
+        rm -f "$RESPONSE_FILE"
+        
+        print_success "Firmware deployment initiated"
+        print_info "Device will restart automatically"
+    fi
+    if [[ "$SUBCOMMAND" == "run" ]]; then
+        print_step "Running cargo run..."
         if [ -n "$FLASH_SIZE" ]; then
             PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
-            espflash save-image --chip "$TARGET_CHIP" --partition-table "$PARTITION_TABLE" --flash-size "$FLASH_SIZE" "$TARGET_DIR" "$FIRMWARE_FILE"
+            cargo run "${CARGO_FLAGS[@]}" -- --flash-size "$FLASH_SIZE" --partition-table "$PARTITION_TABLE"
         else
-            espflash save-image --chip "$TARGET_CHIP" "$TARGET_DIR" "$FIRMWARE_FILE"
-        fi
-        print_success "Firmware file created successfully!"
-
-        if [[ "$SUBCOMMAND" == "ota" ]]; then
-            print_step "Deploying firmware to $OTA_ADDRESS"
-            print_progress "Uploading firmware..."
-            
-            # Create a temporary file for the response
-            RESPONSE_FILE=$(mktemp)
-            
-            # Upload with progress bar
-            curl -X POST \
-                 -H "Content-Type: application/octet-stream" \
-                 --data-binary "@$FIRMWARE_FILE" \
-                 -w "\nUpload complete!\n" \
-                 -o "$RESPONSE_FILE" \
-                 "${OTA_PROTOCOL}://${OTA_ADDRESS}/upload-firmware"
-            
-            # Clean up temp file
-            rm -f "$RESPONSE_FILE"
-            
-            print_success "Firmware deployment initiated"
-            print_info "Device will restart automatically"
-        fi
-        if [[ "$SUBCOMMAND" == "run" ]]; then
-            print_step "Running cargo run..."
-            if [ -n "$FLASH_SIZE" ]; then
-                PARTITION_TABLE=$(get_partition_table "$FLASH_SIZE")
-                cargo run "${CARGO_FLAGS[@]}" -- --flash-size "$FLASH_SIZE" --partition-table "$PARTITION_TABLE"
-            else
-                cargo run "${CARGO_FLAGS[@]}"
-            fi
+            cargo run "${CARGO_FLAGS[@]}"
         fi
     fi
+
+elif [[ "$SUBCOMMAND" == "clear" ]]; then
+    print_step "Clearing flash memory"
+    print_warning "This will erase all data on the device flash memory!"
+    print_warning "Make sure the device is connected and in bootloader mode"
+    read -p "Are you sure you want to continue? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Flash clear operation cancelled"
+        exit 0
+    fi
+
+    espflash erase-flash
+
+    print_success "Flash memory cleared successfully!"
 fi
 
 # Watch logs if requested (after any operation) or if watch subcommand

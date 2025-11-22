@@ -3,15 +3,12 @@ renderTopBoard = true;
 // Enable multicolor using an extra layer.
 renderLayeredMultiColorBoard = true;
 
-// Switches the fields that get the extra layer. (e.g. to change the color on a specific layer manually.)
-// Cannot be used together with renderMultiColorBoardColorX.
+// Switches the fields that get the extra layer. (e.g. to change the color on a specific layer manually.) Cannot be used together with renderMultiColorBoardColorX.
 topBoardLayeredMultiColorEven = false;
 
-// Enables multi-color Color1 (e.g. support for mulit-color printers.)
-// Cannot be used together with topBoardLayeredMultiColorEven.
+// Enables multi-color Color1 (e.g. support for mulit-color printers.) Cannot be used together with topBoardLayeredMultiColorEven.
 renderMultiColorBoardColor1 = false;
-// Enables multi-color Color2 (e.g. support for mulit-color printers.)
-// Cannot be used together with topBoardLayeredMultiColorEven.
+// Enables multi-color Color2 (e.g. support for mulit-color printers.) Cannot be used together with topBoardLayeredMultiColorEven.
 renderMultiColorBoardColor2 = false;
 
 renderTopGrid = true;
@@ -23,12 +20,23 @@ renderReedPins = true;
 // Just for debugging
 renderMetalPlate = false;
 flipElectronicCaseCover = false;
+renderPCB = false;
+pcbWidth = 179.4;
+pcbHeight = 40.02;
+pcbTopSpacing = 15;
+pcbHoles = [
+  [4.3, 4.3],
+  [4.3, pcbHeight - 4.3],
+  [148.7, pcbHeight / 2 + 0.45],
+];
+pcbSpacerHeight = 5;
+pcbScrewDiameter = 4;
+pcbSpacerDiameter = 8;
 
 // Experimental - not really nice...
 extraReedPinCutout = false;
 
-// More easy to add the wires,
-// but may lead to light bleeding into neightbour fields.
+// More easy to add the wires, but may lead to light bleeding into neightbour fields.
 electronicCutoutInBorder = true;
 
 renderPrintable = true;
@@ -46,8 +54,7 @@ top = 2.0;
 topBoardHeight = 0.4;
 topBoardMultiColorHeight = 0.2;
 
-// Border on each field.
-// Note that two borders side by side lead to an effective *2 border.
+// Border on each field. Note that two borders side by side lead to an effective *2 border.
 fieldBorder = 1;
 
 wireRadius = 1.5;
@@ -62,14 +69,35 @@ bottomHeight = 5;
 bottomWallSize = 5;
 
 electronicCaseWidth = 50;
-electronicCaseCover = 1;
-electronicCaseCoverMagnetDiameter = 10;
-electronicCaseCoverMagnetHolderThickness = 3;
-electronicCaseCoverMagnetThickness = 3;
-electronicCaseCoverStamp = 3;
 electronicBreakThrough = 9;
 
+electronicCaseCover = 1;
+electronicCaseCoverBorder = 1;
+// Maybe use screws in the next version instead of the border?
+// However my current printed prototype doesn't have this yet.
+// electronicCaseCoverScrewsDiameter = 4;
+// electronicCaseCoverScrewsOuterDiameter = 8;
+
+// I use this display: Waveshare 1.54 Inch E-Paper Display Panel Module Kit 200 * 200 https://www.amazon.de/dp/B0728BJTZC?ref=ppx_yo2ov_dt_b_fed_asin_title
+displayWidth = 32;
+displayHeight = 38;
+displayScrewDiameter = 3.3;
+displayScrewOffsetX = -1.75;
+displayScrewOffsetY = 2.8;
+displaySpacerHeight = 1.5;
+displayBottomSpacing = 3;
+displayBottomOverlap = 6;
+
+displaySpacerDiameter = displayScrewDiameter + (max(displayScrewOffsetX, displayScrewOffsetY) - displayScrewDiameter / 2) * 2;
+
+// Offset of the buttons from the display edge (below the display).
+displayButtonsOffsetY = 8;
+// Spacing between the buttons.
+displayButtonsSpacing = 15;
+displayButtonDiameter = 7;
+
 usbCutoutDia = 10;
+usbCutoutDiaCover = 15;
 
 reedPinBorder = 3;
 metalPlateThickness = 0.3;
@@ -84,13 +112,15 @@ ledWallCutout = 2.0;
 
 coverWidth = electronicCaseWidth - bottomWallSize - 2 * tolerance;
 
+echo("available electronic width: ", coverWidth - 2 * electronicCaseCoverBorder);
+
 reedPinHeight = boxHeight - topBoardHeight - top - metalPlateThickness;
 
 // Just a constant to make cutouts larger for better preview rendering.
 c0 = 0.01 + 0;
 
-$fa = 12;
-$fs = 1;
+$fa = 3;
+$fs = 0.2;
 
 gridInner = size * fieldSize;
 gridOuter = gridInner + 2 * fieldBorder;
@@ -593,6 +623,7 @@ module ElectronicCase() {
         ]
       );
 
+    // Cuts the electronic that peeks into the electronic case.
     translate([-fullOuterBoard, 0, 0]) BottomElectronic();
 
     // Hole for cable.
@@ -609,6 +640,24 @@ module ElectronicCase() {
 }
 
 module ElectronicCaseCover() {
+  // Position the children at the screw positions.
+  module screwPosition() {
+    translate([0, displaySpacerDiameter + displayBottomSpacing, 0])
+    // Screw holes around the display
+    for (dx = [-1, 1]) {
+      for (dy = [-1, 1]) {
+        translate(
+          [
+            (coverWidth - displayWidth) / 2 + (displayWidth / 2) + dx * (displayWidth / 2 + displayScrewOffsetX),
+            (displayHeight / 2) + dy * (displayHeight / 2 + displayScrewOffsetY),
+            -c0,
+          ]
+        )
+          children(0);
+      }
+    }
+  }
+
   translate(
     [
       tolerance,
@@ -616,67 +665,110 @@ module ElectronicCaseCover() {
       bottomHeight + boxHeight - electronicCaseCover,
     ]
   ) {
-    cube([coverWidth, gridOuter, electronicCaseCover]);
+    difference() {
+      union() {
+        cube([coverWidth, gridOuter, electronicCaseCover]);
 
-    // Magnets
-    translate(
-      [
-        -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-        electronicCaseCoverMagnetThickness,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
+        // Screw hole spacers
+        translate([0, 0, -displaySpacerHeight])
+          screwPosition() cylinder(h=electronicCaseCover + displaySpacerHeight, d=displaySpacerDiameter);
+      }
+      // Cut out the display area
+      translate(
         [
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
+          (coverWidth - displayWidth) / 2,
+          displaySpacerDiameter + displayBottomSpacing + displayBottomOverlap,
+          -c0,
         ]
-      );
-    translate(
-      [
-        -electronicCaseCoverMagnetDiameter / 2 + (coverWidth) / 2,
-        gridOuter - electronicCaseCoverMagnetHolderThickness - electronicCaseCoverMagnetThickness,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
-        [
-          electronicCaseCoverMagnetDiameter,
-          electronicCaseCoverMagnetHolderThickness,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
-        ]
-      );
+      ) {
+        cube([displayWidth + 2 * c0, displayHeight - displayBottomOverlap + 2 * c0, electronicCaseCover + 2 * c0]);
+      }
 
-    // Stamps at the center
+      // Screw holes
+      translate([0, 0, -displaySpacerHeight])
+        screwPosition() cylinder(h=electronicCaseCover + displaySpacerHeight + 2 * c0, d=displayScrewDiameter);
+
+      // Button holes
+      for (i = [0:1:1]) {
+        translate(
+          [
+            coverWidth / 2 + i * (displayButtonDiameter + displayButtonsSpacing) - (displayButtonDiameter + displayButtonsSpacing) / 2,
+            displayHeight + displaySpacerDiameter + displayBottomSpacing + displayButtonDiameter / 2 + displayButtonsOffsetY,
+            -c0,
+          ]
+        )
+          cylinder(h=electronicCaseCover + 2 * c0, d=displayButtonDiameter);
+      }
+    }
     translate(
       [
+        coverWidth / 2,
+        gridOuter - pcbWidth / 2 - electronicCaseCoverBorder - pcbTopSpacing,
         0,
-        gridOuter / 2 - electronicCaseCoverStamp / 2,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
       ]
     )
-      cube(
+      rotate([0, 180, 90])
+        color("green") {
+
+          placePCBHoles() {
+            difference() {
+              cylinder(h=pcbSpacerHeight, d=pcbSpacerDiameter);
+              cylinder(h=pcbSpacerHeight + c0, d=pcbScrewDiameter);
+            }
+          }
+          translate([0, 0, 5])
+            PCB();
+        }
+  }
+
+  // For now just add a wall around the cover.
+  translate(
+    [
+      tolerance,
+      bottomWallSize + tolerance,
+      electronicCaseCover - electronicCaseCoverBorder + bottomHeight,
+    ]
+  ) {
+    difference() {
+      translate([0, 0, 0])
+        cube(
+          [
+            coverWidth,
+            gridOuter,
+            boxHeight,
+          ]
+        );
+
+      translate(
         [
-          electronicCaseCoverStamp,
-          electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
+          electronicCaseCoverBorder,
+          electronicCaseCoverBorder,
+          -c0,
         ]
-      );
-    translate(
-      [
-        coverWidth - electronicCaseCoverStamp,
-        gridOuter / 2 - electronicCaseCoverStamp / 2,
-        -(bottomHeight + boxHeight - electronicCaseCover - bottomWallSize),
-      ]
-    )
-      cube(
+      )
+        cube(
+          [
+            coverWidth - electronicCaseCoverBorder * 2,
+            gridOuter - electronicCaseCoverBorder * 2,
+            boxHeight + c0 * 2,
+          ]
+        );
+
+      // Slot for the cable
+      translate(
         [
-          electronicCaseCoverStamp,
-          electronicCaseCoverStamp,
-          bottomHeight + boxHeight - electronicCaseCover - bottomWallSize,
+          (coverWidth) / 2,
+          gridOuter + c0,
+          boxHeight / 2 - bottomWallSize,
         ]
-      );
+      )
+        rotate([90, 0, 0]) {
+          translate([-usbCutoutDiaCover / 2, (boxHeight / 2 + bottomWallSize) - boxHeight, c0])
+            cube([usbCutoutDiaCover, boxHeight / 2 - bottomWallSize, electronicCaseCoverBorder + 2 * c0]);
+
+          cylinder(h=bottomWallSize + 2 * c0, d=usbCutoutDiaCover);
+        }
+    }
   }
 }
 
@@ -726,6 +818,28 @@ module ReedPin() {
       ]
     )
       cylinder(h=metalPlateThickness, r=metalPlateRadius);
+  }
+}
+
+module PCB() {
+  if (renderPCB) {
+    translate(
+      // translate as centered not 0,0
+      [
+        -pcbWidth / 2,
+        -pcbHeight / 2,
+        0,
+      ]
+    )
+      translate([-92.8, 114.5, 0]) // magic numbers as the pcb is not centered
+        import("pcb.stl");
+  }
+}
+
+module placePCBHoles() {
+  for (i = [0:1:len(pcbHoles) - 1]) {
+    translate([pcbHoles[i][0] - pcbWidth / 2, pcbHoles[i][1] - pcbHeight / 2, 0])
+      children(0);
   }
 }
 
@@ -791,7 +905,6 @@ if (!renderPrintable) {
         cutPartsSize
       ) ElectronicCase();
   }
-  ;
 
   translate(
     [cutParts ? cutPartsSize : 0, 0, 0]
