@@ -3,15 +3,12 @@ renderTopBoard = true;
 // Enable multicolor using an extra layer.
 renderLayeredMultiColorBoard = true;
 
-// Switches the fields that get the extra layer. (e.g. to change the color on a specific layer manually.)
-// Cannot be used together with renderMultiColorBoardColorX.
+// Switches the fields that get the extra layer. (e.g. to change the color on a specific layer manually.) Cannot be used together with renderMultiColorBoardColorX.
 topBoardLayeredMultiColorEven = false;
 
-// Enables multi-color Color1 (e.g. support for mulit-color printers.)
-// Cannot be used together with topBoardLayeredMultiColorEven.
+// Enables multi-color Color1 (e.g. support for mulit-color printers.) Cannot be used together with topBoardLayeredMultiColorEven.
 renderMultiColorBoardColor1 = false;
-// Enables multi-color Color2 (e.g. support for mulit-color printers.)
-// Cannot be used together with topBoardLayeredMultiColorEven.
+// Enables multi-color Color2 (e.g. support for mulit-color printers.) Cannot be used together with topBoardLayeredMultiColorEven.
 renderMultiColorBoardColor2 = false;
 
 renderTopGrid = true;
@@ -27,8 +24,7 @@ flipElectronicCaseCover = false;
 // Experimental - not really nice...
 extraReedPinCutout = false;
 
-// More easy to add the wires,
-// but may lead to light bleeding into neightbour fields.
+// More easy to add the wires, but may lead to light bleeding into neightbour fields.
 electronicCutoutInBorder = true;
 
 renderPrintable = true;
@@ -46,8 +42,7 @@ top = 2.0;
 topBoardHeight = 0.4;
 topBoardMultiColorHeight = 0.2;
 
-// Border on each field.
-// Note that two borders side by side lead to an effective *2 border.
+// Border on each field. Note that two borders side by side lead to an effective *2 border.
 fieldBorder = 1;
 
 wireRadius = 1.5;
@@ -66,7 +61,7 @@ electronicBreakThrough = 9;
 
 electronicCaseCover = 1;
 electronicCaseCoverBorder = 1;
-// Maybe use screws in the next version?
+// Maybe use screws in the next version instead of the border?
 // However my current printed prototype doesn't have this yet.
 // electronicCaseCoverScrewsDiameter = 4;
 // electronicCaseCoverScrewsOuterDiameter = 8;
@@ -74,7 +69,7 @@ electronicCaseCoverBorder = 1;
 // I use this display: Waveshare 1.54 Inch E-Paper Display Panel Module Kit 200 * 200 https://www.amazon.de/dp/B0728BJTZC?ref=ppx_yo2ov_dt_b_fed_asin_title
 displayWidth = 32;
 displayHeight = 38;
-displayScrewDiameter = 3;
+displayScrewDiameter = 3.3;
 displayScrewOffsetX = -1.75;
 displayScrewOffsetY = 2.8;
 displaySpacerHeight = 1.5;
