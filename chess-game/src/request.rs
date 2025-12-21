@@ -61,6 +61,40 @@ impl Requester for Request {
         Ok(())
     }
 
+    fn get(&self, url: &str) -> Result<String, self::RequestError> {
+        // Using a channel to get the result from the async operation
+        let (tx, rx) = std::sync::mpsc::channel::<Result<String, RequestError>>();
+        let api_key = self.api_key.clone();
+        let url = url.to_string();
+
+        // Spawn the async operation in the existing runtime
+        tokio::spawn(async move {
+            let client = reqwest::Client::new();
+            let result = client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .send()
+                .await;
+
+            match result {
+                Ok(response) => match response.text().await {
+                    Ok(text) => {
+                        let _ = tx.send(Ok(text));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(RequestError::Request(e)));
+                    }
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(RequestError::Request(e)));
+                }
+            }
+        });
+
+        // Wait for the response
+        rx.recv().map_err(|e| RequestError::Recv(e))?
+    }
+
     fn post(&self, url: &str, body: &str) -> Result<String, self::RequestError> {
         // Using a channel to get the result from the async operation
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, RequestError>>();

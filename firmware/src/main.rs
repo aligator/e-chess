@@ -23,11 +23,13 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::EspWifi;
 use game::GameStateEvent;
 use log::*;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{thread, thread::sleep};
 use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
+mod api;
 mod board;
 mod constants;
 mod display;
@@ -50,12 +52,12 @@ unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
 fn run_game<'a, ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>(
-    token: Option<String>,
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     eink_display: &mut ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>,
     mut server: &mut EspHttpServer<'static>,
     event_manager: &EventManager<Event>,
+    settings: Arc<Mutex<game::Settings>>,
 ) -> Result<()>
 where
     ButtonA: embedded_hal::digital::InputPin,
@@ -83,15 +85,11 @@ where
         }
     });
 
-    let settings = game::Settings {
-        token: token.unwrap_or_default(),
-    };
-
     let web = web::Web::new();
-    web.register(&mut server, &event_manager)?;
+    web.register(&mut server, &event_manager, settings.clone())?;
     info!("Registered web interface");
 
-    game::run_game(settings, &event_manager);
+    game::run_game(&event_manager, settings.clone());
 
     // Start the main loop
     info!("Start app loop");
@@ -101,8 +99,19 @@ where
     let mut last_physical = BitBoard::new(0);
     let mut last_game_state: Option<ChessGameState> = None;
 
+    let initial_game_id: String = {
+        let settings = settings.lock().unwrap();
+        let id = settings.last_game_id.clone();
+
+        if id.is_empty() {
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
+        } else {
+            id
+        }
+    };
+    // Load the initial game (standard chess starting position)
     tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+        initial_game_id,
     )))?;
 
     // Start the event manager after setting up everything.
@@ -259,22 +268,25 @@ fn main() -> Result<()> {
     let nvs = EspDefaultNvsPartition::take()?;
     let sys_loop = EspSystemEventLoop::take()?;
     let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs.clone()))?;
-    let storage = Storage::new(nvs.clone())?;
+    let storage = Storage::new(nvs.clone(), "e-chess")?;
 
-    let token = storage.get_str::<25>("api_token")?;
-    info!("API Token: {:?}", token);
+    let settings = Arc::new(Mutex::new(game::Settings::new(storage)?));
+
+    {
+        info!("Settings: {:?}", settings.lock().unwrap());
+    }
 
     eink_display.setup()?;
 
-    let mut server = wifi::start_wifi(&event_manager, wifi_driver, storage)?;
+    let mut server = wifi::start_wifi(&event_manager, wifi_driver, settings.clone())?;
 
     match run_game(
-        token,
         mcp23017,
         ws2812,
         &mut eink_display,
         &mut server,
         &event_manager,
+        settings,
     ) {
         Ok(_) => {
             warn!("Stopping game loop");

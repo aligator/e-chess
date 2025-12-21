@@ -1,20 +1,57 @@
-use std::{sync::mpsc::Sender, time::Duration};
+use std::{
+    fmt::Debug,
+    sync::{mpsc::Sender, Arc, Mutex},
+    time::Duration,
+};
 
+use anyhow::Result;
 use chess::BitBoard;
 use chess_game::{
     chess_connector::LocalChessConnector,
     game::{ChessGame, ChessGameError, ChessGameState},
-    lichess::LichessConnector,
 };
+
+use esp_idf_svc::nvs::NvsDefault;
 use log::*;
 use std::thread;
 use std::thread::sleep;
 
-use crate::{event::EventManager, request::EspRequester, Event};
+use crate::{api, event::EventManager, storage::Storage, Event};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Settings {
     pub token: String,
+    pub last_game_id: String,
+
+    storage: Arc<Mutex<Storage<NvsDefault>>>,
+}
+
+impl Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Settings")
+            .field("token", &self.token)
+            .field("last_game_id", &self.last_game_id)
+            .finish()
+    }
+}
+
+impl Settings {
+    pub fn new(storage: Storage<NvsDefault>) -> Result<Self> {
+        Ok(Settings {
+            token: storage.get_str::<25>("api_token")?.unwrap_or_default(),
+            last_game_id: storage.get_str::<57>("last_game_id")?.unwrap_or_default(), // use 57 so it may be used for FEN strings also...
+
+            storage: Arc::new(Mutex::new(storage)),
+        })
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let mut storage = self.storage.lock().unwrap();
+
+        storage.set_str("api_token", &self.token)?;
+        storage.set_str("last_game_id", &self.last_game_id)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -31,12 +68,11 @@ pub enum GameCommandEvent {
     UpdatePhysical(BitBoard),
     RequestTakeBack,
     AcceptTakeBack,
-    NewSettings(Settings),
 }
 
 fn load_game(
     game_key: String,
-    settings: &Settings,
+    settings: Arc<Mutex<Settings>>,
     tx: Sender<Event>,
 ) -> Result<ChessGame, ChessGameError> {
     // If the game key is a FEN string, parse it and start a local game.
@@ -44,8 +80,7 @@ fn load_game(
     let mut chess_game = ChessGame::new(if game_key.contains(" ") {
         LocalChessConnector::new()
     } else {
-        let requester = EspRequester::new(settings.token.clone());
-        Box::new(LichessConnector::new(requester))
+        api::create(settings.clone())
     })?;
 
     // Load the new game
@@ -66,6 +101,12 @@ fn load_game(
             ))) {
                 warn!("Failed to send game loaded event: {:?}", e);
             }
+
+            // Update the last_game_id in settings
+            let mut settings = settings.lock().unwrap();
+            settings.last_game_id = game_key;
+            settings.save().unwrap();
+
             Ok(chess_game)
         }
         Err(e) => {
@@ -80,14 +121,12 @@ fn load_game(
     }
 }
 
-pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>) {
+pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Settings>>) {
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
     info!("Starting game thread");
     thread::spawn(move || {
-        let mut settings = initial_settings;
-
         let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
         info!("Created ChessGame");
 
@@ -110,7 +149,7 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                         info!("Loading new game: {}", game_id);
 
-                        match load_game(game_id, &settings, tx.clone()) {
+                        match load_game(game_id, settings.clone(), tx.clone()) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick
                                 last_game_state = None;
@@ -120,9 +159,6 @@ pub fn run_game(initial_settings: Settings, event_manager: &EventManager<Event>)
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
                         }
-                    }
-                    Event::GameCommand(GameCommandEvent::NewSettings(new_settings)) => {
-                        settings = new_settings;
                     }
                     _ => {}
                 }

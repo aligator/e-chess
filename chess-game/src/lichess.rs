@@ -1,5 +1,7 @@
 use crate::{
-    chess_connector::{ChessConnector, ChessConnectorError, GameEvent, GameState},
+    chess_connector::{
+        ChessConnector, ChessConnectorError, GameEvent, GameState, OngoingGame, PlayerInfo,
+    },
     requester::Requester,
 };
 use chess::{ChessMove, Game};
@@ -99,7 +101,57 @@ impl<R: Requester> LichessConnector<R> {
     }
 }
 
+fn map_ongoing_game(json_value: &serde_json::Value) -> Option<OngoingGame> {
+    let game_id = json_value.get("gameId");
+    let oppenent_info = json_value.get("opponent");
+
+    if game_id.is_none() || oppenent_info.is_none() {
+        return None;
+    }
+
+    let opponent = oppenent_info.unwrap();
+    let id = opponent.get("id")?.as_str()?.to_string();
+    let username = opponent.get("username")?.as_str()?.to_string();
+
+    if let Some(game_id) = game_id.and_then(|v| v.as_str()) {
+        Some(OngoingGame {
+            game_id: game_id.to_string(),
+            opponent: PlayerInfo { id, username },
+        })
+    } else {
+        None
+    }
+}
+
 impl<R: Requester> ChessConnector for LichessConnector<R> {
+    fn find_open_games(&self) -> Result<Vec<OngoingGame>, ChessConnectorError> {
+        // Call lichess API to get list of open games
+        let response = self
+            .request
+            .get("https://lichess.org/api/account/playing?nb=9")
+            .map_err(|e| ChessConnectorError::RequestError(e.to_string()))?;
+
+        // First, try to parse the JSON to get the type field
+        let json_value: serde_json::Value = serde_json::from_str(&response)
+            .map_err(|e| ChessConnectorError::InvalidResponse(e.to_string()))?;
+
+        // Map the ids of the open games
+        let now_playing = json_value
+            .get("nowPlaying")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| {
+                ChessConnectorError::InvalidResponse(
+                    "missing or invalid 'nowPlaying' field".to_string(),
+                )
+            })?;
+
+        let game_ids = now_playing
+            .iter()
+            .filter_map(|game| map_ongoing_game(game))
+            .collect::<Vec<OngoingGame>>();
+        Ok(game_ids)
+    }
+
     fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
         let (tx, rx) = mpsc::channel();
         self.upstream_rx = rx;
