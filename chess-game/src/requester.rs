@@ -12,6 +12,7 @@ pub trait Requester {
 
     fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), Self::RequestError>;
     fn post(&self, url: &str, body: &str) -> Result<String, Self::RequestError>;
+    fn get(&self, url: &str) -> Result<String, Self::RequestError>;
 }
 
 #[derive(Debug)]
@@ -36,6 +37,10 @@ impl Requester for DummyRequester {
     }
 
     fn post(&self, _url: &str, _body: &str) -> Result<String, Self::RequestError> {
+        Ok(String::new())
+    }
+
+    fn get(&self, _url: &str) -> Result<String, Self::RequestError> {
         Ok(String::new())
     }
 }

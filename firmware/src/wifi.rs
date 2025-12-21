@@ -1,16 +1,22 @@
 use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
+use esp_idf_hal::task::yield_now;
 use esp_idf_svc::nvs::NvsPartitionId;
-use esp_idf_svc::{http::{
-        Method, server::{self, EspHttpServer}
-    }, wifi::{self, EspWifi}};
+use esp_idf_svc::{
+    http::{
+        server::{self, EspHttpServer},
+        Method,
+    },
+    wifi::{self, EspWifi},
+};
+use esp_ota::OtaUpdate;
 use log::*;
 use maud::{html, PreEscaped, DOCTYPE};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, sleep};
 use std::time::Duration;
-use esp_ota::OtaUpdate;
 
 use crate::event::EventManager;
 use crate::game::{GameCommandEvent, Settings};
@@ -30,7 +36,6 @@ enum WifiEvent {
     WifiSettings(WifiSettings),
     AppSettings(AppSettings),
 }
-
 
 /// Information about the Access Point.
 /// Can be used to display the SSID and password to the user.
@@ -53,7 +58,7 @@ pub struct WifiInfo {
 pub enum ConnectionStateEvent {
     NotConnected,
     AccessPoint(AccessPointInfo),
-    Wifi(WifiInfo)
+    Wifi(WifiInfo),
 }
 
 unsafe fn handle_favicon(server: &mut EspHttpServer) -> Result<()> {
@@ -73,9 +78,7 @@ unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
         // Include the CSS file at compile time
         const CSS: &[u8] = include_bytes!("../assets/styles.css");
 
-        let mut response = request.into_response(200, None, &[
-            ("Content-Type", "text/css"),
-        ])?;
+        let mut response = request.into_response(200, None, &[("Content-Type", "text/css")])?;
         response.write_all(CSS)?;
         Ok(())
     })?;
@@ -83,44 +86,54 @@ unsafe fn handle_css(server: &mut EspHttpServer) -> Result<()> {
 }
 
 unsafe fn handle_firmware_upload(server: &mut EspHttpServer) -> Result<()> {
-    server.fn_handler_nonstatic("/upload-firmware", Method::Post, move |mut request| -> Result<()> {
-        // Initialize OTA update
-        let mut ota = OtaUpdate::begin()?;
-        
-        // Stream the firmware data in chunks
-        let mut buffer = [0u8; 1024];
-        let mut total_bytes = 0;
-        
-        loop {
-            let bytes_read = request.read(&mut buffer)?;
-            if bytes_read == 0 {
-                break; // End of stream
+    server.fn_handler_nonstatic(
+        "/upload-firmware",
+        Method::Post,
+        move |mut request| -> Result<()> {
+            // Initialize OTA update
+            let mut ota = OtaUpdate::begin()?;
+
+            // Stream the firmware data in chunks
+            let mut buffer = [0u8; 1024];
+            let mut total_bytes = 0;
+
+            loop {
+                let bytes_read = request.read(&mut buffer)?;
+                if bytes_read == 0 {
+                    break; // End of stream
+                }
+
+                // Write the chunk to OTA
+                ota.write(&buffer[..bytes_read])?;
+                total_bytes += bytes_read;
             }
-            
-            // Write the chunk to OTA
-            ota.write(&buffer[..bytes_read])?;
-            total_bytes += bytes_read;
-        }
-        
-        // Finalize the update
-        let mut completed_ota = ota.finalize()?;
-        
-        // Set the new partition as bootable
-        completed_ota.set_as_boot_partition()?;
-        
-        let mut response = request.into_ok_response()?;
-        response.write_all(format!("Firmware update successful ({} bytes). Restarting...", total_bytes).as_bytes())?;
-        
-        // Schedule a restart after a short delay
-        thread::spawn(|| {
-            thread::sleep(Duration::from_secs(2));
-            unsafe {
-                esp_idf_sys::esp_restart();
-            }
-        });
-        
-        Ok(())
-    })?;
+
+            // Finalize the update
+            let mut completed_ota = ota.finalize()?;
+
+            // Set the new partition as bootable
+            completed_ota.set_as_boot_partition()?;
+
+            let mut response = request.into_ok_response()?;
+            response.write_all(
+                format!(
+                    "Firmware update successful ({} bytes). Restarting...",
+                    total_bytes
+                )
+                .as_bytes(),
+            )?;
+
+            // Schedule a restart after a short delay
+            thread::spawn(|| {
+                thread::sleep(Duration::from_secs(2));
+                unsafe {
+                    esp_idf_sys::esp_restart();
+                }
+            });
+
+            Ok(())
+        },
+    )?;
     Ok(())
 }
 
@@ -129,9 +142,8 @@ unsafe fn handle_firmware_js(server: &mut EspHttpServer) -> Result<()> {
         // Include the JavaScript file at compile time
         const JS: &[u8] = include_bytes!("../assets/firmware.js");
 
-        let mut response = request.into_response(200, None, &[
-            ("Content-Type", "application/javascript"),
-        ])?;
+        let mut response =
+            request.into_response(200, None, &[("Content-Type", "application/javascript")])?;
         response.write_all(JS)?;
         Ok(())
     })?;
@@ -154,7 +166,7 @@ pub fn page(body: String) -> String {
                 div class="header" {
                     // Title on the left
                     h1 { "E-Chess" }
-                    
+
                     // Menu for navigation on the right
                     div class="menu-container" {
                         div class="menu" {
@@ -162,7 +174,7 @@ pub fn page(body: String) -> String {
                             a href="/settings" class="menu-item" id="menu-settings" { "Settings" }
                         }
                     }
-                    
+
                     // GitHub button in top right
                     a href="https://github.com/aligator/e-chess" target="_blank" class="github-button" {
                         span class="github-icon" {}
@@ -211,18 +223,18 @@ pub fn handle_main(server: &mut EspHttpServer) -> Result<()> {
     Ok(())
 }
 
-pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
+pub fn handle_wifi_settings(
     server: &mut EspHttpServer,
     mut wifi_driver: EspWifi<'static>,
-    mut storage: Storage<T>,
+    settings: Arc<Mutex<Settings>>,
     tx_event: Sender<Event>,
 ) -> Result<()> {
     server.fn_handler("/settings", Method::Get, |request| {
         let html: String = page(
             html!(
                 div class="container" {
-                    p class="message" { 
-                        "Please enter the SSID and password of the network you want to connect to." 
+                    p class="message" {
+                        "Please enter the SSID and password of the network you want to connect to."
                     }
                     form action="/connect" method="POST" {
                         div class="form-group" {
@@ -238,7 +250,11 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
                 }
                 div class="container" {
                     p class="message" {
-                        "Set here the lichess api token." 
+                        "Set here the lichess api token."
+                    }
+                    p class="message" {
+                        "You can generate a token "
+                        a href="https://lichess.org/account/oauth/token/create?scopes[]=follow:read&scopes[]=challenge:read&scopes[]=challenge:write&scopes[]=board:play&description=E-Chess+board" target="_blank" { "here" }
                     }
                     form action="/save_settings" method="POST" {
                         div class="form-group" {
@@ -250,7 +266,7 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
                 }
                 div class="container" {
                     p class="message" {
-                        "Firmware Update" 
+                        "Firmware Update"
                     }
                     div class="form-group" {
                         label for="firmware-upload" { "Select firmware file:" }
@@ -399,13 +415,15 @@ pub fn handle_wifi_settings<T: NvsPartitionId + 'static>(
                         .expect("Failed to set configuration");
                     reset::restart();
                 }
-                WifiEvent::AppSettings(settings) => {
-                    info!("Received new api token: {}", settings.api_token);
-                    storage.set_str("api_token", &settings.api_token).unwrap();
+                WifiEvent::AppSettings(app_settings) => {
+                    info!("Received new api token: {}", app_settings.api_token);
+                    let mut settings = settings.lock().unwrap();
+                    settings.token = app_settings.api_token.clone();
 
-                    tx_event.send(Event::GameCommand(GameCommandEvent::NewSettings(Settings {
-                        token: settings.api_token,
-                    }))).unwrap();
+                    settings.save().unwrap();
+
+                    // For now simply restart to apply new settings.
+                    reset::restart();
                 }
             },
             Err(_) => {
@@ -428,25 +446,40 @@ fn ap_config() -> wifi::Configuration {
     })
 }
 
-fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
+fn try_connect(wifi_driver: &mut EspWifi) -> Result<bool> {
     info!("Trying to connect to Wifi");
     wifi_driver.connect()?;
 
-    let mut count = 0;
+    let start_time = std::time::Instant::now();
     while !wifi_driver.is_connected()? {
-        if count > 15 {
+        if std::time::Instant::now()
+            .duration_since(start_time)
+            .as_secs()
+            > 30
+        {
             info!("Failed to connect to Wifi");
             info!("Starting Access Point while preserving settings");
             let ap_config = ap_config();
-            wifi_driver.set_configuration(&ap_config)?;
+            let wifi_config = wifi_driver.get_configuration()?;
+            let mixed = wifi::Configuration::Mixed(
+                wifi_config.as_client_conf_ref().unwrap().clone(),
+                ap_config.as_ap_conf_ref().unwrap().clone(),
+            );
+            wifi_driver.set_configuration(&mixed)?;
             wifi_driver.start()?;
 
-            return Ok(());
+            return Ok(false);
         }
 
-        info!("Waiting for Wifi connection...");
-        sleep(Duration::from_secs(1));
-        count += 1;
+        if std::time::Instant::now()
+            .duration_since(start_time)
+            .as_nanos()
+            % 2000000000
+            == 0
+        {
+            info!("Still trying to connect...");
+        }
+        sleep(Duration::from_millis(500));
     }
 
     if wifi_driver.is_connected()? {
@@ -455,28 +488,30 @@ fn try_connect(wifi_driver: &mut EspWifi) -> Result<()> {
         info!("Failed to connect to Wifi, enabled Access Point while preserving settings");
     }
 
-    Ok(())
+    Ok(true)
 }
 
-pub fn start_wifi<T: NvsPartitionId + 'static>(
+pub fn start_wifi(
     event_manager: &EventManager<Event>,
     mut wifi_driver: EspWifi<'static>,
-    storage: Storage<T>,
+    settings: Arc<Mutex<Settings>>,
 ) -> Result<EspHttpServer<'static>> {
     let tx_event = event_manager.create_sender();
-
 
     let wifi_configuration: wifi::Configuration = match wifi_driver.get_configuration() {
         Ok(config) => {
             let default_config = ap_config();
-            if let Some(_current_ap_config) = config.as_ap_conf_ref() {
+            if let Some(client_config) = config.as_client_conf_ref() {
+                info!(
+                    "Valid Client Configuration found - use it: {}",
+                    client_config.ssid
+                );
+                config
+            } else {
+                info!("No Client Configuration found. Fall back to AP.");
                 // Always reset to the default AP config to ensure known credentials.
                 wifi_driver.set_configuration(&default_config)?;
                 default_config
-
-            } else {
-                info!("Valid AP Configuration found - use it");
-                config
             }
         }
         Err(_) => {
@@ -491,35 +526,50 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
 
     if let Some(client_config) = wifi_configuration.as_client_conf_ref() {
         info!("Starting Client {}", client_config.ssid);
-        try_connect(&mut wifi_driver)?;
+        let is_wifi = try_connect(&mut wifi_driver)?;
 
-        // Wait until dns is available.
-        loop {
-            let dns_res = wifi_driver.sta_netif().get_dns();
-            let ip = wifi_driver.sta_netif().get_ip_info()?.ip.to_string();
-            info!("DNS: {:?}", dns_res);
-            info!("IP : {}", ip);
-            if !dns_res.is_unspecified() && ip != "0.0.0.0" {
-                break;
+        if is_wifi {
+            // Wait until dns is available.
+            loop {
+                let dns_res = wifi_driver.sta_netif().get_dns();
+                let ip = wifi_driver.sta_netif().get_ip_info()?.ip.to_string();
+                info!("DNS: {:?}", dns_res);
+                info!("IP : {}", ip);
+                if !dns_res.is_unspecified() && ip != "0.0.0.0" {
+                    break;
+                }
+                info!("Waiting for IP and DNS...");
+
+                sleep(Duration::from_secs(1));
             }
-            info!("Waiting for IP and DNS...");
-
-            sleep(Duration::from_secs(1));
+            tx_event.send(Event::ConnectionState(ConnectionStateEvent::Wifi(
+                WifiInfo {
+                    ssid: client_config.ssid.to_string(),
+                    ip: wifi_driver.sta_netif().get_ip_info()?.ip.to_string(),
+                },
+            )))?;
+        } else {
+            // Display fallback AP info
+            let config = ap_config();
+            let ap_config = config.as_ap_conf_ref().unwrap();
+            tx_event.send(Event::ConnectionState(ConnectionStateEvent::AccessPoint(
+                AccessPointInfo {
+                    ssid: ap_config.ssid.to_string(),
+                    password: ap_config.password.to_string(),
+                    ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
+                },
+            )))?;
         }
-
-        tx_event.send(Event::ConnectionState(ConnectionStateEvent::Wifi(WifiInfo { 
-            ssid: client_config.ssid.to_string(), 
-            ip: wifi_driver.sta_netif().get_ip_info()?.ip.to_string(),
-        })))?;
-
     } else if let Some(ap_config) = wifi_configuration.as_ap_conf_ref() {
         info!("Starting Access Point {}", ap_config.ssid);
         info!("IP info: {:?}", wifi_driver.ap_netif());
-        tx_event.send(Event::ConnectionState(ConnectionStateEvent::AccessPoint(AccessPointInfo { 
-            ssid: ap_config.ssid.to_string(), 
-            password: ap_config.password.to_string(), 
-            ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
-        })))?;
+        tx_event.send(Event::ConnectionState(ConnectionStateEvent::AccessPoint(
+            AccessPointInfo {
+                ssid: ap_config.ssid.to_string(),
+                password: ap_config.password.to_string(),
+                ip: wifi_driver.ap_netif().get_ip_info()?.ip.to_string(),
+            },
+        )))?;
     } else {
         info!("Unknown Wifi Configuration");
         let _ = tx_event.send(Event::ConnectionState(ConnectionStateEvent::NotConnected));
@@ -527,16 +577,14 @@ pub fn start_wifi<T: NvsPartitionId + 'static>(
 
     let mut server = EspHttpServer::new(&server::Configuration::default())?;
 
-
-
-    unsafe { 
+    unsafe {
         handle_favicon(&mut server)?;
         handle_css(&mut server)?;
         handle_firmware_js(&mut server)?;
         handle_firmware_upload(&mut server)?;
         handle_main(&mut server)?;
     }
-    handle_wifi_settings(&mut server, wifi_driver, storage, tx_event)?;
+    handle_wifi_settings(&mut server, wifi_driver, settings, tx_event)?;
 
     Ok(server)
 }

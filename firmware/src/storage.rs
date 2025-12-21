@@ -6,12 +6,9 @@ pub struct Storage<T: NvsPartitionId> {
     nvs: EspNvs<T>,
 }
 
-const SETTINGS_NAMESPACE: &str = "e-chess";
-
 impl<T: NvsPartitionId> Storage<T> {
-    pub fn new(nvs_partition: EspNvsPartition<T>) -> Result<Self> {
-        let nvs =
-            EspNvs::new(nvs_partition, SETTINGS_NAMESPACE, true).expect("could not create nvs");
+    pub fn new(nvs_partition: EspNvsPartition<T>, namespace: &str) -> Result<Self> {
+        let nvs = EspNvs::new(nvs_partition, namespace, true).expect("could not create nvs");
         Ok(Self { nvs })
     }
     pub fn get_str<const N: usize>(&self, key: &str) -> Result<Option<String>> {

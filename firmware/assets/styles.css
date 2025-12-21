@@ -1,4 +1,4 @@
-body { 
+body {
     font-family: Arial, sans-serif;
     display: flex;
     flex-direction: column;
@@ -7,7 +7,7 @@ body {
     margin: 0;
     padding: 0;
 }
-h1 { 
+h1 {
     color: #333;
     margin-bottom: 1em;
 }
@@ -45,7 +45,7 @@ td {
     padding: 15px;
     background-color: white;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 .game-info p {
     margin: 5px 0;
@@ -106,7 +106,7 @@ td {
     background-color: white;
     padding: 30px;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     max-width: 400px;
     width: 100%;
 }
@@ -191,7 +191,7 @@ a:hover {
     width: 100%;
     background-color: white;
     padding: 10px 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     margin-bottom: 20px;
     position: relative;
     display: flex;
@@ -231,7 +231,7 @@ a:hover {
     align-items: center;
     justify-content: center;
     transition: background-color 0.2s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .github-button:hover {
@@ -288,3 +288,48 @@ a.menu-item:hover {
     align-items: center;
 }
 
+.combo-dropdown {
+    position: relative;
+    width: 280px;
+    font: 14px system-ui;
+}
+
+.combo-dropdown > .combo-input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+.combo-dropdown > .combo-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 6px);
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    max-height: 180px;
+    overflow: auto;
+    display: none;
+}
+
+.combo-dropdown.is-open > .combo-list {
+    display: block;
+}
+
+.combo-dropdown > .combo-list .combo-option {
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.combo-dropdown > .combo-list .combo-option:hover {
+    background: #eee;
+}
+
+.combo-dropdown > .combo-list .combo-option.is-empty {
+    color: #666;
+    cursor: default;
+}

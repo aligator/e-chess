@@ -37,6 +37,27 @@ async fn main() {
         Box::new(lichess::LichessConnector::new(Request { api_key }))
     };
 
+    let open_games = connector.find_open_games().unwrap();
+
+    // List open games with index
+    println!("Open games:");
+    for (index, game) in open_games.iter().enumerate() {
+        println!("  {}: {}", index + 1, game.game_id);
+    }
+    let id = if !id.is_empty() {
+        id
+    } else {
+        // Ask user to select a game
+        print!("Select a game by number: ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        let input = input.trim();
+        let index: usize = input.parse().unwrap_or(1);
+        open_games.get(index - 1).unwrap().game_id.clone()
+    };
+
     // Use the factory function from the request module
     let mut game = ChessGame::new(connector).unwrap();
     game.reset(&id).unwrap();

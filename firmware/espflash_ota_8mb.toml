@@ -1,3 +1,4 @@
+[idf]
 partition_table = "partitions_8.csv"
 
 [flash]

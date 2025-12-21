@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use chess::{ChessMove, Game};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -26,7 +27,22 @@ pub enum GameEvent {
     Unknown,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlayerInfo {
+    pub id: String,
+    pub username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct OngoingGame {
+    pub game_id: String,
+    pub opponent: PlayerInfo,
+}
+
 pub trait ChessConnector {
+    /// Find open games.
+    fn find_open_games(&self) -> Result<Vec<OngoingGame>, ChessConnectorError>;
+
     /// Loads a game by id and returns the Game.
     fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError>;
 
@@ -44,6 +60,16 @@ pub trait ChessConnector {
 pub struct LocalChessConnector;
 
 impl ChessConnector for LocalChessConnector {
+    fn find_open_games(&self) -> Result<Vec<OngoingGame>, ChessConnectorError> {
+        Ok(vec![OngoingGame {
+            game_id: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+            opponent: PlayerInfo {
+                id: "local_opponent".to_string(),
+                username: "Local Opponent".to_string(),
+            },
+        }])
+    }
+
     /// Loads a game by initializing a new game with the starting position.
     fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
         Game::from_str(id).map_err(|_| ChessConnectorError::InvalidFen(id.to_string()))

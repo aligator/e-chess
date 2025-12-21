@@ -333,4 +333,49 @@ impl Requester for EspRequester {
         }
         result
     }
+
+    fn get(&self, url: &str) -> Result<String, Self::RequestError> {
+        info!("Starting GET request to: {}", url);
+
+        // Prepare headers with auth token
+        let headers = [
+            ("accept", "application/json"),
+            ("Authorization", &format!("Bearer {}", self.api_key)),
+        ];
+
+        // Create the request
+        // It is more stable to create a new client each time. But maybe not fast...
+        let mut client = create_client()?;
+        let request = match client.request(Method::Get, url, &headers) {
+            Ok(req) => req,
+            Err(e) => {
+                info!("Error creating GET request: {:?}", e);
+                return Err(RequestError::EspIO(e));
+            }
+        };
+
+        // Submit the request
+        let response = match request.submit() {
+            Ok(resp) => resp,
+            Err(e) => {
+                info!("Error submitting GET request: {:?}", e);
+                return Err(RequestError::EspIO(e));
+            }
+        };
+
+        let status = response.status();
+
+        // Process the response
+        let result = EspRequester::process_response(response, status);
+        match &result {
+            Ok(response_text) => {
+                info!("GET request completed successfully");
+                debug!("GET response body: {}", response_text);
+            }
+            Err(e) => {
+                info!("GET request failed: {:?}", e);
+            }
+        }
+        result
+    }
 }
