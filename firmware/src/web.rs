@@ -27,7 +27,7 @@ pub struct Web {
 
 unsafe fn handle_api(server: &mut EspHttpServer, settings: Arc<Mutex<Settings>>) -> Result<()> {
     server.fn_handler_nonstatic("/api/game", Method::Get, move |request| -> Result<()> {
-        let api = api::create(settings.clone());
+        let api = api::create(settings.clone())?;
 
         let open_games = api.find_open_games()?;
 

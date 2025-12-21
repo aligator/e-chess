@@ -1,8 +1,6 @@
 use anyhow::Result;
 use esp_idf_hal::io::Write;
 use esp_idf_hal::reset;
-use esp_idf_hal::task::yield_now;
-use esp_idf_svc::nvs::NvsPartitionId;
 use esp_idf_svc::{
     http::{
         server::{self, EspHttpServer},
@@ -19,8 +17,7 @@ use std::thread::{self, sleep};
 use std::time::Duration;
 
 use crate::event::EventManager;
-use crate::game::{GameCommandEvent, Settings};
-use crate::storage::Storage;
+use crate::game::Settings;
 use crate::Event;
 
 struct WifiSettings {
@@ -94,12 +91,13 @@ unsafe fn handle_firmware_upload(server: &mut EspHttpServer) -> Result<()> {
             let mut ota = OtaUpdate::begin()?;
 
             // Stream the firmware data in chunks
-            let mut buffer = [0u8; 1024];
+            let mut buffer = [0u8; 16]; // with bigger chunks it seems to be unstable...
             let mut total_bytes = 0;
 
             loop {
                 let bytes_read = request.read(&mut buffer)?;
                 if bytes_read == 0 {
+                    info!("end of stream");
                     break; // End of stream
                 }
 

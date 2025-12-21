@@ -60,7 +60,12 @@ impl<'a> Display<'a> {
         pixel
     }
 
-    pub fn tick(&mut self, game: &ChessGameState) -> Result<()> {
+    pub fn tick(&mut self, game: &Option<ChessGameState>) -> Result<()> {
+        if game.is_none() {
+            return Ok(());
+        }
+        let game = game.unwrap();
+
         if self.previous_state != Some((game.physical, game.expected_physical)) {
             let diff = game.expected_physical.diff(game.physical);
             let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];

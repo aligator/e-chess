@@ -123,7 +123,7 @@ where
         Ok(())
     }
 
-    pub fn tick(&mut self, _physical: BitBoard, _game: &ChessGameState) -> Result<()> {
+    pub fn tick(&mut self, _physical: BitBoard, _game: &Option<ChessGameState>) -> Result<()> {
         // Get debounced button states
         let button_a = self
             .debouncer_a

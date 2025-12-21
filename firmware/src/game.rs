@@ -16,7 +16,7 @@ use log::*;
 use std::thread;
 use std::thread::sleep;
 
-use crate::{api, event::EventManager, storage::Storage, Event};
+use crate::{api, event::EventManager, storage::Storage, wifi::ConnectionStateEvent, Event};
 
 #[derive(Clone)]
 pub struct Settings {
@@ -80,7 +80,7 @@ fn load_game(
     let mut chess_game = ChessGame::new(if game_key.contains(" ") {
         LocalChessConnector::new()
     } else {
-        api::create(settings.clone())
+        api::create(settings.clone()).unwrap()
     })?;
 
     // Load the new game
@@ -132,11 +132,21 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
 
         let mut physical = BitBoard::new(0);
         let mut last_game_state: Option<ChessGameState> = None;
+
+        let mut wifi_connected = false;
         loop {
             // Sleep for 100ms to avoid busy-waiting
             sleep(Duration::from_millis(100));
             while let Ok(event) = rx.try_recv() {
                 match event {
+                    Event::ConnectionState(ConnectionStateEvent::Wifi(_wifi_info)) => {
+                        wifi_connected = true;
+                    }
+                    Event::ConnectionState(ConnectionStateEvent::NotConnected) => {
+                        wifi_connected = false;
+                    }
+                    // Handle WiFi connection state changes if needed
+                    // Handle WiFi connection state changes if needed
                     Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
                         physical = new_physical;
                     }
@@ -147,6 +157,11 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
                         warn!("Not implemented");
                     }
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
+                        if !game_id.contains(" ") && !wifi_connected {
+                            warn!("Cannot load new game, WiFi not connected");
+                            continue;
+                        }
+
                         info!("Loading new game: {}", game_id);
 
                         match load_game(game_id, settings.clone(), tx.clone()) {
@@ -180,7 +195,7 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
 
                         last_game_state = Some(state)
                     } else {
-                        warn!("No game state found");
+                        //warn!("No game state found");
                     }
                 }
                 Err(e) => error!("Error ticking game: {:?}", e),

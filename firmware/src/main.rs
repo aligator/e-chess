@@ -143,10 +143,8 @@ where
             }
         }
 
-        if let Some(game_state) = last_game_state.clone() {
-            display.tick(&game_state)?;
-            eink_display.tick(physical, &game_state)?;
-        }
+        display.tick(&last_game_state)?;
+        eink_display.tick(physical, &last_game_state)?;
     }
 }
 
