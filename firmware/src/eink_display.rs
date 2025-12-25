@@ -16,10 +16,8 @@ use epd_waveshare::epd1in54::Display1in54;
 use epd_waveshare::epd1in54_v2::Epd1in54;
 use epd_waveshare::prelude::*;
 use log::info;
-use qrcode::QrCode;
 
 use crate::event::EventManager;
-use crate::wifi::{AccessPointInfo, ConnectionStateEvent, WifiInfo};
 use crate::Event;
 
 #[derive(Default)]
@@ -56,7 +54,6 @@ where
     small_text_style: MonoTextStyle<'static, Color>,
     normal_text_style: MonoTextStyle<'static, Color>,
 
-    connection: Option<ConnectionStateEvent>,
     state: MenuState,
 
     event_rx: std::sync::mpsc::Receiver<Event>,
@@ -103,7 +100,6 @@ where
             small_text_style: MonoTextStyle::new(&FONT_4X6, Color::Black),
             normal_text_style: MonoTextStyle::new(&FONT_6X13, Color::Black),
 
-            connection: Option::None,
             state: MenuState::default(),
 
             event_rx: event_manager.create_receiver(),
@@ -154,10 +150,6 @@ where
 
         match self.event_rx.try_recv() {
             Ok(event) => match event {
-                Event::ConnectionState(connection_event) => {
-                    self.connection = Some(connection_event);
-                    self.dirty = true;
-                }
                 _ => {}
             },
             Err(_) => {}
@@ -166,33 +158,7 @@ where
         if self.dirty {
             self.dirty = false;
             match self.state {
-                MenuState::ConnectionInfo => {
-                    if let Some(connection) = self.connection.clone() {
-                        match connection {
-                            ConnectionStateEvent::Wifi(wifi_info) => {
-                                self.display_wifi_info(&wifi_info)?
-                            }
-                            ConnectionStateEvent::AccessPoint(access_point) => {
-                                self.display_access_point_info(&access_point)?
-                            }
-                            ConnectionStateEvent::NotConnected => {
-                                // Display not connected message
-                                self.fill_empty()?;
-                                Text::new(
-                                    "Not connected",
-                                    Point::new(10, 10),
-                                    self.normal_text_style,
-                                )
-                                .draw(&mut self.display)?;
-                                self.update_and_display_frame()?;
-                            }
-                        }
-                    }
-                }
-                MenuState::WebsiteQR => {
-                    self.display_website_info()?;
-                }
-                MenuState::GameInfo => {
+                _ => {
                     self.fill_empty()?;
                     Text::new(
                         &format!("Game Info"),
@@ -238,134 +204,6 @@ where
         )
         .into_styled(PrimitiveStyle::with_fill(Color::White))
         .draw(&mut self.display)?;
-
-        Ok(())
-    }
-
-    fn draw_qr_to_frame(&mut self, qr_content: &str, padding: u32) -> Result<(u32, u32, u32)> {
-        // Generate QR code
-        let qr = QrCode::new(qr_content.as_bytes())?;
-
-        // Calculate QR code size and position to center it on the display
-        let qr_size = qr.width() as u32;
-        let display_width = self.epd.width();
-        let display_height = self.epd.height();
-
-        // Calculate scale to fit the screen exactly
-        let scale = (display_width - padding * 2) / qr_size;
-        let qr_scaled = qr_size * scale;
-        let x_offset = (display_width - qr_scaled) / 2;
-        let y_offset = (display_height - qr_scaled) / 2;
-
-        let colors = qr.to_colors();
-        for y in 0..qr_size {
-            for x in 0..qr_size {
-                if colors[y as usize * qr_size as usize + x as usize] == qrcode::Color::Dark {
-                    let rect = Rectangle::new(
-                        Point::new(
-                            (x_offset + x as u32 * scale) as i32,
-                            (y_offset + y as u32 * scale) as i32,
-                        ),
-                        Size::new(scale, scale),
-                    )
-                    .into_styled(PrimitiveStyle::with_fill(Color::Black));
-                    rect.draw(&mut self.display)?;
-                }
-            }
-        }
-
-        Ok((x_offset, y_offset, qr_scaled))
-    }
-
-    fn display_website_info(&mut self) -> Result<()> {
-        let ip = self
-            .connection
-            .clone()
-            .map_or("N/A".to_string(), |conn| match conn {
-                ConnectionStateEvent::Wifi(wifi_info) => wifi_info.ip.clone(),
-                ConnectionStateEvent::AccessPoint(ap_info) => ap_info.ip.clone(),
-                ConnectionStateEvent::NotConnected => "N/A".to_string(),
-            });
-        self.fill_empty()?;
-
-        let padding: u32 = 14;
-        let url = format!("http://{}", ip);
-        let (x_offset, y_offset, qr_size) = self.draw_qr_to_frame(url.as_str(), padding)?;
-
-        Text::new(
-            &format!("Management UI"),
-            Point::new(1, 1),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        Text::new(
-            &format!("URL: {}", url),
-            Point::new(x_offset as i32, (y_offset + qr_size + padding) as i32),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        self.update_and_display_frame()?;
-        Ok(())
-    }
-
-    fn display_wifi_info(&mut self, wifi_info: &WifiInfo) -> Result<()> {
-        self.fill_empty()?;
-
-        Text::new(
-            &format!("Wifi Connected"),
-            Point::new(1, 1),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        Text::new(
-            &format!("SSID: {}", wifi_info.ssid),
-            Point::new(10, 10),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-        Text::new(
-            &format!("IP: {}", wifi_info.ip),
-            Point::new(10, 30),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        self.update_and_display_frame()?;
-        Ok(())
-    }
-
-    fn display_access_point_info(&mut self, access_point_info: &AccessPointInfo) -> Result<()> {
-        self.fill_empty()?;
-
-        // Create WiFi QR code content in the format: WIFI:S:<SSID>;T:WPA;P:<PASSWORD>;;
-        let qr_content = format!(
-            "WIFI:S:{};T:WPA;P:{};;",
-            access_point_info.ssid, access_point_info.password
-        );
-
-        let padding: u32 = 14;
-        let (x_offset, y_offset, qr_size) = self.draw_qr_to_frame(&qr_content, padding)?;
-
-        Text::new(
-            &format!("Access Point"),
-            Point::new(1, 1),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        // Show ip address below the QR code
-        Text::new(
-            &format!("IP: {}", access_point_info.ip),
-            Point::new(x_offset as i32, (y_offset + qr_size + padding) as i32),
-            self.normal_text_style,
-        )
-        .draw(&mut self.display)?;
-
-        // Update the display
-        self.update_and_display_frame()?;
 
         Ok(())
     }

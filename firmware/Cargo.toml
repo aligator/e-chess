@@ -29,8 +29,8 @@ esp-idf-svc = { version = "0.51", features = ["critical-section"] }
 esp-idf-hal = { version = "0.45", default-features = false, features = ["rmt-legacy"] }
 esp-idf-sys = { version = "0.36", default-features = false, features = [
     "binstart",
+    "std"
 ] }
-qrcode = { version = "0.14.1", default-features = false }
 
 anyhow = { version = "1.0.100" }
 smart-leds = { version = "0.4.0", default-features = false }
@@ -47,6 +47,7 @@ embedded-hal = "1"
 embedded-graphics = { version = "0.8" }
 epd-waveshare = { version = "0.6.0", features = ["graphics"]}
 debouncr = "0.2.2"
+esp32-nimble = "0.11.1"
 
 [build-dependencies]
 embuild = "0.33"
