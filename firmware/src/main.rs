@@ -23,7 +23,10 @@ fn main() -> Result<()> {
             .update_conn_params(clntdesc.conn_handle(), 24, 48, 0, 60)
             .unwrap();
     });
-    server.on_disconnect(|_desc, _reason| println!("Disconnected, back to advertising"));
+    server.on_disconnect(|_desc, _reason| {
+        println!("Disconnected, back to advertising");
+        let _ = ble_advertiser.lock().start();
+    });
 
     let my_service = server.create_service(uuid128!("b4d75b6c-7284-4268-8621-6e3cef3c6ac4"));
 
