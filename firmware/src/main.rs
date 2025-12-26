@@ -15,15 +15,22 @@ fn main() -> Result<()> {
     EspLogger::initialize_default();
     info!("Starting Bluetooth bridge");
 
-    let (connector, ble_runtime) =
-        bluetooth::init_ble_server("E-Chess Server", Duration::from_secs(9999))?;
+    let (connector, ble_runtime, is_connected) =
+        bluetooth::init_ble_server("E-Chess Server", Duration::from_secs(5000))?;
 
     let _ble_bridge = ble_runtime.spawn();
 
-    let data = connector.get("http://google.de")?;
-    info!("Got response: {:?}", data);
-
     loop {
-        FreeRtos::delay_ms(1000);
+        info!("Waiting for BLE connection...");
+        FreeRtos::delay_ms(5000);
+        if *is_connected.lock().unwrap() {
+            info!("BLE connected");
+            info!("Sending request ...");
+            let data = connector.get("https://official-joke-api.appspot.com/random_joke")?;
+            info!("Got response: {:?}", data);
+        } else {
+            info!("BLE NOT connected");
+            continue;
+        }
     }
 }

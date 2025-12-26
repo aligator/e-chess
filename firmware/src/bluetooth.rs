@@ -1,3 +1,7 @@
+//! Bluetooth LE transport for chess game requester.
+//! Implements a protocol over BLE GATT characteristics to send HTTP-like
+//! requests from the chess board to a connected client, which performs
+//! the actual network requests and streams data back to the board.
 use std::{
     str,
     sync::{
@@ -10,14 +14,18 @@ use std::{
 };
 
 use chess_game::requester::Requester;
-use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
+use esp32_nimble::{
+    uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, DescriptorProperties,
+    NimbleProperties,
+};
 use log::*;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
-pub const DATA_TX_CHAR_UUID: &str = "80580a69-122f-41a8-88c2-8a355fdba6a8";
-pub const DATA_RX_CHAR_UUID: &str = "c2fa1b09-e7a5-47db-9f7a-5d12f511d8c4";
+pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
+pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
+pub const CLIENT_CHARAKTERISTIC_UUID: &str = "e24d2649-e47e-473b-8da6-a3a68b01f630";
 
 #[derive(Debug)]
 pub enum BluetoothError {
@@ -400,7 +408,8 @@ impl BleRuntime {
                     Ok(frame) => {
                         let mut chr = self.tx_characteristic.lock();
                         chr.set_value(&frame);
-                        let _ = chr.notify();
+                        info!("notify characteristic");
+                        chr.notify();
                     }
                     Err(e) => warn!("Failed to encode frame: {:?}", e),
                 }
@@ -412,26 +421,36 @@ impl BleRuntime {
 pub fn init_ble_server(
     device_name: &str,
     request_timeout: Duration,
-) -> Result<(Bluetooth, BleRuntime), BluetoothError> {
+) -> Result<(Bluetooth, BleRuntime, Arc<Mutex<bool>>), BluetoothError> {
     let (connector, to_phone_rx, from_phone_tx) = Bluetooth::with_channels(request_timeout);
+    let is_connected = Arc::new(Mutex::new(false));
 
     let ble_device = BLEDevice::take();
     let ble_advertiser = ble_device.get_advertising();
     let server = ble_device.get_server();
 
-    server.on_connect(|server, desc| {
-        info!("BLE client connected: {:?}", desc);
-        if let Err(e) = server.update_conn_params(desc.conn_handle(), 24, 48, 0, 60) {
-            warn!("Failed to update connection params: {:?}", e);
-        }
-    });
+    {
+        let connection_flag = Arc::clone(&is_connected);
+        server.on_connect(move |server, desc| {
+            info!("BLE client connected: {:?}", desc);
+            if let Err(e) = server.update_conn_params(desc.conn_handle(), 24, 48, 0, 60) {
+                warn!("Failed to update connection params: {:?}", e);
+            }
+            *connection_flag.lock().unwrap() = true;
+        });
+    }
 
     let (tx_characteristic, rx_characteristic) = {
         let service = server.create_service(uuid128!(SERVICE_UUID));
         // TX characteristic: board -> phone notifications only.
         let tx_chr = service.lock().create_characteristic(
             uuid128!(DATA_TX_CHAR_UUID),
-            NimbleProperties::READ | NimbleProperties::NOTIFY,
+            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+        );
+
+        tx_chr.lock().create_descriptor(
+            uuid128!(CLIENT_CHARAKTERISTIC_UUID),
+            DescriptorProperties::READ,
         );
 
         // RX characteristic: phone -> board writes only.
@@ -445,10 +464,12 @@ pub fn init_ble_server(
 
     {
         let chr = tx_characteristic.clone();
+        let connection_flag = Arc::clone(&is_connected);
         server.on_disconnect(move |_desc, _reason| {
             info!("BLE disconnected, restarting advertising");
             let _ = ble_advertiser.lock().start();
             let _ = chr.lock().set_value(b"");
+            *connection_flag.lock().unwrap() = false;
         });
     }
 
@@ -510,5 +531,5 @@ pub fn init_ble_server(
         tx_characteristic,
     };
 
-    Ok((connector, runtime))
+    Ok((connector, runtime, is_connected))
 }
