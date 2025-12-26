@@ -41,13 +41,14 @@ heapless = {version = "0.8.0", default-features = false }
 urlencoding = {version = "2.1.3", default-features = false }
 maud = "0.27.0"
 embedded-svc = "0.28.1"
-serde_json = {version = "1.0.145", default-features = false}
+serde_json = {version = "1.0.145", features = ["std"]}
 esp-ota = "0.2.2"
 embedded-hal = "1"
 embedded-graphics = { version = "0.8" }
 epd-waveshare = { version = "0.6.0", features = ["graphics"]}
 debouncr = "0.2.2"
 esp32-nimble = "0.11.1"
+serde = "1.0.228"
 
 [build-dependencies]
 embuild = "0.33"
