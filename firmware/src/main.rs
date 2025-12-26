@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use anyhow::Result;
-use chess_game::chess_connector::ChessConnector;
+use chess_game::requester::Requester;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_svc::log::EspLogger;
 use log::info;
@@ -20,10 +20,8 @@ fn main() -> Result<()> {
 
     let _ble_bridge = ble_runtime.spawn();
 
-    let games = connector.find_open_games()?;
-    for game in games {
-        info!("Found open game: {:?}", game);
-    }
+    let data = connector.get("http://google.de")?;
+    info!("Got response: {:?}", data);
 
     loop {
         FreeRtos::delay_ms(1000);
