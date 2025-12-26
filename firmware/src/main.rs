@@ -29,8 +29,22 @@ fn main() -> Result<()> {
 
     let my_service_characteristic = my_service.lock().create_characteristic(
         uuid128!("80580a69-122f-41a8-88c2-8a355fdba6a8"),
-        NimbleProperties::READ | NimbleProperties::NOTIFY,
+        NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::WRITE,
     );
+
+    my_service_characteristic.lock().on_write(|args| {
+        println!(
+            "current: {:?}, recv: {:?}",
+            args.current_data(),
+            args.recv_data()
+        )
+    });
+
+    my_service_characteristic
+        .lock()
+        .on_read(|characteristic, desc| {
+            println!("current: {:?}, recv: {:?}", characteristic, desc)
+        });
 
     my_service_characteristic.lock().set_value(b"Start Value");
 
