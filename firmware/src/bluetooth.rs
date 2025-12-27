@@ -26,6 +26,8 @@ pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
 pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
 pub const CLIENT_CHARAKTERISTIC_UUID: &str = "e24d2649-e47e-473b-8da6-a3a68b01f630";
+// Keep notifications within the lowest possible BLE ATT MTU (23 bytes -> 20 byte payload).
+const MIN_MTU_PAYLOAD: usize = 20;
 
 #[derive(Debug)]
 pub enum BluetoothError {
@@ -407,9 +409,11 @@ impl BleRuntime {
                 match encode_frame(&msg) {
                     Ok(frame) => {
                         let mut chr = self.tx_characteristic.lock();
-                        chr.set_value(&frame);
-                        info!("notify characteristic");
-                        chr.notify();
+                        for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
+                            chr.set_value(chunk);
+                            info!("notify characteristic chunk ({} bytes)", chunk.len());
+                            chr.notify();
+                        }
                     }
                     Err(e) => warn!("Failed to encode frame: {:?}", e),
                 }

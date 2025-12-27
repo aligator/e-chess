@@ -16,14 +16,15 @@ fn main() -> Result<()> {
     info!("Starting Bluetooth bridge");
 
     let (connector, ble_runtime, is_connected) =
-        bluetooth::init_ble_server("E-Chess Server", Duration::from_secs(5000))?;
+        bluetooth::init_ble_server("E-Chess Server", Duration::from_secs(1000))?;
 
     let _ble_bridge = ble_runtime.spawn();
 
     loop {
         info!("Waiting for BLE connection...");
-        FreeRtos::delay_ms(5000);
+        FreeRtos::delay_ms(1000);
         if *is_connected.lock().unwrap() {
+            FreeRtos::delay_ms(5000);
             info!("BLE connected");
             info!("Sending request ...");
             let data = connector.get("https://official-joke-api.appspot.com/random_joke")?;

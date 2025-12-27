@@ -12,7 +12,7 @@ android {
 
     defaultConfig {
         applicationId = "me.aligator.e_chess"
-        minSdk = 24
+        minSdk = 33
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

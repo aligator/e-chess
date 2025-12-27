@@ -315,7 +315,7 @@ private val SERVICE_UUID: UUID = UUID.fromString("b4d75b6c-7284-4268-8621-6e3cef
 private val DATA_TX_CHAR_UUID: UUID = UUID.fromString("aa8381af-049a-46c2-9c92-1db7bd28883c")
 private val DATA_RX_CHAR_UUID: UUID = UUID.fromString("29e463e6-a210-4234-8d1d-4daf345b41de")
 private val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID =
-    UUID.fromString("e24d2649-e47e-473b-8da6-a3a68b01f630")
+    UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 private const val TAG_BLE = "Ble"
 
 private enum class RequestMethod {
@@ -479,6 +479,8 @@ private class BleHttpBridge(private val context: Context) {
                 return
             }
 
+            gatt.requestMtu(1024);
+
             txCharacteristic = service.getCharacteristic(DATA_TX_CHAR_UUID)
             rxCharacteristic = service.getCharacteristic(DATA_RX_CHAR_UUID)
             if (txCharacteristic == null || rxCharacteristic == null) {
@@ -505,6 +507,8 @@ private class BleHttpBridge(private val context: Context) {
     }
 
     private fun enableNotifications(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+
+
         val notificationSet = gatt.setCharacteristicNotification(characteristic, true)
         if (!notificationSet) {
             Log.w(TAG_BLE, "setCharacteristicNotification fehlgeschlagen")
@@ -539,6 +543,7 @@ private class BleHttpBridge(private val context: Context) {
     private fun nextDelimiterIndex(): Int {
         val lf = pendingBuffer.indexOf("\n")
         val cr = pendingBuffer.indexOf("\r")
+        Log.d(TAG_BLE, "$pendingBuffer")
         return listOf(lf, cr).filter { it >= 0 }.minOrNull() ?: -1
     }
 
