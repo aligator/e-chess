@@ -14,10 +14,7 @@ use std::{
 };
 
 use chess_game::requester::Requester;
-use esp32_nimble::{
-    uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, DescriptorProperties,
-    NimbleProperties,
-};
+use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::*;
 use serde::{Deserialize, Serialize};
 
@@ -25,9 +22,10 @@ pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
 pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
-pub const CLIENT_CHARAKTERISTIC_UUID: &str = "e24d2649-e47e-473b-8da6-a3a68b01f630";
-// Keep notifications within the lowest possible BLE ATT MTU (23 bytes -> 20 byte payload).
-const MIN_MTU_PAYLOAD: usize = 20;
+
+// TODO: can I increase the MTU?
+// Keep notifications within the lowest possible BLE ATT MTU (23 bytes -> 23 byte payload).
+const MIN_MTU_PAYLOAD: usize = 23;
 
 #[derive(Debug)]
 pub enum BluetoothError {
@@ -169,37 +167,150 @@ struct BluetoothInner {
 #[derive(Clone)]
 pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
+    is_connected: Arc<Mutex<bool>>,
 }
 
 impl Bluetooth {
-    fn new(transport: Arc<dyn Transport>, request_timeout: Duration) -> Self {
-        Self {
+    pub fn create_and_spawn(device_name: &str, request_timeout: Duration) -> Self {
+        let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
+        let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
+        let transport = Arc::new(ChannelTransport::new(to_phone_tx, from_phone_rx));
+
+        let mut bluetooth = Self {
             inner: Arc::new(BluetoothInner {
                 transport,
                 request_timeout,
                 next_request_id: AtomicU32::new(1),
                 pending: Mutex::new(Vec::new()),
             }),
-        }
+            is_connected: Arc::new(Mutex::new(false)),
+        };
+
+        let ble_runtime = bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx);
+
+        ble_runtime
+            .map(|runtime| {
+                runtime.spawn();
+            })
+            .unwrap_or_else(|e| {
+                error!("Failed to setup BLE runtime: {:?}", e);
+            });
+
+        bluetooth
     }
 
-    /// Helper to wire into the BLE stack: you get a requester plus the channels
-    /// you can bridge to the NimBLE callbacks (board -> phone notifications and
-    /// incoming phone -> board writes).
-    pub fn with_channels(
-        request_timeout: Duration,
-    ) -> (Self, Receiver<BoardToPhone>, Sender<PhoneToBoard>) {
-        let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
-        let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
+    fn setup_runtime(
+        &mut self,
+        device_name: &str,
+        to_phone_rx: Receiver<BoardToPhone>,
+        from_phone_tx: Sender<PhoneToBoard>,
+    ) -> Result<BleRuntime, BluetoothError> {
+        self.is_connected = Arc::new(Mutex::new(false));
 
-        (
-            Self::new(
-                Arc::new(ChannelTransport::new(to_phone_tx, from_phone_rx)),
-                request_timeout,
-            ),
-            to_phone_rx,
-            from_phone_tx,
-        )
+        let ble_device = BLEDevice::take();
+        let ble_advertiser = ble_device.get_advertising();
+        let server = ble_device.get_server();
+
+        {
+            let connection_flag = Arc::clone(&self.is_connected);
+            server.on_connect(move |server, desc| {
+                info!("BLE client connected: {:?}", desc);
+                if let Err(e) = server.update_conn_params(desc.conn_handle(), 24, 48, 0, 60) {
+                    warn!("Failed to update connection params: {:?}", e);
+                }
+                *connection_flag.lock().unwrap() = true;
+            });
+        }
+
+        let (tx_characteristic, rx_characteristic) = {
+            let service = server.create_service(uuid128!(SERVICE_UUID));
+            // TX characteristic: board -> phone notifications only.
+            let tx_chr = service.lock().create_characteristic(
+                uuid128!(DATA_TX_CHAR_UUID),
+                NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            );
+
+            // RX characteristic: phone -> board writes only.
+            let rx_chr = service.lock().create_characteristic(
+                uuid128!(DATA_RX_CHAR_UUID),
+                NimbleProperties::READ | NimbleProperties::WRITE,
+            );
+
+            (tx_chr, rx_chr)
+        };
+
+        {
+            let chr = tx_characteristic.clone();
+            let connection_flag = Arc::clone(&self.is_connected);
+            server.on_disconnect(move |_desc, _reason| {
+                info!("BLE disconnected, restarting advertising");
+                let _ = ble_advertiser.lock().start();
+                let _ = chr.lock().set_value(b"");
+                *connection_flag.lock().unwrap() = false;
+            });
+        }
+
+        {
+            let tx = from_phone_tx.clone();
+            let rx_buffer = Arc::new(Mutex::new(Vec::new()));
+            let chr = rx_characteristic.clone();
+            chr.lock().on_write(move |args| {
+                let data = args.recv_data();
+                info!("frame received {:?}", data);
+                let mut buffer = rx_buffer.lock().unwrap();
+
+                const MAX_MULTI_FRAME_LEN: usize = 4096;
+
+                if buffer.len() + data.len() > MAX_MULTI_FRAME_LEN {
+                    warn!(
+                        "Incoming BLE data exceeded max frame length ({}), clearing buffer",
+                        MAX_MULTI_FRAME_LEN
+                    );
+                    buffer.clear();
+                    if data.len() > MAX_MULTI_FRAME_LEN {
+                        warn!("Single BLE write too large, dropping");
+                        return;
+                    }
+                }
+
+                buffer.extend_from_slice(data);
+
+                while let Some(pos) = buffer.iter().position(|b| *b == b'\n' || *b == b'\r') {
+                    let frame: Vec<u8> = buffer.drain(..=pos).collect();
+                    match decode_frame(&frame) {
+                        Ok(msg) => {
+                            if let Err(e) = tx.send(msg) {
+                                error!("Failed to queue incoming BLE frame: {:?}", e);
+                            }
+                        }
+                        Err(e) => warn!("Failed to decode incoing BLE frame: {:?}", e),
+                    }
+                }
+            });
+        }
+
+        ble_advertiser
+            .lock()
+            .set_data(
+                BLEAdvertisementData::new()
+                    .name(device_name)
+                    .add_service_uuid(uuid128!(SERVICE_UUID)),
+            )
+            .map_err(|e| BluetoothError::Transport(e.to_string()))?;
+
+        ble_advertiser
+            .lock()
+            .start()
+            .map_err(|e| BluetoothError::Transport(e.to_string()))?;
+
+        Ok(BleRuntime {
+            outgoing_rx: to_phone_rx,
+            tx_characteristic,
+        })
+    }
+
+    pub fn is_connected(&self) -> bool {
+        *self.is_connected.lock().unwrap()
     }
 
     fn next_id(&self) -> u32 {
@@ -420,120 +531,4 @@ impl BleRuntime {
             }
         })
     }
-}
-
-pub fn init_ble_server(
-    device_name: &str,
-    request_timeout: Duration,
-) -> Result<(Bluetooth, BleRuntime, Arc<Mutex<bool>>), BluetoothError> {
-    let (connector, to_phone_rx, from_phone_tx) = Bluetooth::with_channels(request_timeout);
-    let is_connected = Arc::new(Mutex::new(false));
-
-    let ble_device = BLEDevice::take();
-    let ble_advertiser = ble_device.get_advertising();
-    let server = ble_device.get_server();
-
-    {
-        let connection_flag = Arc::clone(&is_connected);
-        server.on_connect(move |server, desc| {
-            info!("BLE client connected: {:?}", desc);
-            if let Err(e) = server.update_conn_params(desc.conn_handle(), 24, 48, 0, 60) {
-                warn!("Failed to update connection params: {:?}", e);
-            }
-            *connection_flag.lock().unwrap() = true;
-        });
-    }
-
-    let (tx_characteristic, rx_characteristic) = {
-        let service = server.create_service(uuid128!(SERVICE_UUID));
-        // TX characteristic: board -> phone notifications only.
-        let tx_chr = service.lock().create_characteristic(
-            uuid128!(DATA_TX_CHAR_UUID),
-            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
-        );
-
-        tx_chr.lock().create_descriptor(
-            uuid128!(CLIENT_CHARAKTERISTIC_UUID),
-            DescriptorProperties::READ,
-        );
-
-        // RX characteristic: phone -> board writes only.
-        let rx_chr = service.lock().create_characteristic(
-            uuid128!(DATA_RX_CHAR_UUID),
-            NimbleProperties::READ | NimbleProperties::WRITE,
-        );
-
-        (tx_chr, rx_chr)
-    };
-
-    {
-        let chr = tx_characteristic.clone();
-        let connection_flag = Arc::clone(&is_connected);
-        server.on_disconnect(move |_desc, _reason| {
-            info!("BLE disconnected, restarting advertising");
-            let _ = ble_advertiser.lock().start();
-            let _ = chr.lock().set_value(b"");
-            *connection_flag.lock().unwrap() = false;
-        });
-    }
-
-    {
-        let tx = from_phone_tx.clone();
-        let rx_buffer = Arc::new(Mutex::new(Vec::new()));
-        let chr = rx_characteristic.clone();
-        chr.lock().on_write(move |args| {
-            let data = args.recv_data();
-            info!("frame received {:?}", data);
-            let mut buffer = rx_buffer.lock().unwrap();
-
-            const MAX_MULTI_FRAME_LEN: usize = 4096;
-
-            if buffer.len() + data.len() > MAX_MULTI_FRAME_LEN {
-                warn!(
-                    "Incoming BLE data exceeded max frame length ({}), clearing buffer",
-                    MAX_MULTI_FRAME_LEN
-                );
-                buffer.clear();
-                if data.len() > MAX_MULTI_FRAME_LEN {
-                    warn!("Single BLE write too large, dropping");
-                    return;
-                }
-            }
-
-            buffer.extend_from_slice(data);
-
-            while let Some(pos) = buffer.iter().position(|b| *b == b'\n' || *b == b'\r') {
-                let frame: Vec<u8> = buffer.drain(..=pos).collect();
-                match decode_frame(&frame) {
-                    Ok(msg) => {
-                        if let Err(e) = tx.send(msg) {
-                            error!("Failed to queue incoming BLE frame: {:?}", e);
-                        }
-                    }
-                    Err(e) => warn!("Failed to decode incoing BLE frame: {:?}", e),
-                }
-            }
-        });
-    }
-
-    ble_advertiser
-        .lock()
-        .set_data(
-            BLEAdvertisementData::new()
-                .name(device_name)
-                .add_service_uuid(uuid128!(SERVICE_UUID)),
-        )
-        .map_err(|e| BluetoothError::Transport(e.to_string()))?;
-
-    ble_advertiser
-        .lock()
-        .start()
-        .map_err(|e| BluetoothError::Transport(e.to_string()))?;
-
-    let runtime = BleRuntime {
-        outgoing_rx: to_phone_rx,
-        tx_characteristic,
-    };
-
-    Ok((connector, runtime, is_connected))
 }

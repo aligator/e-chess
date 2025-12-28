@@ -1,11 +1,15 @@
 #![deny(warnings)]
 
+use std::time::Duration;
+
 use anyhow::Result;
+
 use chess_game::requester::Requester;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_svc::log::EspLogger;
 use log::info;
-use std::time::Duration;
+
+use crate::bluetooth::Bluetooth;
 
 mod bluetooth;
 
@@ -15,15 +19,12 @@ fn main() -> Result<()> {
     EspLogger::initialize_default();
     info!("Starting Bluetooth bridge");
 
-    let (connector, ble_runtime, is_connected) =
-        bluetooth::init_ble_server("E-Chess Server", Duration::from_secs(1000))?;
-
-    let _ble_bridge = ble_runtime.spawn();
+    let connector = Bluetooth::create_and_spawn("E-Chess Server", Duration::from_secs(1000));
 
     loop {
         info!("Waiting for BLE connection...");
         FreeRtos::delay_ms(1000);
-        if *is_connected.lock().unwrap() {
+        if connector.is_connected() {
             FreeRtos::delay_ms(5000);
             info!("BLE connected");
             info!("Sending request ...");
