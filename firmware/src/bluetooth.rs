@@ -24,8 +24,8 @@ pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
 
 // TODO: can I increase the MTU?
-// Keep notifications within the lowest possible BLE ATT MTU (23 bytes -> 23 byte payload).
-const MIN_MTU_PAYLOAD: usize = 23;
+// Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
+const MIN_MTU_PAYLOAD: usize = 20;
 
 #[derive(Debug)]
 pub enum BluetoothError {
@@ -141,6 +141,7 @@ impl ChannelTransport {
 
 impl Transport for ChannelTransport {
     fn send(&self, msg: BoardToPhone) -> Result<(), BluetoothError> {
+        info!("{:?}", msg);
         self.from_board
             .send(msg)
             .map_err(|e| BluetoothError::Transport(e.to_string()))

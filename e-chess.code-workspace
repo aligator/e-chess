@@ -20,6 +20,10 @@
             "path": "./electronics",
             "name": "Electronics"
         },
+        {
+            "name": "Hello",
+            "path": "../../Dokumenter/PlatformIO/Projects/Hello"
+        }
     ],
     "settings": {
         "cSpell.words": [
