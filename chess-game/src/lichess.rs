@@ -235,4 +235,13 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
             Err(_) => Ok(None),
         }
     }
+
+    fn is_connected(&self) -> bool {
+        self.request.is_connected()
+    }
+
+    fn is_valid_key(&self, key: String) -> bool {
+        let len = key.len();
+        len == 8 && key.chars().all(|c| c.is_ascii_alphanumeric())
+    }
 }

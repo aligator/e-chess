@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">EChess</string>
+    <string name="nav_bluetooth">Bluetooth</string>
+    <string name="nav_settings">Innstillinger</string>
+    <string name="bluetooth_enable">Aktiver Bluetooth</string>
+    <string name="bluetooth_unavailable">Bluetooth ikke tilgjengelig</string>
+    <string name="permissions_required">Tillatelser kreves</string>
+    <string name="location_button">Slå på posisjon</string>
+    <string name="service_connecting">Kobler til Bluetooth-tjeneste…</string>
+    <string name="status_label">Status</string>
+    <string name="scan_start">Søk etter enheter</string>
+    <string name="scan_stop">Stopp skann</string>
+    <string name="connect_button">Koble til</string>
+    <string name="unknown_device">Ukjent</string>
+    <string name="config_title">Lichess API-token</string>
+    <string name="token_label">Token</string>
+    <string name="save_token">Lagre</string>
+    <string name="token_saved">Token lagret</string>
+    <string name="language_label">Språk</string>
+</resources>

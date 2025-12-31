@@ -310,10 +310,6 @@ impl Bluetooth {
         })
     }
 
-    pub fn is_connected(&self) -> bool {
-        *self.is_connected.lock().unwrap()
-    }
-
     fn next_id(&self) -> u32 {
         self.inner.next_request_id.fetch_add(1, Ordering::SeqCst)
     }
@@ -501,6 +497,10 @@ impl Requester for Bluetooth {
         })?;
 
         self.await_response_body(id)
+    }
+
+    fn is_connected(&self) -> bool {
+        *self.is_connected.lock().unwrap()
     }
 }
 

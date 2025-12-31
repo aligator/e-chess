@@ -130,4 +130,8 @@ impl Requester for Request {
         // Wait for the response
         rx.recv().map_err(|e| RequestError::Recv(e))?
     }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
 }

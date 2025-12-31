@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">EChess</string>
+    <string name="nav_bluetooth">Bluetooth</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="bluetooth_enable">Bluetooth aktivieren</string>
+    <string name="bluetooth_unavailable">Bluetooth nicht verfügbar</string>
+    <string name="permissions_required">Berechtigungen erforderlich</string>
+    <string name="location_button">Standort einschalten</string>
+    <string name="service_connecting">Bluetooth-Service wird verbunden…</string>
+    <string name="status_label">Status</string>
+    <string name="scan_start">Nach Geräten suchen</string>
+    <string name="scan_stop">Scan stoppen</string>
+    <string name="connect_button">Verbinden</string>
+    <string name="unknown_device">Unbekannt</string>
+    <string name="config_title">Lichess API Token</string>
+    <string name="token_label">Token</string>
+    <string name="save_token">Speichern</string>
+    <string name="token_saved">Token gespeichert</string>
+    <string name="language_label">Sprache</string>
+</resources>

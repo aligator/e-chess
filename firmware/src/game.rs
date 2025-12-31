@@ -7,8 +7,9 @@ use std::{
 use anyhow::Result;
 use chess::BitBoard;
 use chess_game::{
-    chess_connector::LocalChessConnector,
+    chess_connector::{ChessConnector, LocalChessConnector},
     game::{ChessGame, ChessGameError, ChessGameState},
+    lichess::LichessConnector,
 };
 
 use esp_idf_svc::nvs::NvsDefault;
@@ -16,7 +17,7 @@ use log::*;
 use std::thread;
 use std::thread::sleep;
 
-use crate::{api, event::EventManager, storage::Storage, Event};
+use crate::{bluetooth::Bluetooth, event::EventManager, storage::Storage, Event};
 
 #[derive(Clone)]
 pub struct Settings {
@@ -74,14 +75,23 @@ fn load_game(
     game_key: String,
     settings: Arc<Mutex<Settings>>,
     tx: Sender<Event>,
+    connectors: &[Arc<Mutex<dyn ChessConnector + Send>>],
 ) -> Result<ChessGame, ChessGameError> {
     // If the game key is a FEN string, parse it and start a local game.
     // Otherwise, start a lichess game.
-    let mut chess_game = ChessGame::new(if game_key.contains(" ") {
-        LocalChessConnector::new()
+    let mut chess_game: Option<ChessGame> = None;
+    for connector in connectors {
+        if connector.lock().unwrap().is_valid_key(game_key.clone()) {
+            chess_game = Some(ChessGame::new(connector.clone())?);
+            break;
+        }
+    }
+
+    let mut chess_game = if chess_game.is_none() {
+        return Err(ChessGameError::InvalidGameKey);
     } else {
-        api::create(settings.clone()).unwrap()
-    })?;
+        chess_game.unwrap()
+    };
 
     // Load the new game
     match chess_game.reset(&game_key) {
@@ -125,9 +135,16 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
+    let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
+        Arc::new(Mutex::new(LocalChessConnector {})),
+        Arc::new(Mutex::new(LichessConnector::new(
+            Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10)),
+        ))),
+    ];
+
     info!("Starting game thread");
     thread::spawn(move || {
-        let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
+        let mut chess_game: ChessGame = ChessGame::new(connectors[0].clone()).unwrap();
         info!("Created ChessGame");
 
         let mut physical = BitBoard::new(0);
@@ -138,7 +155,6 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
             sleep(Duration::from_millis(100));
             while let Ok(event) = rx.try_recv() {
                 match event {
-                    // Handle WiFi connection state changes if needed
                     // Handle WiFi connection state changes if needed
                     Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
                         physical = new_physical;
@@ -152,7 +168,7 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                         info!("Loading new game: {}", game_id);
 
-                        match load_game(game_id, settings.clone(), tx.clone()) {
+                        match load_game(game_id, settings.clone(), tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick
                                 last_game_state = None;

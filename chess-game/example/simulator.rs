@@ -7,6 +7,7 @@ use chess_game::game::ChessGame;
 use chess_game::lichess;
 use chess_game::request::Request;
 use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 
 #[tokio::main]
 async fn main() {
@@ -31,13 +32,17 @@ async fn main() {
         }
     });
 
-    let connector: Box<dyn ChessConnector> = if api_key.is_empty() {
-        chess_connector::LocalChessConnector::new()
+    let connector: Arc<Mutex<dyn ChessConnector + Send>> = if api_key.is_empty() {
+        Arc::new(Mutex::new(chess_connector::LocalChessConnector {}))
     } else {
-        Box::new(lichess::LichessConnector::new(Request { api_key }))
+        Arc::new(Mutex::new(lichess::LichessConnector::new(Request { api_key })))
     };
 
-    let open_games = connector.find_open_games().unwrap();
+    let open_games = connector
+        .lock()
+        .unwrap()
+        .find_open_games()
+        .unwrap();
 
     // List open games with index
     println!("Open games:");
@@ -59,7 +64,7 @@ async fn main() {
     };
 
     // Use the factory function from the request module
-    let mut game = ChessGame::new(connector).unwrap();
+    let mut game = ChessGame::new(connector.clone()).unwrap();
     game.reset(&id).unwrap();
 
     let mut physical_board = game.expected_physical();

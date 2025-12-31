@@ -6,7 +6,11 @@ use chess::{Action, BitBoard, Board, ChessMove, Color, File, Game, MoveGen, Piec
 use colored::*;
 use std::cmp::Ordering::*;
 use std::fmt::Debug;
-use std::{fmt, str::FromStr};
+use std::{
+    fmt,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 use thiserror::Error;
 
 fn action_to_move(action: &Action) -> ChessMove {
@@ -28,6 +32,9 @@ pub enum ChessGameError {
 
     #[error("game could not be loaded")]
     LoadingGame(#[from] ChessConnectorError),
+
+    #[error("invalid game key")]
+    InvalidGameKey,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -69,7 +76,7 @@ pub struct ChessGame {
     /// It is used to sync the game state with the server.
     /// It also provides events the local game listens to.
     /// For example if the opponent made a move, the local game will be notified.
-    connection: Box<dyn ChessConnector>,
+    connection: Arc<Mutex<dyn ChessConnector + Send>>,
 
     /// The expected physical board state for white.
     expected_white: BitBoard,
@@ -244,7 +251,7 @@ impl fmt::Debug for ChessGame {
 }
 
 impl ChessGame {
-    pub fn new(connection: Box<dyn ChessConnector>) -> Result<Self, ChessGameError> {
+    pub fn new(connection: Arc<Mutex<dyn ChessConnector + Send>>) -> Result<Self, ChessGameError> {
         Ok(ChessGame {
             game: None,
             connection,
@@ -278,7 +285,8 @@ impl ChessGame {
     }
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
-        self.game = Some(self.connection.load_game(id)?);
+        let mut connection = self.connection.lock().unwrap();
+        self.game = Some(connection.load_game(id)?);
         self.id = id.to_string();
 
         if let Some(game) = &self.game {
@@ -316,7 +324,7 @@ impl ChessGame {
         // Check if the move has already been made.
         if self.server_moves.last() != Some(&chess_move) {
             // Ensure the move is legal by checking the connection first
-            if !self.connection.make_move(chess_move) {
+            if !self.connection.lock().unwrap().make_move(chess_move) {
                 return false;
             }
             self.server_moves.push(chess_move);
@@ -471,6 +479,12 @@ impl ChessGame {
         if self.game.is_none() {
             return Ok(());
         }
+
+        if !self.connection.lock().unwrap().is_connected() {
+            // Do nothing and wait for the connector being connected.
+            return Ok(());
+        }
+
         let mut white_request_take_back = false;
         let mut black_request_take_back = false;
         let mut reset = false;
@@ -479,40 +493,43 @@ impl ChessGame {
             let game: &mut Game = self.game.as_mut().unwrap();
 
             // Tick the connection to get events until there is no more event.
-            while let Some(event) = self.connection.next_event()? {
-                match event {
-                    GameEvent::State(state) => {
-                        // Handle take-back.
-                        white_request_take_back = state.white_request_take_back;
-                        black_request_take_back = state.black_request_take_back;
-                        // If the new moves are less than before - it is a take back.
-                        if state.moves.len() <= self.server_moves.len() {
-                            // Do it after the while to avoid problems with multiple mut refs of self.
-                            reset = true;
-                            break;
-                        };
+            {
+                let connection = self.connection.lock().unwrap();
+                while let Some(event) = connection.next_event()? {
+                    match event {
+                        GameEvent::State(state) => {
+                            // Handle take-back.
+                            white_request_take_back = state.white_request_take_back;
+                            black_request_take_back = state.black_request_take_back;
+                            // If the new moves are less than before - it is a take back.
+                            if state.moves.len() <= self.server_moves.len() {
+                                // Do it after the while to avoid problems with multiple mut refs of self.
+                                reset = true;
+                                break;
+                            };
 
-                        let last_move = state.moves.last();
+                            let last_move = state.moves.last();
 
-                        if let Some(last_move) = last_move {
-                            // event is the last move
-                            match ChessMove::from_str(last_move) {
-                                Ok(chess_move) => {
-                                    game.make_move(chess_move);
-                                    self.server_moves.push(chess_move);
+                            if let Some(last_move) = last_move {
+                                // event is the last move
+                                match ChessMove::from_str(last_move) {
+                                    Ok(chess_move) => {
+                                        game.make_move(chess_move);
+                                        self.server_moves.push(chess_move);
 
-                                    self.expected_white =
-                                        *game.current_position().color_combined(Color::White);
-                                    self.expected_black =
-                                        *game.current_position().color_combined(Color::Black);
-                                }
-                                Err(e) => {
-                                    return Err(ChessGameError::LoadingFen(e));
+                                        self.expected_white =
+                                            *game.current_position().color_combined(Color::White);
+                                        self.expected_black =
+                                            *game.current_position().color_combined(Color::Black);
+                                    }
+                                    Err(e) => {
+                                        return Err(ChessGameError::LoadingFen(e));
+                                    }
                                 }
                             }
                         }
+                        _ => continue,
                     }
-                    _ => continue,
                 }
             }
         }
@@ -591,12 +608,13 @@ impl ChessGame {
 #[cfg(test)]
 mod tests {
     use crate::chess_connector::LocalChessConnector;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 
     #[test]
     fn test_tick_invalid_board() -> Result<(), ChessGameError> {
-        let mut chess = ChessGame::new(LocalChessConnector::new()).unwrap();
+        let mut chess = ChessGame::new(Arc::new(Mutex::new(LocalChessConnector {}))).unwrap();
         chess.reset("")?;
 
         let mut physical = chess.expected_physical();

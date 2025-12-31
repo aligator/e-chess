@@ -85,7 +85,8 @@ class BluetoothService : Service() {
     val uiState: StateFlow<BleUiState> = _uiState.asStateFlow()
 
     private var currentCallback: ScanCallback? = null
-    private val bleBridge by lazy { BleHttpBridge(applicationContext) }
+    private val tokenStore by lazy { LichessTokenStore(applicationContext) }
+    private val bleBridge by lazy { BleHttpBridge(applicationContext, tokenStore) }
     private val binder = LocalBinder()
 
     override fun onCreate() {
@@ -228,7 +229,7 @@ private sealed interface PhoneToBoard {
 
 private fun decodeBoardToPhone(raw: String): BoardToPhone? {
     return try {
-        Log.d(TAG_BLE, "Raw message received: ${raw}")
+        Log.d(TAG_BLE, "Raw message received: $raw")
 
         val json = JSONObject(raw)
         val version = json.optInt("v", -1)
@@ -293,7 +294,10 @@ private fun encodePhoneToBoard(msg: PhoneToBoard): ByteArray {
     return (json.toString() + "\n").toByteArray(StandardCharsets.UTF_8)
 }
 
-private class BleHttpBridge(private val context: Context) {
+private class BleHttpBridge(
+    private val context: Context,
+    private val tokenStore: LichessTokenStore,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingBuffer = StringBuilder()
@@ -463,12 +467,14 @@ private class BleHttpBridge(private val context: Context) {
     }
 
     private fun executeHttp(url: String, method: String, body: String?): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        val parsedUrl = URL(url)
+        val connection = (parsedUrl.openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 10_000
             readTimeout = 15_000
             doInput = true
         }
+        addAuthorizationIfNeeded(connection, parsedUrl)
 
         if (method == "POST") {
             connection.doOutput = true
@@ -494,12 +500,14 @@ private class BleHttpBridge(private val context: Context) {
     private suspend fun handleStream(id: Int, url: String) {
         var connection: HttpURLConnection? = null
         try {
-            connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            val parsedUrl = URL(url)
+            connection = (parsedUrl.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 10_000
                 readTimeout = 0
                 doInput = true
             }
+            addAuthorizationIfNeeded(connection, parsedUrl)
 
             BufferedInputStream(connection.inputStream).use { input ->
                 val buffer = ByteArray(1024)
@@ -545,6 +553,13 @@ private class BleHttpBridge(private val context: Context) {
                     Log.e(TAG_BLE, "writeCharacteristic fehlgeschlagen")
                 }
             }
+        }
+    }
+
+    private fun addAuthorizationIfNeeded(connection: HttpURLConnection, url: URL) {
+        val token = tokenStore.getToken()
+        if (token != null && url.host.contains("lichess.org")) {
+            connection.setRequestProperty("Authorization", "Bearer $token")
         }
     }
 }

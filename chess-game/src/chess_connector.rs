@@ -55,6 +55,13 @@ pub trait ChessConnector {
     /// In this function the connector can check for new upstream events.
     /// It gets called as often as possible, so it should be lightweight.
     fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError>;
+
+    /// Returns true if the connector is connected to the upstream server.
+    /// May return always true if no initial connection must be established.
+    fn is_connected(&self) -> bool;
+
+    /// Checks if the given key is valid for this connector.
+    fn is_valid_key(&self, key: String) -> bool;
 }
 
 pub struct LocalChessConnector;
@@ -81,6 +88,14 @@ impl ChessConnector for LocalChessConnector {
 
     fn next_event(&self) -> Result<Option<GameEvent>, ChessConnectorError> {
         Ok(None)
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn is_valid_key(&self, key: String) -> bool {
+        Game::from_str(key.as_str()).is_ok()
     }
 }
 
