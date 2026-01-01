@@ -242,6 +242,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
 
     fn is_valid_key(&self, key: String) -> bool {
         let len = key.len();
-        len == 8 && key.chars().all(|c| c.is_ascii_alphanumeric())
+        let valid = len >= 8 && len <= 12 && key.chars().all(|c| c.is_ascii_alphanumeric());
+        valid
     }
 }

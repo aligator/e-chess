@@ -13,6 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::{game::GameCommandEvent, Event};
 use chess_game::requester::Requester;
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::*;
@@ -22,6 +23,7 @@ pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
 pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
+pub const GAME_LOAD_CHAR_UUID: &str = "d4f1e338-3396-4e72-a7d7-7c037fbcc0a1";
 
 // TODO: can I increase the MTU?
 // Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
@@ -169,10 +171,27 @@ struct BluetoothInner {
 pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
     is_connected: Arc<Mutex<bool>>,
+    game_load_tx: Arc<Mutex<Option<Sender<Event>>>>,
 }
 
 impl Bluetooth {
     pub fn create_and_spawn(device_name: &str, request_timeout: Duration) -> Self {
+        Self::create_and_spawn_internal(device_name, request_timeout, None)
+    }
+
+    pub fn create_and_spawn_with_game_sender(
+        device_name: &str,
+        request_timeout: Duration,
+        game_load_tx: Sender<Event>,
+    ) -> Self {
+        Self::create_and_spawn_internal(device_name, request_timeout, Some(game_load_tx))
+    }
+
+    fn create_and_spawn_internal(
+        device_name: &str,
+        request_timeout: Duration,
+        game_load_tx: Option<Sender<Event>>,
+    ) -> Self {
         let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
         let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
         let transport = Arc::new(ChannelTransport::new(to_phone_tx, from_phone_rx));
@@ -185,6 +204,7 @@ impl Bluetooth {
                 pending: Mutex::new(Vec::new()),
             }),
             is_connected: Arc::new(Mutex::new(false)),
+            game_load_tx: Arc::new(Mutex::new(game_load_tx)),
         };
 
         let ble_runtime = bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx);
@@ -223,7 +243,7 @@ impl Bluetooth {
             });
         }
 
-        let (tx_characteristic, rx_characteristic) = {
+        let (tx_characteristic, rx_characteristic, load_characteristic) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
             // TX characteristic: board -> phone notifications only.
             let tx_chr = service.lock().create_characteristic(
@@ -237,7 +257,13 @@ impl Bluetooth {
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
-            (tx_chr, rx_chr)
+            // Game load characteristic: phone -> board game id
+            let load_chr = service.lock().create_characteristic(
+                uuid128!(GAME_LOAD_CHAR_UUID),
+                NimbleProperties::READ | NimbleProperties::WRITE,
+            );
+
+            (tx_chr, rx_chr, load_chr)
         };
 
         {
@@ -255,9 +281,10 @@ impl Bluetooth {
             let tx = from_phone_tx.clone();
             let rx_buffer = Arc::new(Mutex::new(Vec::new()));
             let chr = rx_characteristic.clone();
+            info!("start listening on rx characteristic changes");
             chr.lock().on_write(move |args| {
                 let data = args.recv_data();
-                info!("frame received {:?}", data);
+                info!("chunk received {:?}", std::str::from_utf8(data));
                 let mut buffer = rx_buffer.lock().unwrap();
 
                 const MAX_MULTI_FRAME_LEN: usize = 4096;
@@ -286,6 +313,35 @@ impl Bluetooth {
                         }
                         Err(e) => warn!("Failed to decode incoing BLE frame: {:?}", e),
                     }
+                }
+            });
+        }
+
+        {
+            let event_tx = Arc::clone(&self.game_load_tx);
+            let chr = load_characteristic.clone();
+            chr.lock().on_write(move |args| {
+                let raw = args.recv_data();
+                match String::from_utf8(Vec::from(raw)) {
+                    Ok(body) => {
+                        let game_id = body.trim();
+                        if game_id.is_empty() {
+                            warn!("Received empty game id over BLE load characteristic");
+                            return;
+                        }
+                        if let Some(sender) = event_tx.lock().unwrap().clone() {
+                            if let Err(e) = sender.send(Event::GameCommand(
+                                GameCommandEvent::LoadNewGame(game_id.to_string()),
+                            )) {
+                                warn!("Failed to forward BLE game id: {:?}", e);
+                            } else {
+                                info!("Forwarded BLE game id: {}", game_id);
+                            }
+                        } else {
+                            warn!("No game load handler registered; dropping BLE game id");
+                        }
+                    }
+                    Err(e) => warn!("Invalid UTF-8 in game load characteristic: {:?}", e),
                 }
             });
         }
