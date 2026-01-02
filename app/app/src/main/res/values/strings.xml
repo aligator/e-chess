@@ -17,4 +17,15 @@
     <string name="save_token">Save</string>
     <string name="token_saved">Token saved</string>
     <string name="language_label">Language</string>
+    <string name="game_key_label">Game key</string>
+    <string name="game_key_placeholder">Enter Lichess game key</string>
+    <string name="load_game_button">Load game</string>
+    <string name="load_game_sent">Game key sent to the board</string>
+    <string
+        name="load_game_failed"
+    >Could not send the game key. Check the connection.</string>
+    <string
+        name="load_game_invalid_key"
+    >Enter a valid Lichess game key or URL.</string>
+    <string name="load_game_too_long">Game key too long.</string>
 </resources>

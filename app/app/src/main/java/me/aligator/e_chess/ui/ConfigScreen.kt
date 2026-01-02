@@ -65,7 +65,7 @@ fun ConfigScreen(
         Button(
             onClick = {
                 tokenStore.saveToken(token)
-                savedMessage = stringResource(R.string.token_saved)
+                savedMessage = context.getString(R.string.token_saved)
             },
             modifier = Modifier.padding(top = 12.dp)
         ) { Text(stringResource(R.string.save_token)) }

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -49,7 +48,7 @@ fun EChessApp() {
                 NavigationBarItem(
                     selected = destination == AppDestination.BLE,
                     onClick = { destination = AppDestination.BLE },
-                    icon = { Icon(Icons.Default.Bluetooth, contentDescription = null) },
+                    icon = {  },
                     label = { Text(stringResource(R.string.nav_bluetooth)) }
                 )
                 NavigationBarItem(

@@ -21,8 +21,8 @@
             "name": "Electronics"
         },
         {
-            "name": "Hello",
-            "path": "../../Dokumenter/PlatformIO/Projects/Hello"
+            "path": "./app",
+            "name": "Android App"
         }
     ],
     "settings": {

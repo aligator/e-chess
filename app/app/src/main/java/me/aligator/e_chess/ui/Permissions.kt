@@ -3,8 +3,10 @@ package me.aligator.e_chess.ui
 import android.content.Context
 import android.location.LocationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalInspectionMode
 
 fun isLocationEnabled(context: Context): Boolean {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
@@ -17,6 +19,10 @@ fun rememberPermissionLauncher(
     requiredPermissions: List<String>,
     onResult: (Boolean) -> Unit,
 ): () -> Unit {
+    if (LocalInspectionMode.current || LocalActivityResultRegistryOwner.current == null) {
+        return { }
+    }
+
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grantResults ->

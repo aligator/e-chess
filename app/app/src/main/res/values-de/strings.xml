@@ -17,4 +17,15 @@
     <string name="save_token">Speichern</string>
     <string name="token_saved">Token gespeichert</string>
     <string name="language_label">Sprache</string>
+    <string name="game_key_label">Spielschlüssel</string>
+    <string name="game_key_placeholder">Lichess-Spielschlüssel eingeben</string>
+    <string name="load_game_button">Spiel laden</string>
+    <string name="load_game_sent">Spielschlüssel an das Brett gesendet</string>
+    <string
+        name="load_game_failed"
+    >Spielschlüssel konnte nicht gesendet werden. Verbindung prüfen.</string>
+    <string
+        name="load_game_invalid_key"
+    >Gültigen Lichess-Spielschlüssel oder URL eingeben.</string>
+    <string name="load_game_too_long">Spielschlüssel ist zu lang.</string>
 </resources>
