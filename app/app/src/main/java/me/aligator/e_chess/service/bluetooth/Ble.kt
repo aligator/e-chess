@@ -1,6 +1,7 @@
 package me.aligator.e_chess.service.bluetooth
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -20,6 +21,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -30,11 +32,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import me.aligator.e_chess.service.SERVICE_UUID
-import java.util.LinkedList
-import java.util.Queue
+import java.security.Permission
 import java.util.UUID
-import java.util.concurrent.ConcurrentLinkedDeque
 
 data class SimpleDevice(
     val device: BluetoothDevice,
@@ -86,7 +85,7 @@ data class BleState(
     /**
      * The current connection step in which ble is in.
      */
-    val step: ConnectionStep = ConnectionStep.DISABLED,
+    val step: ConnectionStep = ConnectionStep.UNAVAILABLE,
 
     val connectedDevice: ConnectedDevice = ConnectedDevice(
         deviceState = DeviceState.UNKNOWN,
@@ -127,6 +126,25 @@ data class BleResponse(
         return result
     }
 };
+
+
+fun requiredPermissions(): List<String>{
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        return listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        return listOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+}
+
+fun hasPermissions(context: Context): Boolean {
+    val permissions = requiredPermissions()
+
+    return permissions.all { permission ->
+        ContextCompat.checkSelfPermission(context, permission) ==
+                PackageManager.PERMISSION_GRANTED
+    }
+}
+
 
 /**
  * Wrapper for the android ble functionality that
@@ -201,7 +219,7 @@ class Ble(
         } else if (adapter?.isEnabled == true) {
             // If the permissions are already correct
             // skip the permission check.
-            if (!hasPermissions()) {
+            if (!hasPermissions(context)) {
                 setStep(ConnectionStep.PERMISSIONS)
                 return false
             }
@@ -210,24 +228,15 @@ class Ble(
             return false
         }
 
+        if (bleState.value.step == ConnectionStep.UNAVAILABLE) {
+            setStep(ConnectionStep.IDLE)
+        }
+
         return true
     }
 
     fun onDestroy() {
         stopScan()
-    }
-
-    fun hasPermissions(): Boolean {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            listOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-
-        return permissions.all { permission ->
-            ContextCompat.checkSelfPermission(context, permission) ==
-                    PackageManager.PERMISSION_GRANTED
-        }
     }
 
     fun startScan() {
@@ -247,11 +256,19 @@ class Ble(
                     // BLE scan callbacks happen off the main thread; push updates to UI state
                     // onto the main looper.
                     mainLoopHandler.post {
-                        _bleState.update { state ->
+                        _bleState.update  { state ->
+
+                            val name = try {
+                                result.device.name
+                            } catch (ex: SecurityException) {
+                                Log.e(LOG_TAG, "could not get the device name $ex")
+                                null
+                            }
+
                             val updated = state.devices.toMutableList()
                             val existingIndex = updated.indexOfFirst { it.address == address }
-                            val newDevice =
-                                SimpleDevice(result.device, address, result.device.name)
+
+                            val newDevice = SimpleDevice(result.device, address, name)
                             if (existingIndex >= 0) {
                                 updated[existingIndex] = newDevice
                             } else {
@@ -280,7 +297,7 @@ class Ble(
         )
 
         try {
-            scanner?.startScan(filter, settings, callback)
+            scanner?.startScan(null, settings, callback)
             currentScanCallback = callback
             setStep(ConnectionStep.SCANNING)
         } catch (se: SecurityException) {
@@ -351,6 +368,8 @@ class Ble(
 
     private fun createCallback() =
         object : BluetoothGattCallback() {
+
+            @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
             override fun onConnectionStateChange(
                 gatt: BluetoothGatt,
                 status: Int,
@@ -457,12 +476,15 @@ class Ble(
         }
     }
 
+
     fun connect(device: BluetoothDevice) {
         if (!checkBluetooth()) {
             return
         }
 
         close()
+
+        @SuppressLint("MissingPermission") // checked in checkBluetooth already
         gatt = device.connectGatt(context, false, createCallback())
 
         // Start background thread to send the queued responses.
@@ -471,19 +493,13 @@ class Ble(
         }
     }
 
-    private fun cancelAllRequests() {
-        //TODO: implement - maybe with the listeners of the parent classes?
-//        activeRequests.values.forEach { it.cancel() }
-//        activeRequests.clear()
-    }
-
     fun close() {
-        //TODO: implement
+        //TODO: implement - maybe with the listeners of the parent classes?
+
         responseJob?.cancel()
         responseJob = null
 
 
-        cancelAllRequests()
 //        pendingBuffer.clear()
 //        rxCharacteristic = null
 //        txCharacteristic = null
@@ -505,40 +521,5 @@ class Ble(
 
             Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
         }
-
-
-        // TODO: This function must check via the callback if the data is sent correctly.
-        // Only if this is valid and maybe with timeout - send next chunk
-
-
-        // TODO: do the sending in a background thread.
-        // This thread must wait for the write events and only continue when a write is done.
-
-//        val chunks = payload.asList().chunked(this.maxChunkSize).map { it.toByteArray() }
-//
-//        writeMutex.withLock {
-//            for (chunk in chunks) {
-//                Log.d(LOG_TAG, "send chunk of message ${chunk.decodeToString()}")
-//
-//                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-//                    gatt.writeCharacteristic(
-//                        characteristic,
-//                        chunk,
-//                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-//                    )
-//                } else {
-//                    @Suppress("DEPRECATION")
-//                    val ok = gatt.writeCharacteristic(
-//                        characteristic.apply {
-//                            value = chunk
-//                            writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-//                        }
-//                    )
-//                    if (!ok) {
-//                        Log.e(LOG_TAG, "writeCharacteristic fehlgeschlagen")
-//                    }
-//                }
-//            }
-//        }
     }
 }

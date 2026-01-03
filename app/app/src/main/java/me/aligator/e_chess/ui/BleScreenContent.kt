@@ -26,32 +26,34 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.BleUiState
-import me.aligator.e_chess.service.SimpleDevice
+import me.aligator.e_chess.service.bluetooth.BleState
+import me.aligator.e_chess.service.bluetooth.ConnectedDevice
+import me.aligator.e_chess.service.bluetooth.ConnectionStep
+import me.aligator.e_chess.service.bluetooth.DeviceState
+import me.aligator.e_chess.service.bluetooth.SimpleDevice
 import me.aligator.e_chess.ui.theme.EChessTheme
 
 @Composable
 fun BleScreenContent(
-        uiState: BleUiState,
-        permissionsGranted: Boolean,
-        locationEnabled: Boolean,
-        bluetoothServiceConnected: Boolean,
-        onRequestEnableBt: () -> Unit,
-        onOpenLocationSettings: () -> Unit,
-        onStartScan: () -> Unit,
-        onStopScan: () -> Unit,
-        onConnect: (BluetoothDevice) -> Unit,
-        onLoadGame: (String) -> Unit,
-        modifier: Modifier = Modifier,
+    bleState: BleState,
+    permissionsGranted: Boolean,
+    locationEnabled: Boolean,
+    onRequestEnableBt: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
+    onStartScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (SimpleDevice) -> Unit,
+   // onLoadGame: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
         val textPadding = Modifier.padding(innerPadding)
         when {
-            uiState.connectionState == "Bluetooth deaktiviert" ->
+            bleState.step == ConnectionStep.DISABLED ->
                     Button(onClick = onRequestEnableBt, modifier = textPadding) {
                         Text(stringResource(R.string.bluetooth_enable))
                     }
-            uiState.connectionState == "Bluetooth nicht verfügbar" ->
+            bleState.step == ConnectionStep.UNAVAILABLE ->
                     Text(stringResource(R.string.bluetooth_unavailable), modifier = textPadding)
             permissionsGranted.not() ->
                     Text(stringResource(R.string.permissions_required), modifier = textPadding)
@@ -59,18 +61,16 @@ fun BleScreenContent(
                     Button(onClick = onOpenLocationSettings, modifier = textPadding) {
                         Text(stringResource(R.string.location_button))
                     }
-            bluetoothServiceConnected.not() ->
-                    Text(stringResource(R.string.service_connecting), modifier = textPadding)
             else ->
                     BleContent(
-                            scanning = uiState.scanning,
-                            connectionState = uiState.connectionState,
-                            canLoadGame = uiState.canLoadGame,
-                            devices = uiState.devices,
+                            scanning = bleState.step == ConnectionStep.SCANNING,
+                            connectionState = bleState.connectedDevice,
+                            canLoadGame =  bleState.connectedDevice.deviceState == DeviceState.CONNECTED,
+                            devices = bleState.devices,
                             onStartScan = onStartScan,
                             onStopScan = onStopScan,
                             onConnect = onConnect,
-                            onLoadGame = onLoadGame,
+                        //    onLoadGame = onLoadGame,
                             modifier = textPadding
                     )
         }
@@ -79,15 +79,15 @@ fun BleScreenContent(
 
 @Composable
 private fun BleContent(
-        scanning: Boolean,
-        connectionState: String,
-        devices: List<SimpleDevice>,
-        canLoadGame: Boolean,
-        onStartScan: () -> Unit,
-        onStopScan: () -> Unit,
-        onConnect: (BluetoothDevice) -> Unit,
-        onLoadGame: (String) -> Unit,
-        modifier: Modifier = Modifier,
+    scanning: Boolean,
+    connectionState: ConnectedDevice,
+    devices: List<SimpleDevice>,
+    canLoadGame: Boolean,
+    onStartScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (SimpleDevice) -> Unit,
+  //  onLoadGame: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var gameKey by rememberSaveable { mutableStateOf("") }
 
@@ -119,7 +119,7 @@ private fun BleContent(
                 )
                 Button(
                         onClick = {
-                            onLoadGame(gameKey.trim())
+                          //  onLoadGame(gameKey.trim())
                             gameKey = ""
                         },
                         enabled = gameKey.isNotBlank(),
@@ -134,7 +134,7 @@ private fun BleContent(
 @Composable
 private fun DeviceCard(
         device: SimpleDevice,
-        onConnect: (BluetoothDevice) -> Unit,
+        onConnect: (SimpleDevice) -> Unit,
 ) {
     Card(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
@@ -150,7 +150,7 @@ private fun DeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 16.dp)
         )
-        Button(onClick = { onConnect(device.device) }, modifier = Modifier.padding(16.dp)) {
+        Button(onClick = { onConnect(device) }, modifier = Modifier.padding(16.dp)) {
             Text(stringResource(R.string.connect_button))
         }
     }
@@ -162,22 +162,19 @@ private fun DeviceCard(
 private fun BleScreenPreview() {
     EChessTheme {
         BleScreenContent(
-                uiState =
-                        BleUiState(
-                                scanning = false,
-                                connectionState = "Verbunden",
-                                canLoadGame = true,
-                                devices = emptyList()
+                bleState =
+                    BleState(
+                                step = ConnectionStep.SCANNING,
+                                devices = emptyList(),
                         ),
                 permissionsGranted = true,
                 locationEnabled = true,
-                bluetoothServiceConnected = true,
                 onRequestEnableBt = {},
                 onOpenLocationSettings = {},
                 onStartScan = {},
                 onStopScan = {},
                 onConnect = {},
-                onLoadGame = {},
+              //  onLoadGame = {},
         )
     }
 }

@@ -32,9 +32,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EChess">
         <service
-            android:name=".service.BluetoothService"
+            android:name=".service.bluetooth.BluetoothService"
             android:enabled="true"
-            android:exported="true"></service>
+            android:exported="true" />
 
         <activity
             android:name=".MainActivity"

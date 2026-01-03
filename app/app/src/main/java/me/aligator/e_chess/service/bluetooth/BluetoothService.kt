@@ -22,29 +22,33 @@ class BluetoothService : Service() {
         val service: BluetoothService
             get() = this@BluetoothService
     }
-    private val binder = LocalBinder()
 
+    private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val ble = Ble(
-        parentScope = serviceScope,
-        context = applicationContext,
-        serviceUuid =  SERVICE_UUID
-    )
+    lateinit var ble: Ble
 
     /**
      * Bridges http requests from the board to an upstream api.
      */
-    private val httpBridge = HttpBleBridge(ble)
+    private lateinit var httpBridge: HttpBleBridge
 
     /**
      * Connects to the board to set / query the board state.
      */
-    val chessBoard = ChessBoardDevice(ble)
+    private lateinit var chessBoard: ChessBoardDevice
+
 
     override fun onCreate() {
         super.onCreate()
+        ble = Ble(
+            parentScope = serviceScope,
+            context = applicationContext,
+            serviceUuid = SERVICE_UUID
+        )
         ble.checkBluetooth()
+        httpBridge = HttpBleBridge(ble)
+        chessBoard = ChessBoardDevice(ble)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
