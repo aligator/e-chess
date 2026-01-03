@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.BluetoothLeScanner
@@ -32,8 +33,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import java.security.Permission
 import java.util.UUID
+import kotlin.math.acos
 
 data class SimpleDevice(
     val device: BluetoothDevice,
@@ -145,6 +146,19 @@ fun hasPermissions(context: Context): Boolean {
     }
 }
 
+interface BleAction {
+    fun onConnect(gatt: BluetoothGatt, device: SimpleDevice)
+    fun onDisconnect()
+    fun onCharacteristicChanged(
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
+        value: ByteArray
+    )
+    fun onServiceDiscovered(
+        gatt: BluetoothGatt,
+        service: BluetoothGattService
+    )
+}
 
 /**
  * Wrapper for the android ble functionality that
@@ -158,6 +172,8 @@ class Ble(
     val context: Context,
     val serviceUuid: UUID
 ) {
+    private val bleActions: MutableList<BleAction> = mutableListOf()
+
     private val maxChunkSize = 20
 
     /// current connection state
@@ -180,10 +196,13 @@ class Ble(
     private var gatt: BluetoothGatt? = null
 
     private var responseJob: Job? = null
-    private var responseAckJob: Job? = null
     private var responseChannel: Channel<BleResponse> = Channel()
     // There should always be only one pending response at a time
     private var responseAckChannel: Channel<UUID> = Channel(1)
+
+    fun register(action: BleAction) {
+        bleActions.add(action)
+    }
 
     private fun setDeviceState(
         state: DeviceState,
@@ -260,8 +279,8 @@ class Ble(
 
                             val name = try {
                                 result.device.name
-                            } catch (ex: SecurityException) {
-                                Log.e(LOG_TAG, "could not get the device name $ex")
+                            } catch (err: SecurityException) {
+                                Log.e(LOG_TAG, "could not get the device name $err")
                                 null
                             }
 
@@ -297,7 +316,7 @@ class Ble(
         )
 
         try {
-            scanner?.startScan(null, settings, callback)
+            scanner?.startScan(filter, settings, callback)
             currentScanCallback = callback
             setStep(ConnectionStep.SCANNING)
         } catch (se: SecurityException) {
@@ -322,7 +341,11 @@ class Ble(
         }
     }
 
-    fun handleServiceDiscovered(gatt: BluetoothGatt) {
+    private fun handleServiceDiscovered(gatt: BluetoothGatt, service: BluetoothGattService) {
+        for (action in bleActions) {
+            action.onServiceDiscovered(gatt, service)
+        }
+
         // TODO: add listener and call all that need to know
 
 
@@ -346,15 +369,17 @@ class Ble(
 //                Log.d(LOG_TAG, "connected to ble")
     }
 
-    fun handleCharacteristicChanged(
+    private fun handleCharacteristicChanged(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
         value: ByteArray
     ) {
-        // TODO: add listener and call all that need to know
+        for (action in bleActions) {
+            action.onCharacteristicChanged(gatt, characteristic, value)
+        }
     }
 
-    fun handleCharacteristicWrite(
+    private fun handleCharacteristicWrite(
         gatt: BluetoothGatt?,
         characteristic: BluetoothGattCharacteristic?,
         status: Int
@@ -388,7 +413,7 @@ class Ble(
                     gatt.discoverServices()
                 }
                 if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    close()
+                    disconnect()
                 }
             }
 
@@ -399,7 +424,7 @@ class Ble(
                     return
                 }
 
-                handleServiceDiscovered(gatt)
+                handleServiceDiscovered(gatt, service)
             }
 
             override fun onCharacteristicChanged(
@@ -439,23 +464,29 @@ class Ble(
 
             for (chunk in chunks) {
                 Log.d(LOG_TAG, "send chunk of message ${chunk.decodeToString()}")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    currentGatt.writeCharacteristic(
-                        characteristic,
-                        chunk,
-                        response.writeType
-                    )
-                } else {
-                    @Suppress("DEPRECATION")
-                    val ok = currentGatt.writeCharacteristic(
-                        characteristic.apply {
-                            value = chunk
+                try {
+
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        currentGatt.writeCharacteristic(
+                            characteristic,
+                            chunk,
                             response.writeType
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        val ok = currentGatt.writeCharacteristic(
+                            characteristic.apply {
+                                value = chunk
+                                response.writeType
+                            }
+                        )
+                        if (!ok) {
+                            Log.e(LOG_TAG, "writeCharacteristic not successful")
                         }
-                    )
-                    if (!ok) {
-                        Log.e(LOG_TAG, "writeCharacteristic fehlgeschlagen")
                     }
+                } catch (err: SecurityException) {
+                    Log.e(LOG_TAG, "writeCharacteristic not successful $err")
                 }
 
                 if (response.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) {
@@ -464,7 +495,7 @@ class Ble(
                         responseAckChannel.receive()
                     }
 
-                    if (ack != response) {
+                    if (ack != response.characteristic) {
                         Log.e(
                             LOG_TAG,
                             "Something went wrong when waiting for the ack. It is not the expected response."
@@ -477,23 +508,37 @@ class Ble(
     }
 
 
-    fun connect(device: BluetoothDevice) {
+    fun connect(device: SimpleDevice) {
         if (!checkBluetooth()) {
             return
         }
 
-        close()
+        stopScan()
+
+        disconnect()
 
         @SuppressLint("MissingPermission") // checked in checkBluetooth already
-        gatt = device.connectGatt(context, false, createCallback())
+        gatt = device.device.connectGatt(context, false, createCallback())
+        if (gatt == null) {
+            Log.e(LOG_TAG, "could not connect to ble device")
+            return
+        }
 
         // Start background thread to send the queued responses.
         responseJob = parentScope.launch {
             responseLoop()
         }
+
+        for (action in bleActions) {
+            action.onConnect(gatt!!, device)
+        }
     }
 
-    fun close() {
+    fun disconnect() {
+        for (action in bleActions) {
+            action.onDisconnect()
+        }
+
         //TODO: implement - maybe with the listeners of the parent classes?
 
         responseJob?.cancel()
@@ -504,11 +549,15 @@ class Ble(
 //        rxCharacteristic = null
 //        txCharacteristic = null
 //        gameLoadCharacteristic = null
-        gatt?.close()
+        try {
+            gatt?.close()
+        } catch (err: SecurityException) {
+            Log.e(LOG_TAG, "not allowed to close ble $err")
+        }
         gatt = null
     }
 
-    private fun sendCharacteristic(
+    fun sendCharacteristic(
         gatt: BluetoothGatt,
         characteristic: BluetoothGattCharacteristic,
         payload: ByteArray

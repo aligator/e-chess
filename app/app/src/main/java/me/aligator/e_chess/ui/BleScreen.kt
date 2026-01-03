@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import me.aligator.e_chess.R
 import me.aligator.e_chess.service.bluetooth.BluetoothService
 import me.aligator.e_chess.service.bluetooth.SimpleDevice
 import me.aligator.e_chess.service.bluetooth.hasPermissions
@@ -117,28 +119,18 @@ fun BleScreen(modifier: Modifier = Modifier) {
                 bluetoothService!!.ble.startScan()
             },
             onStopScan = { bluetoothService!!.ble.stopScan() },
-            onConnect = { device: SimpleDevice -> bluetoothService!!.connect(device) },
-//            onLoadGame = { gameKey ->
-//                val cleanedKey = extractGameKey(gameKey)
-//                val messageRes =
-//                    when {
-//                        cleanedKey == null -> R.string.load_game_invalid_key
-//                        cleanedKey.length > 20 -> R.string.load_game_too_long
-//                        bluetoothService?.loadGame(cleanedKey) == true ->
-//                            R.string.load_game_sent
-//
-//                        else -> R.string.load_game_failed
-//                    }
-//                Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()
-//            },
+            onConnect = { device: SimpleDevice -> bluetoothService!!.ble.connect(device) },
+            onLoadGame = { gameKey ->
+                val messageRes =
+                    when {
+                        bluetoothService?.chessBoardAction?.loadGame(gameKey) == true ->
+                            R.string.load_game_sent
+
+                        else -> R.string.load_game_failed
+                    }
+                Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()
+            },
         )
     }
 
-}
-
-private fun extractGameKey(raw: String): String? {
-    if (raw.isBlank()) return null
-    val candidate = raw.trim().substringAfterLast("/")
-    val match = Regex("([a-zA-Z0-9]{8,12})").find(candidate)?.groupValues?.getOrNull(1)
-    return match
 }

@@ -24,8 +24,4 @@
     <string
         name="load_game_failed"
     >Kunne ikke sende spillnøkkelen. Sjekk tilkoblingen.</string>
-    <string
-        name="load_game_invalid_key"
-    >Skriv inn en gyldig Lichess-nøkkel eller URL.</string>
-    <string name="load_game_too_long">Spillnøkkelen er for lang.</string>
 </resources>

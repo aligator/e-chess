@@ -24,8 +24,4 @@
     <string
         name="load_game_failed"
     >Could not send the game key. Check the connection.</string>
-    <string
-        name="load_game_invalid_key"
-    >Enter a valid Lichess game key or URL.</string>
-    <string name="load_game_too_long">Game key too long.</string>
 </resources>

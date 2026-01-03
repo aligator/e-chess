@@ -36,7 +36,7 @@ class BluetoothService : Service() {
     /**
      * Connects to the board to set / query the board state.
      */
-    private lateinit var chessBoard: ChessBoardDevice
+    lateinit var chessBoardAction: ChessBoardDeviceAction
 
 
     override fun onCreate() {
@@ -48,25 +48,13 @@ class BluetoothService : Service() {
         )
         ble.checkBluetooth()
         httpBridge = HttpBleBridge(ble)
-        chessBoard = ChessBoardDevice(ble)
+        chessBoardAction = ChessBoardDeviceAction(ble)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
         ble.onDestroy()
-        httpBridge.onDestroy()
-        chessBoard.onDestroy()
         super.onDestroy()
-    }
-
-    /**
-     * Connect to a specific device.
-     * Stops the ble scan.
-     */
-    fun connect(device: SimpleDevice) {
-        ble.stopScan()
-        httpBridge.connect(device)
-        chessBoard.connect(device)
     }
 }

@@ -43,7 +43,7 @@ fun BleScreenContent(
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onConnect: (SimpleDevice) -> Unit,
-   // onLoadGame: (String) -> Unit,
+    onLoadGame: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
@@ -70,7 +70,7 @@ fun BleScreenContent(
                             onStartScan = onStartScan,
                             onStopScan = onStopScan,
                             onConnect = onConnect,
-                        //    onLoadGame = onLoadGame,
+                            onLoadGame = onLoadGame,
                             modifier = textPadding
                     )
         }
@@ -86,7 +86,7 @@ private fun BleContent(
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onConnect: (SimpleDevice) -> Unit,
-  //  onLoadGame: (String) -> Unit,
+    onLoadGame: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var gameKey by rememberSaveable { mutableStateOf("") }
@@ -119,8 +119,7 @@ private fun BleContent(
                 )
                 Button(
                         onClick = {
-                          //  onLoadGame(gameKey.trim())
-                            gameKey = ""
+                           onLoadGame(gameKey.trim())
                         },
                         enabled = gameKey.isNotBlank(),
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -159,22 +158,22 @@ private fun DeviceCard(
 @Preview(showBackground = true)
 @PreviewScreenSizes
 @Composable
-private fun BleScreenPreview() {
+private fun BleScreenScanPreview() {
     EChessTheme {
         BleScreenContent(
-                bleState =
-                    BleState(
-                                step = ConnectionStep.SCANNING,
-                                devices = emptyList(),
-                        ),
-                permissionsGranted = true,
-                locationEnabled = true,
-                onRequestEnableBt = {},
-                onOpenLocationSettings = {},
-                onStartScan = {},
-                onStopScan = {},
-                onConnect = {},
-              //  onLoadGame = {},
+            bleState =
+                BleState(
+                    step = ConnectionStep.SCANNING,
+                    devices = emptyList(),
+                ),
+            permissionsGranted = true,
+            locationEnabled = true,
+            onRequestEnableBt = {},
+            onOpenLocationSettings = {},
+            onStartScan = {},
+            onStopScan = {},
+            onConnect = {},
+            onLoadGame = {},
         )
     }
 }

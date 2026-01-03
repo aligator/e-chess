@@ -23,7 +23,7 @@ pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
 pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
-pub const GAME_LOAD_CHAR_UUID: &str = "d4f1e338-3396-4e72-a7d7-7c037fbcc0a1";
+pub const GAME_KEY_CHARACTERISTIC_UUID: &str = "d4f1e338-3396-4e72-a7d7-7c037fbcc0a1";
 
 // TODO: can I increase the MTU?
 // Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
@@ -243,7 +243,7 @@ impl Bluetooth {
             });
         }
 
-        let (tx_characteristic, rx_characteristic, load_characteristic) = {
+        let (tx_characteristic, rx_characteristic, game_key_characteristic) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
             // TX characteristic: board -> phone notifications only.
             let tx_chr = service.lock().create_characteristic(
@@ -257,13 +257,13 @@ impl Bluetooth {
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
-            // Game load characteristic: phone -> board game id
-            let load_chr = service.lock().create_characteristic(
-                uuid128!(GAME_LOAD_CHAR_UUID),
+            // Game key characteristic: phone -> board game id
+            let game_key_chr = service.lock().create_characteristic(
+                uuid128!(GAME_KEY_CHARACTERISTIC_UUID),
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
-            (tx_chr, rx_chr, load_chr)
+            (tx_chr, rx_chr, game_key_chr)
         };
 
         {
@@ -319,8 +319,10 @@ impl Bluetooth {
 
         {
             let event_tx = Arc::clone(&self.game_load_tx);
-            let chr = load_characteristic.clone();
+            let chr = game_key_characteristic.clone();
             chr.lock().on_write(move |args| {
+                //TODO: use common utility to read multi-chunk messages
+
                 let raw = args.recv_data();
                 match String::from_utf8(Vec::from(raw)) {
                     Ok(body) => {
