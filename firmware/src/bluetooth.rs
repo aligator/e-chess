@@ -217,12 +217,9 @@ fn dispatch_messages(
                         PhoneToBoard::StreamClosed { id } => *id,
                     };
 
-                    info!("Dispatcher: received message for id {}: {:?}", id, msg);
-
                     // Find the channel for this request ID and send the message
                     let channels = request_channels.lock().unwrap();
                     if let Some(tx) = channels.get(&id) {
-                        info!("Dispatcher: routing message to request {}", id);
                         if let Err(e) = tx.send(msg) {
                             warn!(
                                 "Dispatcher: failed to send message to request {}: {:?}",
@@ -517,10 +514,6 @@ impl Bluetooth {
         loop {
             match rx.recv() {
                 Ok(PhoneToBoard::StreamData { id: msg_id, chunk }) if msg_id == id => {
-                    info!(
-                        "handle_stream: received StreamData for id {}, chunk: {:?}",
-                        msg_id, chunk
-                    );
                     Bluetooth::push_chunk(&tx, &mut buffer, &chunk);
                 }
                 Ok(PhoneToBoard::StreamClosed { id: msg_id }) if msg_id == id => {

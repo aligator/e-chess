@@ -124,7 +124,6 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                     }
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                         info!("Loading new game: {}", game_id);
-
                         match load_game(game_id, tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick

@@ -497,22 +497,36 @@ impl ChessGame {
                 let connection = self.connection.lock().unwrap();
                 while let Some(event) = connection.next_event()? {
                     match event {
-                        GameEvent::State(state) => {
+                        GameEvent::State(upstream_state) => {
                             // Handle take-back.
-                            white_request_take_back = state.white_request_take_back;
-                            black_request_take_back = state.black_request_take_back;
-                            // If the new moves are less than before - it is a take back.
-                            if state.moves.len() <= self.server_moves.len() {
+                            white_request_take_back = upstream_state.white_request_take_back;
+                            black_request_take_back = upstream_state.black_request_take_back;
+
+                            // Check if the moves are still the same. If not - reset the game (could be due to a takeback)
+                            // upstream_state.moves is the source of truth from the server, server_moves is our local copy.
+                            // We need to reset if:
+                            // 1. The upstream has fewer moves than us (takeback), or
+                            // 2. The existing moves (up to our local length) don't match (diverged state)
+                            // If upstream has more moves, they'll be applied below in the for loop (no reset needed)
+                            let moves_match = upstream_state.moves.len() >= self.server_moves.len()
+                                && self.server_moves.iter().map(|m| m.to_string()).eq(
+                                    upstream_state
+                                        .moves
+                                        .iter()
+                                        .take(self.server_moves.len())
+                                        .map(|s| s.as_str()),
+                                );
+                            if !moves_match {
                                 // Do it after the while to avoid problems with multiple mut refs of self.
                                 reset = true;
                                 break;
                             };
 
-                            let last_move = state.moves.last();
-
-                            if let Some(last_move) = last_move {
-                                // event is the last move
-                                match ChessMove::from_str(last_move) {
+                            // Process any new moves from the server
+                            for new_move in
+                                upstream_state.moves.iter().skip(self.server_moves.len())
+                            {
+                                match ChessMove::from_str(new_move) {
                                     Ok(chess_move) => {
                                         game.make_move(chess_move);
                                         self.server_moves.push(chess_move);

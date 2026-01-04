@@ -127,6 +127,12 @@ class HttpBleBridge(val ble: Ble, context: Context) : BleAction {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    private val streamHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var gatt: BluetoothGatt? = null
@@ -287,11 +293,11 @@ class HttpBleBridge(val ble: Ble, context: Context) : BleAction {
                 }
             }
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "POST request failed for id $id", e)
+            Log.e(LOG_TAG, "POST request failed for id $id $e", e)
         }
     }
 
-    private suspend fun handleStream(id: Int, url: String) {
+    private fun handleStream(id: Int, url: String) {
         val streamJob = bridgeScope.launch(Dispatchers.IO) {
             try {
                 val requestBuilder = Request.Builder()
@@ -306,7 +312,7 @@ class HttpBleBridge(val ble: Ble, context: Context) : BleAction {
 
                 val request = requestBuilder.build()
 
-                httpClient.newCall(request).execute().use { response ->
+                streamHttpClient.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.e(LOG_TAG, "STREAM failed for id $id: HTTP ${response.code}")
                         return@launch
