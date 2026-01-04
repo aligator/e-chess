@@ -12,48 +12,11 @@ use chess_game::{
     lichess::LichessConnector,
 };
 
-use esp_idf_svc::nvs::NvsDefault;
 use log::*;
 use std::thread;
 use std::thread::sleep;
 
-use crate::{bluetooth::Bluetooth, event::EventManager, storage::Storage, Event};
-
-#[derive(Clone)]
-pub struct Settings {
-    pub token: String,
-    pub last_game_id: String,
-
-    storage: Arc<Mutex<Storage<NvsDefault>>>,
-}
-
-impl Debug for Settings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Settings")
-            .field("token", &self.token)
-            .field("last_game_id", &self.last_game_id)
-            .finish()
-    }
-}
-
-impl Settings {
-    pub fn new(storage: Storage<NvsDefault>) -> Result<Self> {
-        Ok(Settings {
-            token: storage.get_str::<25>("api_token")?.unwrap_or_default(),
-            last_game_id: storage.get_str::<57>("last_game_id")?.unwrap_or_default(), // use 57 so it may be used for FEN strings also...
-
-            storage: Arc::new(Mutex::new(storage)),
-        })
-    }
-
-    pub fn save(&self) -> Result<()> {
-        let mut storage = self.storage.lock().unwrap();
-
-        storage.set_str("api_token", &self.token)?;
-        storage.set_str("last_game_id", &self.last_game_id)?;
-        Ok(())
-    }
-}
+use crate::{bluetooth::Bluetooth, event::EventManager, Event};
 
 #[derive(Debug, Clone)]
 /// Events that are sent from the game thread to the main thread
@@ -73,7 +36,6 @@ pub enum GameCommandEvent {
 
 fn load_game(
     game_key: String,
-    settings: Arc<Mutex<Settings>>,
     tx: Sender<Event>,
     connectors: &[Arc<Mutex<dyn ChessConnector + Send>>],
 ) -> Result<ChessGame, ChessGameError> {
@@ -112,11 +74,6 @@ fn load_game(
                 warn!("Failed to send game loaded event: {:?}", e);
             }
 
-            // Update the last_game_id in settings
-            let mut settings = settings.lock().unwrap();
-            settings.last_game_id = game_key;
-            settings.save().unwrap();
-
             Ok(chess_game)
         }
         Err(e) => {
@@ -131,7 +88,7 @@ fn load_game(
     }
 }
 
-pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Settings>>) {
+pub fn run_game(event_manager: &EventManager<Event>) {
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
@@ -168,7 +125,7 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                         info!("Loading new game: {}", game_id);
 
-                        match load_game(game_id, settings.clone(), tx.clone(), &connectors) {
+                        match load_game(game_id, tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick
                                 last_game_state = None;

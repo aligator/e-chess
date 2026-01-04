@@ -16,14 +16,10 @@ use esp_idf_hal::rmt::TxRmtDriver;
 use esp_idf_hal::spi::config::DriverConfig;
 use esp_idf_hal::spi::{SpiConfig, SpiDeviceDriver, SpiDriver};
 use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
-use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use game::GameStateEvent;
 use log::*;
-use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
-use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
 mod bluetooth;
@@ -49,7 +45,6 @@ fn run_game<'a, ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>(
     ws2812: Ws2812Esp32Rmt,
     eink_display: &mut ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>,
     event_manager: &EventManager<Event>,
-    settings: Arc<Mutex<game::Settings>>,
 ) -> Result<()>
 where
     ButtonA: embedded_hal::digital::InputPin,
@@ -70,7 +65,7 @@ where
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    game::run_game(&event_manager, settings.clone());
+    game::run_game(&event_manager);
 
     // Start the main loop
     info!("Start app loop");
@@ -236,25 +231,9 @@ fn main() -> Result<()> {
         &event_manager,
     )?;
 
-    let nvs = EspDefaultNvsPartition::take()?;
-    let sys_loop = EspSystemEventLoop::take()?;
-    let storage = Storage::new(nvs.clone(), "e-chess")?;
-
-    let settings = Arc::new(Mutex::new(game::Settings::new(storage)?));
-
-    {
-        info!("Settings: {:?}", settings.lock().unwrap());
-    }
-
     eink_display.setup()?;
 
-    match run_game(
-        mcp23017,
-        ws2812,
-        &mut eink_display,
-        &event_manager,
-        settings,
-    ) {
+    match run_game(mcp23017, ws2812, &mut eink_display, &event_manager) {
         Ok(_) => {
             warn!("Stopping game loop");
             Ok(())

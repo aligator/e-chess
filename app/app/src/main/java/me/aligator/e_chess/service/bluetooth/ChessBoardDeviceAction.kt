@@ -8,7 +8,7 @@ import java.util.UUID
 
 private val LOG_TAG = "ChessBoardDeviceAction"
 
-private val GAME_KEY_CHARACTERISTIC_UUID: UUID = UUID.fromString("d4f1e338-3396-4e72-a7d7-7c037fbcc0a1")
+private val GAME_KEY_CHARACTERISTIC_UUID: UUID = UUID.fromString("0de794de-c3a3-48b8-bd81-893d30342c87")
 
 class ChessBoardDeviceAction(val ble: Ble) : BleAction {
     private var gameKeyCharacteristic: BluetoothGattCharacteristic? = null

@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
-pub const DATA_TX_CHAR_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
-pub const DATA_RX_CHAR_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
-pub const GAME_KEY_CHARACTERISTIC_UUID: &str = "d4f1e338-3396-4e72-a7d7-7c037fbcc0a1";
+pub const BRIDGE_REQUEST_CHARACTERISTIC_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
+pub const BRIDGE_RESPONSE_CHARACTERISTIC_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
+pub const GAME_KEY_CHARACTERISTIC_UUID: &str = "0de794de-c3a3-48b8-bd81-893d30342c87";
 
 // TODO: can I increase the MTU?
 // Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
@@ -111,8 +111,7 @@ pub fn decode_frame(payload: &[u8]) -> Result<PhoneToBoard, BluetoothError> {
 
 pub trait Transport: Send + Sync {
     fn send(&self, msg: BoardToPhone) -> Result<(), BluetoothError>;
-    fn recv(&self, timeout: Duration) -> Result<Option<PhoneToBoard>, BluetoothError>;
-    fn recv_blocking(&self) -> Result<PhoneToBoard, BluetoothError>;
+    fn recv(&self) -> Result<PhoneToBoard, BluetoothError>;
 }
 
 /// Channel-based transport: integrate BLE callbacks by writing decoded
@@ -141,17 +140,7 @@ impl Transport for ChannelTransport {
             .map_err(|e| BluetoothError::Transport(e.to_string()))
     }
 
-    fn recv(&self, timeout: Duration) -> Result<Option<PhoneToBoard>, BluetoothError> {
-        match self.to_board.lock().unwrap().recv_timeout(timeout) {
-            Ok(msg) => Ok(Some(msg)),
-            Err(RecvTimeoutError::Disconnected) => {
-                Err(BluetoothError::Transport("ble link closed".into()))
-            }
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-        }
-    }
-
-    fn recv_blocking(&self) -> Result<PhoneToBoard, BluetoothError> {
+    fn recv(&self) -> Result<PhoneToBoard, BluetoothError> {
         self.to_board
             .lock()
             .unwrap()
@@ -175,24 +164,28 @@ pub struct Bluetooth {
     game_load_tx: Arc<Mutex<Sender<Event>>>,
 }
 
-/// Decode chunked UTF-8 data and return complete lines plus remaining bytes.
+/// Append incoming bytes to `buffer` and extract complete frames terminated by
+/// `\n` or `\r`.
 ///
-/// This helper accepts a single chunk of bytes and returns a tuple:
-/// - Vec<String>: complete lines found in the data (split on '\n' or '\r'),
-///   trimmed and with empty lines omitted.
-/// - Vec<u8>: remaining bytes that should be kept and prepended to the next
-///   chunk (this includes any bytes belonging to an incomplete UTF-8 sequence
-///   or a trailing partial line without a newline).
-/// Decode chunked frames (raw bytes) and keep remainder in `buffer`.
+/// Behavior:
+/// - Incoming `data` is appended to the mutable `buffer`.
+/// - The function searches `buffer` for delimiters (`\n` or `\r`). For each
+///   delimiter found it drains the slice up to and including the delimiter and
+///   returns that drained slice as a `Vec<u8>` (so each returned frame contains
+///   the delimiter at the end).
+/// - Any trailing bytes in `buffer` after the last delimiter are left in place
+///   (these represent a partial frame to be completed by subsequent calls).
 ///
-/// This helper appends `data` to `buffer`, then drains and returns all
-/// complete frames ending with `\n` or `\r` as raw `Vec<u8>` items
-/// (each frame includes everything up to and including the delimiter).
-/// Any trailing partial bytes are left in `buffer` for the next call.
-///
-/// This mirrors the simpler inline logic previously used in the on_write
-/// handler: append, find delimiter position, drain(..=pos) and collect.
-fn decode_chunked_utf8(data: &[u8], buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
+/// Important notes:
+/// - This utility operates on raw bytes (Vec<u8>) and does not attempt UTF-8
+///   validation or conversion. Callers must decide how to interpret the bytes
+///   (e.g., convert to UTF-8 with lossy replacement if needed).
+/// - Frames are returned exactly as drained; the function does not trim
+///   whitespace or merge multiple delimiters.
+/// - This intentionally mirrors the simple delimiter-based logic used in the
+///   BLE `on_write` handler: append, find delimiter position, drain(..=pos),
+///   and collect.
+fn decode_chunked(data: &[u8], buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
     // Append new data into the buffer
     buffer.extend_from_slice(data);
 
@@ -215,7 +208,7 @@ fn dispatch_messages(
     thread::spawn(move || {
         info!("Dispatcher thread started");
         loop {
-            match transport.recv_blocking() {
+            match transport.recv() {
                 Ok(msg) => {
                     // Extract the ID from the message
                     let id = match &msg {
@@ -315,31 +308,39 @@ impl Bluetooth {
             });
         }
 
-        let (tx_characteristic, rx_characteristic, game_key_characteristic) = {
+        let (
+            bridge_request_characteristic,
+            bridge_response_characteristic,
+            game_key_characteristic,
+        ) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
-            // TX characteristic: board -> phone notifications only.
-            let tx_chr = service.lock().create_characteristic(
-                uuid128!(DATA_TX_CHAR_UUID),
+            // Request characteristic: board -> phone notifications only.
+            let bridge_request_characteristic = service.lock().create_characteristic(
+                uuid128!(BRIDGE_REQUEST_CHARACTERISTIC_UUID),
                 NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
             );
 
-            // RX characteristic: phone -> board writes only.
-            let rx_chr = service.lock().create_characteristic(
-                uuid128!(DATA_RX_CHAR_UUID),
+            // Response characteristic: phone -> board writes only.
+            let bridge_response_characteristic = service.lock().create_characteristic(
+                uuid128!(BRIDGE_RESPONSE_CHARACTERISTIC_UUID),
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
             // Game key characteristic: phone -> board game id
-            let game_key_chr = service.lock().create_characteristic(
+            let game_key_characteristic = service.lock().create_characteristic(
                 uuid128!(GAME_KEY_CHARACTERISTIC_UUID),
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
-            (tx_chr, rx_chr, game_key_chr)
+            (
+                bridge_request_characteristic,
+                bridge_response_characteristic,
+                game_key_characteristic,
+            )
         };
 
         {
-            let chr = tx_characteristic.clone();
+            let chr = bridge_request_characteristic.clone();
             let connection_flag = Arc::clone(&self.is_connected);
             server.on_disconnect(move |_desc, _reason| {
                 info!("BLE disconnected, restarting advertising");
@@ -352,9 +353,9 @@ impl Bluetooth {
         {
             let tx = from_phone_tx.clone();
             let rx_buffer = Arc::new(Mutex::new(Vec::new()));
-            let chr = rx_characteristic.clone();
+            let characteristic = bridge_response_characteristic.clone();
             info!("start listening on rx characteristic changes");
-            chr.lock().on_write(move |args| {
+            characteristic.lock().on_write(move |args| {
                 let data = args.recv_data();
 
                 const MAX_MULTI_FRAME_LEN: usize = 4096;
@@ -373,7 +374,7 @@ impl Bluetooth {
                     }
                 }
 
-                let frames = decode_chunked_utf8(data, &mut *buffer);
+                let frames = decode_chunked(data, &mut *buffer);
 
                 for frame in frames {
                     match decode_frame(&frame) {
@@ -390,16 +391,16 @@ impl Bluetooth {
 
         {
             let event_tx = Arc::clone(&self.game_load_tx);
-            let chr = game_key_characteristic.clone();
+            let characteristic = game_key_characteristic.clone();
             let game_key_buffer = Arc::new(Mutex::new(Vec::new()));
-            chr.lock().on_write(move |args| {
+            characteristic.lock().on_write(move |args| {
                 // Receive incoming chunk
                 let data = args.recv_data();
 
                 // Decode complete lines, buffer is updated in-place by the utility
                 // Combine with any previously stored partial bytes and decode raw frames
                 let mut buf_guard = game_key_buffer.lock().unwrap();
-                let frames = decode_chunked_utf8(data, &mut *buf_guard);
+                let frames = decode_chunked(data, &mut *buf_guard);
 
                 // Forward each complete raw frame as a LoadNewGame event (decode UTF-8)
                 for frame in frames {
@@ -441,7 +442,7 @@ impl Bluetooth {
 
         Ok(BleRuntime {
             outgoing_rx: to_phone_rx,
-            tx_characteristic,
+            tx_characteristic: bridge_request_characteristic,
         })
     }
 
