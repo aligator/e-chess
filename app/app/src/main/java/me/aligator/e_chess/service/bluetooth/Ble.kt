@@ -133,7 +133,7 @@ data class BleResponse(
 };
 
 
-fun requiredPermissions(): List<String>{
+fun requiredPermissions(): List<String> {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         return listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
     } else {
@@ -158,6 +158,7 @@ interface BleAction {
         characteristic: BluetoothGattCharacteristic,
         value: ByteArray
     )
+
     fun onServiceDiscovered(
         gatt: BluetoothGatt,
         service: BluetoothGattService
@@ -201,6 +202,7 @@ class Ble(
 
     private var responseJob: Job? = null
     private var responseChannel: Channel<BleResponse> = Channel()
+
     // There should always be only one pending response at a time
     private var responseAckChannel: Channel<UUID> = Channel(1)
 
@@ -216,10 +218,12 @@ class Ble(
         // So this must use the mainLoopHandler.
         mainLoopHandler.post {
             _bleState.update {
-                it.copy(connectedDevice = it.connectedDevice.copy(
-                    deviceState = state,
-                    address= address,
-                ))
+                it.copy(
+                    connectedDevice = it.connectedDevice.copy(
+                        deviceState = state,
+                        address = address,
+                    )
+                )
             }
         }
     }
@@ -279,7 +283,7 @@ class Ble(
                     // BLE scan callbacks happen off the main thread; push updates to UI state
                     // onto the main looper.
                     mainLoopHandler.post {
-                        _bleState.update  { state ->
+                        _bleState.update { state ->
 
                             val name = try {
                                 result.device.name
@@ -366,7 +370,7 @@ class Ble(
         characteristic: BluetoothGattCharacteristic?,
         status: Int
     ) {
-        if (characteristic?.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && characteristic.uuid != null && status ==  BluetoothGatt.GATT_SUCCESS) {
+        if (characteristic?.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && characteristic.uuid != null && status == BluetoothGatt.GATT_SUCCESS) {
             parentScope.launch {
                 responseAckChannel.send(characteristic.uuid)
             }
@@ -435,7 +439,15 @@ class Ble(
         for (response in responseChannel) {
             val currentGatt = gatt ?: break
             val service = currentGatt.getService(serviceUuid)
+            if (service == null) {
+                Log.e(LOG_TAG, "Service not available, skipping response")
+                continue
+            }
             val characteristic = service.getCharacteristic(response.characteristic)
+            if (characteristic == null) {
+                Log.e(LOG_TAG, "Characteristic not available, skipping response")
+                continue
+            }
 
             // only allow chunking for WRITE_TYPE_DEFAULT
             val chunks: List<ByteArray> = if (response.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) {
@@ -538,10 +550,12 @@ class Ble(
         payload: ByteArray
     ) {
         parentScope.launch {
-            responseChannel.send(BleResponse(
-                characteristic = characteristic.uuid,
-                data = payload
-            ))
+            responseChannel.send(
+                BleResponse(
+                    characteristic = characteristic.uuid,
+                    data = payload
+                )
+            )
 
             Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
         }
