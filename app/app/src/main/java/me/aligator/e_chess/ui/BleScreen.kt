@@ -129,10 +129,13 @@ fun BleScreen(
                     onStartScan = viewModel::startScan,
                     onStopScan = viewModel::stopScan,
                     onConnect = viewModel::connect,
+                    onDisconnect = viewModel::disconnect,
                     onLoadGame = { gameKey ->
                         viewModel.loadGame(gameKey)
-                        val message = context.getString(R.string.load_game_sent)
-                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        if (!uiState.isLoadingGame) {
+                            val message = context.getString(R.string.load_game_sent)
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }
                     },
                     onFetchGames = viewModel::fetchGames,
                     onGameKeyChanged = viewModel::setSelectedGameKey,
@@ -148,13 +151,17 @@ private fun BleContent(
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onConnect: (me.aligator.e_chess.service.bluetooth.SimpleDevice) -> Unit,
+    onDisconnect: () -> Unit,
     onLoadGame: (String) -> Unit,
     onFetchGames: () -> Unit,
     onGameKeyChanged: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        ConnectionStatusCard(connectionState = uiState.bleState.connectedDevice)
+        ConnectionStatusCard(
+            connectionState = uiState.bleState.connectedDevice,
+            onDisconnect = onDisconnect
+        )
 
         if (uiState.isConnected) {
             GameLoader(
@@ -162,7 +169,9 @@ private fun BleContent(
                 selectedGameKey = uiState.selectedGameKey,
                 onGameKeyChanged = onGameKeyChanged,
                 onLoadGame = onLoadGame,
-                onFetchGames = onFetchGames
+                onFetchGames = onFetchGames,
+                isLoadingGames = uiState.isLoadingGames,
+                isLoadingGame = uiState.isLoadingGame
             )
         } else {
             DeviceScanner(

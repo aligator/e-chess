@@ -102,7 +102,7 @@ impl<R: Requester> LichessConnector<R> {
 }
 
 fn map_ongoing_game(json_value: &serde_json::Value) -> Option<OngoingGame> {
-    let game_id = json_value.get("gameId");
+    let game_id = json_value.get("fullId");
     let oppenent_info = json_value.get("opponent");
 
     if game_id.is_none() || oppenent_info.is_none() {

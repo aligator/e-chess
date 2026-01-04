@@ -1,13 +1,17 @@
 package me.aligator.e_chess.ui.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -36,6 +40,8 @@ fun GameLoader(
     onGameKeyChanged: (String) -> Unit,
     onLoadGame: (String) -> Unit,
     onFetchGames: () -> Unit,
+    isLoadingGames: Boolean = false,
+    isLoadingGame: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -54,10 +60,19 @@ fun GameLoader(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.load_game_title),
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row {
+                Text(
+                    text = stringResource(R.string.load_game_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                if (isLoadingGames) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -107,11 +122,19 @@ fun GameLoader(
 
             Button(
                 onClick = { onLoadGame(selectedGameKey.trim()) },
-                enabled = selectedGameKey.isNotBlank(),
+                enabled = selectedGameKey.isNotBlank() && !isLoadingGame,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp)
             ) {
+                if (isLoadingGame) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(stringResource(R.string.load_game_button))
             }
         }

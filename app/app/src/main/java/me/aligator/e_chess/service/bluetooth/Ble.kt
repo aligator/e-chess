@@ -206,6 +206,14 @@ class Ble(
     // There should always be only one pending response at a time
     private var responseAckChannel: Channel<UUID> = Channel(1)
 
+    // Queue for descriptor writes (BLE only allows one operation at a time)
+    private data class DescriptorWriteRequest(
+        val gatt: BluetoothGatt,
+        val characteristic: BluetoothGattCharacteristic
+    )
+    private var descriptorWriteQueue = mutableListOf<DescriptorWriteRequest>()
+    private var isWritingDescriptor = false
+
     fun register(action: BleAction) {
         bleActions.add(action)
     }
@@ -406,7 +414,7 @@ class Ble(
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 val service = gatt.getService(serviceUuid)
                 if (service == null) {
-                    // Not the service we need.
+                    Log.e(LOG_TAG, "Service $serviceUuid not found")
                     return
                 }
 
@@ -429,6 +437,24 @@ class Ble(
             ) {
                 Log.d(LOG_TAG, "characteristic ${characteristic?.uuid} written: $status")
                 handleCharacteristicWrite(gatt, characteristic, status)
+            }
+
+            override fun onDescriptorWrite(
+                gatt: BluetoothGatt?,
+                descriptor: BluetoothGattDescriptor?,
+                status: Int
+            ) {
+                if (descriptor?.uuid == CLIENT_CHARACTERISTIC_CONFIG_UUID) {
+                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                        Log.e(LOG_TAG, "CCCD descriptor write failed with status $status for ${descriptor.characteristic?.uuid}")
+                    }
+
+                    // Mark the current operation as complete and process the next one
+                    synchronized(descriptorWriteQueue) {
+                        isWritingDescriptor = false
+                        processNextDescriptorWrite()
+                    }
+                }
             }
         }
 
@@ -529,6 +555,11 @@ class Ble(
     }
 
     fun disconnect() {
+        Log.d(LOG_TAG, "disconnect() called")
+
+        // Update state to disconnected
+        setDeviceState(DeviceState.DISCONNECTED, null)
+
         for (action in bleActions) {
             action.onDisconnect()
         }
@@ -537,6 +568,7 @@ class Ble(
         responseJob = null
 
         try {
+            gatt?.disconnect()
             gatt?.close()
         } catch (err: SecurityException) {
             Log.e(LOG_TAG, "not allowed to close ble $err")
@@ -567,14 +599,52 @@ class Ble(
     ) {
         val notificationSet = gatt.setCharacteristicNotification(characteristic, true)
         if (!notificationSet) {
-            Log.w(LOG_TAG, "setCharacteristicNotification fehlgeschlagen")
+            Log.w(LOG_TAG, "setCharacteristicNotification failed for ${characteristic.uuid}")
+            return
         }
 
         val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
         if (descriptor != null) {
-            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            synchronized(descriptorWriteQueue) {
+                descriptorWriteQueue.add(DescriptorWriteRequest(gatt, characteristic))
+                processNextDescriptorWrite()
+            }
         } else {
-            Log.w(LOG_TAG, "CCCD Descriptor nicht gefunden")
+            Log.w(LOG_TAG, "CCCD Descriptor not found for ${characteristic.uuid}")
+        }
+    }
+
+    private fun processNextDescriptorWrite() {
+        synchronized(descriptorWriteQueue) {
+            if (isWritingDescriptor || descriptorWriteQueue.isEmpty()) {
+                return
+            }
+
+            val request = descriptorWriteQueue.removeAt(0)
+            isWritingDescriptor = true
+
+            val descriptor = request.characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
+            if (descriptor == null) {
+                Log.w(LOG_TAG, "CCCD Descriptor not found for ${request.characteristic.uuid}")
+                isWritingDescriptor = false
+                processNextDescriptorWrite()
+                return
+            }
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    request.gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+                } else {
+                    @Suppress("DEPRECATION")
+                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    @Suppress("DEPRECATION")
+                    request.gatt.writeDescriptor(descriptor)
+                }
+            } catch (err: SecurityException) {
+                Log.e(LOG_TAG, "writeDescriptor failed with security exception: $err")
+                isWritingDescriptor = false
+                processNextDescriptorWrite()
+            }
         }
     }
 }

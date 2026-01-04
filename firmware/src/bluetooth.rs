@@ -24,6 +24,7 @@ pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
 pub const BRIDGE_REQUEST_CHARACTERISTIC_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const BRIDGE_RESPONSE_CHARACTERISTIC_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
 pub const GAME_KEY_CHARACTERISTIC_UUID: &str = "0de794de-c3a3-48b8-bd81-893d30342c87";
+pub const GAME_STATE_CHARACTERISTIC_UUID: &str = "ccdffbc5-44ce-41a7-9a15-d70b82f81b1a";
 
 // TODO: can I increase the MTU?
 // Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
@@ -162,6 +163,8 @@ pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
     is_connected: Arc<Mutex<bool>>,
     game_load_tx: Arc<Mutex<Sender<Event>>>,
+    game_state_characteristic:
+        Option<Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>>,
 }
 
 /// Append incoming bytes to `buffer` and extract complete frames terminated by
@@ -267,12 +270,14 @@ impl Bluetooth {
             }),
             is_connected: Arc::new(Mutex::new(false)),
             game_load_tx: Arc::new(Mutex::new(game_load_tx)),
+            game_state_characteristic: None,
         };
 
         let ble_runtime = bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx);
 
         ble_runtime
-            .map(|runtime| {
+            .map(|(runtime, game_state_char)| {
+                bluetooth.game_state_characteristic = Some(game_state_char);
                 runtime.spawn();
             })
             .unwrap_or_else(|e| {
@@ -287,7 +292,13 @@ impl Bluetooth {
         device_name: &str,
         to_phone_rx: Receiver<BoardToPhone>,
         from_phone_tx: Sender<PhoneToBoard>,
-    ) -> Result<BleRuntime, BluetoothError> {
+    ) -> Result<
+        (
+            BleRuntime,
+            Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+        ),
+        BluetoothError,
+    > {
         self.is_connected = Arc::new(Mutex::new(false));
 
         let ble_device = BLEDevice::take();
@@ -309,6 +320,7 @@ impl Bluetooth {
             bridge_request_characteristic,
             bridge_response_characteristic,
             game_key_characteristic,
+            game_state_characteristic,
         ) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
             // Request characteristic: board -> phone notifications only.
@@ -329,10 +341,17 @@ impl Bluetooth {
                 NimbleProperties::READ | NimbleProperties::WRITE,
             );
 
+            // Game state characteristic: board -> phone notifications for game events
+            let game_state_characteristic = service.lock().create_characteristic(
+                uuid128!(GAME_STATE_CHARACTERISTIC_UUID),
+                NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            );
+
             (
                 bridge_request_characteristic,
                 bridge_response_characteristic,
                 game_key_characteristic,
+                game_state_characteristic,
             )
         };
 
@@ -437,10 +456,13 @@ impl Bluetooth {
             .start()
             .map_err(|e| BluetoothError::Transport(e.to_string()))?;
 
-        Ok(BleRuntime {
-            outgoing_rx: to_phone_rx,
-            tx_characteristic: bridge_request_characteristic,
-        })
+        Ok((
+            BleRuntime {
+                outgoing_rx: to_phone_rx,
+                tx_characteristic: bridge_request_characteristic,
+            },
+            game_state_characteristic,
+        ))
     }
 
     fn next_id(&self) -> u32 {
@@ -528,6 +550,19 @@ impl Bluetooth {
                     break;
                 }
             }
+        }
+    }
+
+    /// Send a game state notification to the connected phone
+    pub fn notify_game_state(&self, state: &str) {
+        if let Some(characteristic) = &self.game_state_characteristic {
+            let mut chr = characteristic.lock();
+            let data = format!("{}\n", state);
+            chr.set_value(data.as_bytes());
+            chr.notify();
+            info!("Sent game state notification: {}", state);
+        } else {
+            warn!("Game state characteristic not available");
         }
     }
 }

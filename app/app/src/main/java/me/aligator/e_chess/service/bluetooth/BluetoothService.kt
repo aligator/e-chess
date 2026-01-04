@@ -4,9 +4,13 @@ import android.app.Service
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 private const val LOG_TAG = "BluetoothService"
@@ -31,13 +35,15 @@ class BluetoothService : Service() {
     /**
      * Bridges http requests from the board to an upstream api.
      */
-    private lateinit var httpBridge: HttpBleBridge
+    private lateinit var httpBridgeAction: HttpBleBridgeAction
 
     /**
      * Connects to the board to set / query the board state.
      */
     lateinit var chessBoardAction: ChessBoardDeviceAction
 
+    private val _gameLoadState = MutableStateFlow<String?>(null)
+    val gameLoadState: StateFlow<String?> = _gameLoadState.asStateFlow()
 
     override fun onCreate() {
         super.onCreate()
@@ -47,13 +53,18 @@ class BluetoothService : Service() {
             serviceUuid = SERVICE_UUID
         )
         ble.checkBluetooth()
-        httpBridge = HttpBleBridge(ble, applicationContext)
-        chessBoardAction = ChessBoardDeviceAction(ble)
+        httpBridgeAction = HttpBleBridgeAction(ble, applicationContext)
+        chessBoardAction = ChessBoardDeviceAction(ble) { state ->
+            Log.d(LOG_TAG, "Game load state changed to: $state")
+            _gameLoadState.value = state
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
+        httpBridgeAction.onDestroy()
+        chessBoardAction.onDestroy()
         ble.onDestroy()
         super.onDestroy()
     }

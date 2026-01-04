@@ -1,6 +1,7 @@
 package me.aligator.e_chess.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,10 +17,13 @@ import me.aligator.e_chess.service.bluetooth.BluetoothService
 import me.aligator.e_chess.service.bluetooth.DeviceState
 import me.aligator.e_chess.service.bluetooth.SimpleDevice
 
+private const val LOG_TAG = "BleViewModel"
+
 data class BleUiState(
     val bleState: BleState = BleState(),
     val availableGames: List<GameOption> = emptyList(),
     val isLoadingGames: Boolean = false,
+    val isLoadingGame: Boolean = false,
     val selectedGameKey: String = "",
     val isConnected: Boolean = false,
 )
@@ -29,6 +33,7 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _availableGames = MutableStateFlow<List<GameOption>>(emptyList())
     private val _isLoadingGames = MutableStateFlow(false)
+    private val _isLoadingGame = MutableStateFlow(false)
     private val _selectedGameKey = MutableStateFlow("")
     private val _bleState = MutableStateFlow(BleState())
 
@@ -38,12 +43,14 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         _bleState,
         _availableGames,
         _isLoadingGames,
+        _isLoadingGame,
         _selectedGameKey
-    ) { bleState, games, loading, gameKey ->
+    ) { bleState, games, loadingGames, loadingGame, gameKey ->
         BleUiState(
             bleState = bleState,
             availableGames = games,
-            isLoadingGames = loading,
+            isLoadingGames = loadingGames,
+            isLoadingGame = loadingGame,
             selectedGameKey = gameKey,
             isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED
         )
@@ -60,6 +67,22 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch {
                 service.ble.bleState.collect { state ->
                     _bleState.value = state
+                }
+            }
+            viewModelScope.launch {
+                service.gameLoadState.collect { state ->
+                    Log.d(LOG_TAG, "Received game load state: $state, current isLoadingGame: ${_isLoadingGame.value}")
+                    when (state) {
+                        "loaded" -> {
+                            Log.d(LOG_TAG, "Setting isLoadingGame to false (loaded)")
+                            _isLoadingGame.value = false
+                        }
+                        "error" -> {
+                            Log.d(LOG_TAG, "Setting isLoadingGame to false (error)")
+                            _isLoadingGame.value = false
+                        }
+                        null -> {} // Initial state, do nothing
+                    }
                 }
             }
         } else {
@@ -79,13 +102,25 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         bluetoothService?.ble?.connect(device)
     }
 
+    fun disconnect() {
+        Log.d(LOG_TAG, "disconnect called")
+        bluetoothService?.ble?.disconnect()
+        // Reset loading state
+        _isLoadingGame.value = false
+    }
+
     fun loadGame(gameKey: String) {
+        Log.d(LOG_TAG, "loadGame called with key: $gameKey")
+        _isLoadingGame.value = true
+        Log.d(LOG_TAG, "Set isLoadingGame to true")
         val actualGameKey = if (gameKey == "standard") {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         } else {
             gameKey
         }
-        bluetoothService?.chessBoardAction?.loadGame(actualGameKey)
+        val success = bluetoothService?.chessBoardAction?.loadGame(actualGameKey)
+        Log.d(LOG_TAG, "loadGame sent to board, success: $success")
+        // Loading state will be cleared when we receive the game state notification
     }
 
     fun fetchGames() {

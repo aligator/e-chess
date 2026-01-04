@@ -113,7 +113,7 @@ private const val PROTOCOL_VERSION = 1
  * a special stream mode is implemented. This mode creates a long lived thread and
  * creates a new response for each "line".
  */
-class HttpBleBridge(val ble: Ble, context: Context) : BleAction {
+class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
     private val tokenStore = LichessTokenStore(context)
     private val json = Json {
         ignoreUnknownKeys = true

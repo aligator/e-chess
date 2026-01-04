@@ -27,4 +27,5 @@
     <string name="standard_game_option">Standard game (local)</string>
     <string name="available_devices">Available devices</string>
     <string name="load_game_title">Load game</string>
+    <string name="disconnect_button">Disconnect</string>
 </resources>

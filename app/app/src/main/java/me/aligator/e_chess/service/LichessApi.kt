@@ -21,7 +21,7 @@ data class LichessOpponent(
 
 @Serializable
 data class LichessGame(
-    val gameId: String,
+    val fullId: String,
     val opponent: LichessOpponent? = null
 )
 
@@ -74,8 +74,8 @@ class LichessApi(context: Context) {
                 playingResponse.nowPlaying.map { game ->
                     val opponentName = game.opponent?.username ?: "Unknown"
                     GameOption(
-                        id = game.gameId,
-                        displayName = "vs $opponentName (${game.gameId})"
+                        id = game.fullId,
+                        displayName = "vs $opponentName (${game.fullId})"
                     )
                 }
             }

@@ -92,11 +92,12 @@ pub fn run_game(event_manager: &EventManager<Event>) {
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
+    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone());
+    let bluetooth_clone = bluetooth.clone();
+
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
-        Arc::new(Mutex::new(LichessConnector::new(
-            Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone()),
-        ))),
+        Arc::new(Mutex::new(LichessConnector::new(bluetooth))),
     ];
 
     info!("Starting game thread");
@@ -133,6 +134,14 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                                 chess_game = new_chess_game;
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
+                        }
+                    }
+                    Event::GameState(GameStateEvent::GameLoaded(game_id)) => {
+                        info!("Game loaded event received: {}", game_id);
+                        if game_id.is_empty() {
+                            bluetooth_clone.notify_game_state("error");
+                        } else {
+                            bluetooth_clone.notify_game_state("loaded");
                         }
                     }
                     _ => {}
