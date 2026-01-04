@@ -114,6 +114,7 @@ pub fn decode_frame(payload: &[u8]) -> Result<PhoneToBoard, BluetoothError> {
 pub trait Transport: Send + Sync {
     fn send(&self, msg: BoardToPhone) -> Result<(), BluetoothError>;
     fn recv(&self, timeout: Duration) -> Result<Option<PhoneToBoard>, BluetoothError>;
+    fn recv_blocking(&self) -> Result<PhoneToBoard, BluetoothError>;
 }
 
 /// Channel-based transport: integrate BLE callbacks by writing decoded
@@ -150,6 +151,14 @@ impl Transport for ChannelTransport {
             }
             Err(RecvTimeoutError::Timeout) => Ok(None),
         }
+    }
+
+    fn recv_blocking(&self) -> Result<PhoneToBoard, BluetoothError> {
+        self.to_board
+            .lock()
+            .unwrap()
+            .recv()
+            .map_err(|_| BluetoothError::Transport("ble link closed".into()))
     }
 }
 
@@ -451,23 +460,29 @@ impl Bluetooth {
         }
 
         loop {
-            match {
-                if let Some(msg) = inner.pending.lock().unwrap().pop() {
-                    Ok(Some(msg))
-                } else {
-                    inner.transport.recv(Duration::from_millis(500))
-                }
-            } {
-                Ok(Some(PhoneToBoard::StreamData { id: msg_id, chunk })) if msg_id == id => {
+            // Block indefinitely waiting for messages - will unblock when channel closes
+            match inner.transport.recv_blocking() {
+                Ok(PhoneToBoard::StreamData { id: msg_id, chunk }) if msg_id == id => {
+                    info!(
+                        "handle_stream: received StreamData for id {}, chunk: {:?}",
+                        msg_id, chunk
+                    );
                     Bluetooth::push_chunk(&tx, &mut buffer, &chunk);
                 }
-                Ok(Some(PhoneToBoard::StreamClosed { id: msg_id })) if msg_id == id => break,
-                Ok(Some(other)) => {
+                Ok(PhoneToBoard::StreamClosed { id: msg_id }) if msg_id == id => {
+                    info!("handle_stream: stream closed for id {}", msg_id);
+                    break;
+                }
+                Ok(other) => {
+                    // This message is not for this stream - put it in pending for other requests
+                    info!(
+                        "handle_stream: received message for different request, stashing: {:?}",
+                        other
+                    );
                     inner.pending.lock().unwrap().push(other);
                 }
-                Ok(None) => continue,
                 Err(e) => {
-                    error!("Stream error: {:?}", e);
+                    info!("handle_stream: channel closed, exiting: {:?}", e);
                     break;
                 }
             }
