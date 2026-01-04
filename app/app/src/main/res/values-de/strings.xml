@@ -24,4 +24,5 @@
     <string
         name="load_game_failed"
     >Spielschlüssel konnte nicht gesendet werden. Verbindung prüfen.</string>
+    <string name="standard_game_option">Standardspiel (lokal)</string>
 </resources>

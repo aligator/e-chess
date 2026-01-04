@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "me.aligator.e_chess"
+        applicationId = "dev.aligator.e_chess"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

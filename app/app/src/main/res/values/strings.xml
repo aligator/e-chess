@@ -24,4 +24,5 @@
     <string
         name="load_game_failed"
     >Could not send the game key. Check the connection.</string>
+    <string name="standard_game_option">Standard game (local)</string>
 </resources>

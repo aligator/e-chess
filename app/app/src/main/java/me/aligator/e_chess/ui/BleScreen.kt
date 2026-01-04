@@ -2,74 +2,52 @@ package me.aligator.e_chess.ui
 
 import android.bluetooth.BluetoothAdapter
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.location.LocationManager
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.LocalActivityResultRegistryOwner
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import kotlinx.coroutines.launch
 import me.aligator.e_chess.R
+import me.aligator.e_chess.service.GameOption
+import me.aligator.e_chess.service.LichessApi
 import me.aligator.e_chess.service.bluetooth.BluetoothService
 import me.aligator.e_chess.service.bluetooth.SimpleDevice
-import me.aligator.e_chess.service.bluetooth.hasPermissions
-import me.aligator.e_chess.service.bluetooth.requiredPermissions
+
+private fun isLocationEnabled(context: Context): Boolean {
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    return locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+            locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+}
+
+private const val STANDARD_GAME_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
 @Composable
-fun BleScreen(modifier: Modifier = Modifier) {
+fun BleScreen(
+    permissionsGranted: Boolean,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val isPreview = LocalInspectionMode.current
-    val activityResultOwner = LocalActivityResultRegistryOwner.current
 
     var bluetoothService by remember { mutableStateOf<BluetoothService?>(null) }
-    val initialPermissionsGranted = remember { hasPermissions(context) }
-    var permissionsGranted by rememberSaveable { mutableStateOf(initialPermissionsGranted) }
-    var locationEnabled by rememberSaveable { mutableStateOf(isLocationEnabled(context)) }
+    var locationEnabled by remember { mutableStateOf<Boolean>(isLocationEnabled(context)) }
+    var availableGames by remember { mutableStateOf<List<GameOption>>(emptyList()) }
 
-    val permissionLauncher =
-        rememberPermissionLauncher(
-            requiredPermissions = requiredPermissions(),
-            onResult = { granted -> permissionsGranted = granted }
-        )
+    val lichessApi = remember { LichessApi(context) }
 
-    val enableBtLauncher =
-        if (activityResultOwner == null || isPreview) {
-            null
-        } else {
-            rememberLauncherForActivityResult(
-                ActivityResultContracts.StartActivityForResult()
-            ) {
-                bluetoothService?.ble?.checkBluetooth()
-            }
-        }
-
-    val locationSettingsLauncher =
-        if (activityResultOwner == null || isPreview) {
-            null
-        } else {
-            rememberLauncherForActivityResult(
-                ActivityResultContracts.StartActivityForResult()
-            ) { locationEnabled = isLocationEnabled(context) }
-        }
-
-    LaunchedEffect(isPreview, initialPermissionsGranted) {
-        if (!isPreview && !initialPermissionsGranted) {
-            permissionLauncher()
-        }
-    }
     DisposableEffect(permissionsGranted, isPreview) {
         if (isPreview) return@DisposableEffect onDispose {}
         val connection =
@@ -106,14 +84,12 @@ fun BleScreen(modifier: Modifier = Modifier) {
             permissionsGranted = permissionsGranted,
             locationEnabled = locationEnabled,
             onRequestEnableBt = {
-                enableBtLauncher?.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
-                    ?: run {
-                        bluetoothService!!.ble.checkBluetooth()
-                    }
+                val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+                context.startActivity(intent)
             },
             onOpenLocationSettings = {
-                locationSettingsLauncher?.launch(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                    ?: run { locationEnabled = isLocationEnabled(context) }
+                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                context.startActivity(intent)
             },
             onStartScan = {
                 bluetoothService!!.ble.startScan()
@@ -121,15 +97,28 @@ fun BleScreen(modifier: Modifier = Modifier) {
             onStopScan = { bluetoothService!!.ble.stopScan() },
             onConnect = { device: SimpleDevice -> bluetoothService!!.ble.connect(device) },
             onLoadGame = { gameKey ->
+                // Convert "standard" to the actual FEN string
+                val actualGameKey = if (gameKey == "standard") {
+                    STANDARD_GAME_FEN
+                } else {
+                    gameKey
+                }
+
                 val messageRes =
                     when {
-                        bluetoothService?.chessBoardAction?.loadGame(gameKey) == true ->
+                        bluetoothService?.chessBoardAction?.loadGame(actualGameKey) == true ->
                             R.string.load_game_sent
 
                         else -> R.string.load_game_failed
                     }
                 Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()
             },
+            onFetchGames = {
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    availableGames = lichessApi.getOngoingGames()
+                }
+            },
+            availableGames = availableGames,
         )
     }
 

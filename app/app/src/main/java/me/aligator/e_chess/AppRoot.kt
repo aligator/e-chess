@@ -1,6 +1,10 @@
 package me.aligator.e_chess
 
+import android.content.Intent
 import android.content.res.Configuration
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +29,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import me.aligator.e_chess.ui.BleScreen
 import me.aligator.e_chess.ui.ConfigScreen
+import me.aligator.e_chess.service.bluetooth.hasPermissions
+import me.aligator.e_chess.service.bluetooth.requiredPermissions
 
 private enum class AppDestination {
     BLE,
@@ -35,6 +42,26 @@ fun EChessApp() {
     val context = LocalContext.current
     var destination by rememberSaveable { mutableStateOf(AppDestination.BLE) }
     var language by rememberSaveable { mutableStateOf(AppLanguage.DE) }
+    var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
+
+    // Create launchers BEFORE CompositionLocalProvider
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grantResults ->
+        val permissions = requiredPermissions()
+        val granted = permissions.all { permission ->
+            grantResults[permission] == true
+        }
+        permissionsGranted = granted
+    }
+
+    // Request permissions on first launch
+    LaunchedEffect(Unit) {
+        if (!hasPermissions(context)) {
+            permissionLauncher.launch(requiredPermissions().toTypedArray())
+        }
+    }
+
     val localizedContext = remember(language) {
         val config = Configuration(context.resources.configuration).apply {
             setLocale(language.locale)
@@ -48,7 +75,7 @@ fun EChessApp() {
                 NavigationBarItem(
                     selected = destination == AppDestination.BLE,
                     onClick = { destination = AppDestination.BLE },
-                    icon = {  },
+                    icon = { },
                     label = { Text(stringResource(R.string.nav_bluetooth)) }
                 )
                 NavigationBarItem(
@@ -67,7 +94,10 @@ fun EChessApp() {
                     .padding(innerPadding)
             ) {
                 when (destination) {
-                    AppDestination.BLE -> BleScreen()
+                    AppDestination.BLE -> BleScreen(
+                        permissionsGranted = permissionsGranted
+                    )
+
                     AppDestination.CONFIG -> ConfigScreen(
                         selectedLanguage = language,
                         onLanguageSelected = { language = it }

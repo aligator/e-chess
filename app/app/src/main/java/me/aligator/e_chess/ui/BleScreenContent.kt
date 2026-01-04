@@ -11,11 +11,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
 import me.aligator.e_chess.R
+import me.aligator.e_chess.service.GameOption
 import me.aligator.e_chess.service.bluetooth.BleState
 import me.aligator.e_chess.service.bluetooth.ConnectedDevice
 import me.aligator.e_chess.service.bluetooth.ConnectionStep
@@ -44,39 +51,48 @@ fun BleScreenContent(
     onStopScan: () -> Unit,
     onConnect: (SimpleDevice) -> Unit,
     onLoadGame: (String) -> Unit,
+    onFetchGames: () -> Unit,
+    availableGames: List<GameOption>,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
         val textPadding = Modifier.padding(innerPadding)
         when {
             bleState.step == ConnectionStep.DISABLED ->
-                    Button(onClick = onRequestEnableBt, modifier = textPadding) {
-                        Text(stringResource(R.string.bluetooth_enable))
-                    }
+                Button(onClick = onRequestEnableBt, modifier = textPadding) {
+                    Text(stringResource(R.string.bluetooth_enable))
+                }
+
             bleState.step == ConnectionStep.UNAVAILABLE ->
-                    Text(stringResource(R.string.bluetooth_unavailable), modifier = textPadding)
+                Text(stringResource(R.string.bluetooth_unavailable), modifier = textPadding)
+
             permissionsGranted.not() ->
-                    Text(stringResource(R.string.permissions_required), modifier = textPadding)
+                Text(stringResource(R.string.permissions_required), modifier = textPadding)
+
             locationEnabled.not() ->
-                    Button(onClick = onOpenLocationSettings, modifier = textPadding) {
-                        Text(stringResource(R.string.location_button))
-                    }
+                Button(onClick = onOpenLocationSettings, modifier = textPadding) {
+                    Text(stringResource(R.string.location_button))
+                }
+
             else ->
-                    BleContent(
-                            scanning = bleState.step == ConnectionStep.SCANNING,
-                            connectionState = bleState.connectedDevice,
-                            canLoadGame =  bleState.connectedDevice.deviceState == DeviceState.CONNECTED,
-                            devices = bleState.devices,
-                            onStartScan = onStartScan,
-                            onStopScan = onStopScan,
-                            onConnect = onConnect,
-                            onLoadGame = onLoadGame,
-                            modifier = textPadding
-                    )
+                BleContent(
+                    scanning = bleState.step == ConnectionStep.SCANNING,
+                    connectionState = bleState.connectedDevice,
+                    canLoadGame = bleState.connectedDevice.deviceState == DeviceState.CONNECTED,
+                    devices = bleState.devices,
+                    onStartScan = onStartScan,
+                    onStopScan = onStopScan,
+                    onConnect = onConnect,
+                    onLoadGame = onLoadGame,
+                    onFetchGames = onFetchGames,
+                    availableGames = availableGames,
+                    modifier = textPadding
+                )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BleContent(
     scanning: Boolean,
@@ -87,42 +103,87 @@ private fun BleContent(
     onStopScan: () -> Unit,
     onConnect: (SimpleDevice) -> Unit,
     onLoadGame: (String) -> Unit,
+    onFetchGames: () -> Unit,
+    availableGames: List<GameOption>,
     modifier: Modifier = Modifier,
 ) {
     var gameKey by rememberSaveable { mutableStateOf("") }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    // Fetch games when the component becomes available
+    LaunchedEffect(canLoadGame) {
+        if (canLoadGame) {
+            onFetchGames()
+        }
+    }
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
         item {
             Text(
-                    text = "${stringResource(R.string.status_label)}: $connectionState",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(16.dp)
+                text = "${stringResource(R.string.status_label)}: $connectionState",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(16.dp)
             )
             Button(
-                    onClick = if (scanning) onStopScan else onStartScan,
-                    modifier = Modifier.padding(horizontal = 16.dp)
+                onClick = if (scanning) onStopScan else onStartScan,
+                modifier = Modifier.padding(horizontal = 16.dp)
             ) {
                 Text(
-                        if (scanning) stringResource(R.string.scan_stop)
-                        else stringResource(R.string.scan_start)
+                    if (scanning) stringResource(R.string.scan_stop)
+                    else stringResource(R.string.scan_start)
                 )
             }
             if (canLoadGame) {
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                ) {
+                    OutlinedTextField(
                         value = gameKey,
                         onValueChange = { gameKey = it },
                         label = { Text(stringResource(R.string.game_key_label)) },
                         placeholder = { Text(stringResource(R.string.game_key_placeholder)) },
                         singleLine = true,
-                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth()
-                )
-                Button(
-                        onClick = {
-                           onLoadGame(gameKey.trim())
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                         },
-                        enabled = gameKey.isNotBlank(),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        // Standard game option for local play
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.standard_game_option)) },
+                            onClick = {
+                                gameKey = "standard"
+                                expanded = false
+                            }
+                        )
+
+                        // Available Lichess games
+                        availableGames.forEach { game ->
+                            DropdownMenuItem(
+                                text = { Text(game.displayName) },
+                                onClick = {
+                                    gameKey = game.id
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Button(
+                    onClick = {
+                        onLoadGame(gameKey.trim())
+                    },
+                    enabled = gameKey.isNotBlank(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 ) { Text(stringResource(R.string.load_game_button)) }
             }
         }
@@ -132,22 +193,22 @@ private fun BleContent(
 
 @Composable
 private fun DeviceCard(
-        device: SimpleDevice,
-        onConnect: (SimpleDevice) -> Unit,
+    device: SimpleDevice,
+    onConnect: (SimpleDevice) -> Unit,
 ) {
     Card(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
-            colors = CardDefaults.cardColors()
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+        colors = CardDefaults.cardColors()
     ) {
         Text(
-                text = device.name ?: stringResource(R.string.unknown_device),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            text = device.name ?: stringResource(R.string.unknown_device),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
         )
         Text(
-                text = device.address,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp)
+            text = device.address,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
         Button(onClick = { onConnect(device) }, modifier = Modifier.padding(16.dp)) {
             Text(stringResource(R.string.connect_button))
@@ -174,6 +235,11 @@ private fun BleScreenScanPreview() {
             onStopScan = {},
             onConnect = {},
             onLoadGame = {},
+            onFetchGames = {},
+            availableGames = listOf(
+                GameOption("abc123", "vs Magnus (abc123)"),
+                GameOption("def456", "vs Hikaru (def456)")
+            ),
         )
     }
 }

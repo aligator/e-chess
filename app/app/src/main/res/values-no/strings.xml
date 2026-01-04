@@ -24,4 +24,5 @@
     <string
         name="load_game_failed"
     >Kunne ikke sende spillnøkkelen. Sjekk tilkoblingen.</string>
+    <string name="standard_game_option">Standardspill (lokalt)</string>
 </resources>
