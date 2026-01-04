@@ -80,17 +80,9 @@ where
     let mut last_physical = BitBoard::new(0);
     let mut last_game_state: Option<ChessGameState> = None;
 
-    let initial_game_id: String = {
-        let settings = settings.lock().unwrap();
-        let id = settings.last_game_id.clone();
+    // Always start with a local game (standard chess position)
+    let initial_game_id = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
 
-        if id.is_empty() {
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
-        } else {
-            id
-        }
-    };
-    // Load the initial game (standard chess starting position)
     tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
         initial_game_id,
     )))?;

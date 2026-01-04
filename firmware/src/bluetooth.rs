@@ -104,8 +104,6 @@ pub fn decode_frame(payload: &[u8]) -> Result<PhoneToBoard, BluetoothError> {
         .take_while(|b| *b != b'\n' && *b != b'\r')
         .collect::<Vec<u8>>();
 
-    info!("payload: {:?}", str::from_utf8(payload));
-
     serde_json::from_slice::<Frame<PhoneToBoard>>(&without_newline)
         .map(|frame| frame.msg)
         .map_err(|e| BluetoothError::Protocol(e.to_string()))
@@ -166,7 +164,8 @@ struct BluetoothInner {
     transport: Arc<dyn Transport>,
     request_timeout: Duration,
     next_request_id: AtomicU32,
-    pending: Mutex<Vec<PhoneToBoard>>,
+    // Registry of active requests: maps request_id -> channel to send responses
+    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<PhoneToBoard>>>>,
 }
 
 #[derive(Clone)]
@@ -208,6 +207,52 @@ fn decode_chunked_utf8(data: &[u8], buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
     frames
 }
 
+/// Central dispatcher thread that routes incoming messages to the right request handlers
+fn dispatch_messages(
+    transport: Arc<dyn Transport>,
+    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<PhoneToBoard>>>>,
+) {
+    thread::spawn(move || {
+        info!("Dispatcher thread started");
+        loop {
+            match transport.recv_blocking() {
+                Ok(msg) => {
+                    // Extract the ID from the message
+                    let id = match &msg {
+                        PhoneToBoard::Response { id, .. } => *id,
+                        PhoneToBoard::StreamData { id, .. } => *id,
+                        PhoneToBoard::StreamClosed { id } => *id,
+                    };
+
+                    info!("Dispatcher: received message for id {}: {:?}", id, msg);
+
+                    // Find the channel for this request ID and send the message
+                    let channels = request_channels.lock().unwrap();
+                    if let Some(tx) = channels.get(&id) {
+                        info!("Dispatcher: routing message to request {}", id);
+                        if let Err(e) = tx.send(msg) {
+                            warn!(
+                                "Dispatcher: failed to send message to request {}: {:?}",
+                                id, e
+                            );
+                        }
+                    } else {
+                        warn!(
+                            "Dispatcher: received message for unknown request id {}: {:?}",
+                            id, msg
+                        );
+                    }
+                }
+                Err(e) => {
+                    info!("Dispatcher: transport closed: {:?}", e);
+                    break;
+                }
+            }
+        }
+        info!("Dispatcher thread exiting");
+    });
+}
+
 impl Bluetooth {
     pub fn create_and_spawn(
         device_name: &str,
@@ -218,12 +263,17 @@ impl Bluetooth {
         let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
         let transport = Arc::new(ChannelTransport::new(to_phone_tx, from_phone_rx));
 
+        let request_channels = Arc::new(Mutex::new(std::collections::HashMap::new()));
+
+        // Start the central dispatcher thread
+        dispatch_messages(transport.clone(), request_channels.clone());
+
         let mut bluetooth = Self {
             inner: Arc::new(BluetoothInner {
                 transport,
                 request_timeout,
                 next_request_id: AtomicU32::new(1),
-                pending: Mutex::new(Vec::new()),
+                request_channels,
             }),
             is_connected: Arc::new(Mutex::new(false)),
             game_load_tx: Arc::new(Mutex::new(game_load_tx)),
@@ -306,7 +356,6 @@ impl Bluetooth {
             info!("start listening on rx characteristic changes");
             chr.lock().on_write(move |args| {
                 let data = args.recv_data();
-                info!("chunk received {:?}", std::str::from_utf8(data));
 
                 const MAX_MULTI_FRAME_LEN: usize = 4096;
 
@@ -329,7 +378,6 @@ impl Bluetooth {
                 for frame in frames {
                     match decode_frame(&frame) {
                         Ok(msg) => {
-                            info!("decoded incoming BLE frame: {:?}", msg);
                             if let Err(e) = tx.send(msg) {
                                 error!("Failed to queue incoming BLE frame: {:?}", e);
                             }
@@ -347,7 +395,6 @@ impl Bluetooth {
             chr.lock().on_write(move |args| {
                 // Receive incoming chunk
                 let data = args.recv_data();
-                info!("game key chunk received {:?}", std::str::from_utf8(data));
 
                 // Decode complete lines, buffer is updated in-place by the utility
                 // Combine with any previously stored partial bytes and decode raw frames
@@ -402,37 +449,51 @@ impl Bluetooth {
         self.inner.next_request_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    fn stash_message(&self, msg: PhoneToBoard) {
-        self.inner.pending.lock().unwrap().push(msg);
-    }
+    /// Register a channel for a request ID and wait for a response
+    fn await_response_body(&self, id: u32) -> Result<String, BluetoothError> {
+        let (tx, rx) = std::sync::mpsc::channel();
 
-    fn recv_with_pending(&self, timeout: Duration) -> Result<Option<PhoneToBoard>, BluetoothError> {
-        if let Some(msg) = self.inner.pending.lock().unwrap().pop() {
-            return Ok(Some(msg));
+        // Register the channel for this request
+        {
+            let mut channels = self.inner.request_channels.lock().unwrap();
+            channels.insert(id, tx);
         }
 
-        self.inner.transport.recv(timeout)
-    }
-
-    fn await_response_body(&self, id: u32) -> Result<String, BluetoothError> {
         let deadline = Instant::now() + self.inner.request_timeout;
 
         loop {
             let now = Instant::now();
             if now >= deadline {
+                // Cleanup: remove the channel
+                self.inner.request_channels.lock().unwrap().remove(&id);
                 return Err(BluetoothError::Timeout);
             }
 
             let timeout = deadline.saturating_duration_since(now);
-            match self.recv_with_pending(timeout)? {
-                Some(PhoneToBoard::Response { id: resp_id, body }) if resp_id == id => {
-                    return Ok(body)
+            match rx.recv_timeout(timeout) {
+                Ok(PhoneToBoard::Response { id: resp_id, body }) if resp_id == id => {
+                    // Cleanup: remove the channel
+                    self.inner.request_channels.lock().unwrap().remove(&id);
+                    return Ok(body);
                 }
-                Some(PhoneToBoard::StreamClosed { id: resp_id }) if resp_id == id => {
+                Ok(PhoneToBoard::StreamClosed { id: resp_id }) if resp_id == id => {
+                    // Cleanup: remove the channel
+                    self.inner.request_channels.lock().unwrap().remove(&id);
                     return Ok(String::new());
                 }
-                Some(msg) => self.stash_message(msg),
-                None => return Err(BluetoothError::Timeout),
+                Ok(msg) => {
+                    warn!("Unexpected message for request {}: {:?}", id, msg);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    // Cleanup: remove the channel
+                    self.inner.request_channels.lock().unwrap().remove(&id);
+                    return Err(BluetoothError::Timeout);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    // Cleanup: remove the channel
+                    self.inner.request_channels.lock().unwrap().remove(&id);
+                    return Err(BluetoothError::Transport("channel disconnected".into()));
+                }
             }
         }
     }
@@ -448,20 +509,12 @@ impl Bluetooth {
         }
     }
 
-    fn handle_stream(
-        inner: Arc<BluetoothInner>,
-        id: u32,
-        tx: Sender<String>,
-        initial_chunk: Option<String>,
-    ) {
+    /// Stream handler thread - reads from a dedicated channel and processes stream data
+    fn handle_stream(rx: Receiver<PhoneToBoard>, id: u32, tx: Sender<String>) {
         let mut buffer = String::new();
-        if let Some(chunk) = initial_chunk {
-            Bluetooth::push_chunk(&tx, &mut buffer, &chunk);
-        }
 
         loop {
-            // Block indefinitely waiting for messages - will unblock when channel closes
-            match inner.transport.recv_blocking() {
+            match rx.recv() {
                 Ok(PhoneToBoard::StreamData { id: msg_id, chunk }) if msg_id == id => {
                     info!(
                         "handle_stream: received StreamData for id {}, chunk: {:?}",
@@ -473,13 +526,8 @@ impl Bluetooth {
                     info!("handle_stream: stream closed for id {}", msg_id);
                     break;
                 }
-                Ok(other) => {
-                    // This message is not for this stream - put it in pending for other requests
-                    info!(
-                        "handle_stream: received message for different request, stashing: {:?}",
-                        other
-                    );
-                    inner.pending.lock().unwrap().push(other);
+                Ok(msg) => {
+                    warn!("handle_stream: unexpected message: {:?}", msg);
                 }
                 Err(e) => {
                     info!("handle_stream: channel closed, exiting: {:?}", e);
@@ -496,6 +544,19 @@ impl Requester for Bluetooth {
     fn stream(&self, tx: &mut Sender<String>, url: &str) -> Result<(), BluetoothError> {
         let id = self.next_id();
 
+        info!("stream: starting stream with id {} for url {}", id, url);
+
+        // Create a channel for this stream
+        let (stream_tx, stream_rx) = std::sync::mpsc::channel();
+
+        // Register the channel
+        {
+            let mut channels = self.inner.request_channels.lock().unwrap();
+            channels.insert(id, stream_tx);
+            info!("stream: registered channel for id {}", id);
+        }
+
+        // Send the stream request
         self.inner.transport.send(BoardToPhone::Request {
             id,
             method: RequestMethod::Stream,
@@ -503,37 +564,15 @@ impl Requester for Bluetooth {
             body: None,
         })?;
 
-        let deadline = Instant::now() + self.inner.request_timeout;
-        let initial_chunk: Option<String>;
+        info!("stream: sent request for id {}", id);
 
-        loop {
-            let now = Instant::now();
-            if now >= deadline {
-                return Err(BluetoothError::Timeout);
-            }
-
-            let timeout = deadline.saturating_duration_since(now);
-            match self.recv_with_pending(timeout)? {
-                Some(PhoneToBoard::StreamData { id: msg_id, chunk }) if msg_id == id => {
-                    initial_chunk = Some(chunk);
-                    break;
-                }
-                Some(PhoneToBoard::Response { id: msg_id, body }) if msg_id == id => {
-                    initial_chunk = Some(body);
-                    break;
-                }
-                Some(PhoneToBoard::StreamClosed { id: msg_id }) if msg_id == id => {
-                    return Ok(());
-                }
-                Some(msg) => self.stash_message(msg),
-                None => return Err(BluetoothError::Timeout),
-            }
-        }
-
+        // Spawn the stream handler thread
         let tx_clone = tx.clone();
-        let inner = self.inner.clone();
-
-        thread::spawn(move || Bluetooth::handle_stream(inner, id, tx_clone, initial_chunk));
+        thread::spawn(move || {
+            info!("stream handler thread started for id {}", id);
+            Bluetooth::handle_stream(stream_rx, id, tx_clone);
+            info!("stream handler thread exited for id {}", id);
+        });
 
         Ok(())
     }
@@ -588,7 +627,6 @@ impl BleRuntime {
                         let mut chr = self.tx_characteristic.lock();
                         for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
                             chr.set_value(chunk);
-                            info!("notify characteristic chunk ({} bytes)", chunk.len());
                             chr.notify();
                         }
                     }
