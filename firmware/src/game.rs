@@ -138,11 +138,7 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
         Arc::new(Mutex::new(LichessConnector::new(
-            Bluetooth::create_and_spawn_with_game_sender(
-                "E-Chess",
-                Duration::from_secs(30),
-                tx.clone(),
-            ),
+            Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone()),
         ))),
     ];
 

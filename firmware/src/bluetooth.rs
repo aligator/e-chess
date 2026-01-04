@@ -34,7 +34,6 @@ pub enum BluetoothError {
     Transport(String),
     Timeout,
     Protocol(String),
-    Remote(String),
 }
 
 impl std::fmt::Display for BluetoothError {
@@ -43,7 +42,6 @@ impl std::fmt::Display for BluetoothError {
             BluetoothError::Transport(msg) => write!(f, "transport error: {}", msg),
             BluetoothError::Timeout => write!(f, "timeout waiting for response"),
             BluetoothError::Protocol(msg) => write!(f, "protocol error: {}", msg),
-            BluetoothError::Remote(msg) => write!(f, "remote error: {}", msg),
         }
     }
 }
@@ -70,9 +68,6 @@ pub enum BoardToPhone {
     Cancel {
         id: u32,
     },
-    Ping {
-        id: u32,
-    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -81,8 +76,6 @@ pub enum PhoneToBoard {
     Response { id: u32, body: String },
     StreamData { id: u32, chunk: String },
     StreamClosed { id: u32 },
-    Pong { id: u32 },
-    Error { id: Option<u32>, message: String },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -171,26 +164,46 @@ struct BluetoothInner {
 pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
     is_connected: Arc<Mutex<bool>>,
-    game_load_tx: Arc<Mutex<Option<Sender<Event>>>>,
+    game_load_tx: Arc<Mutex<Sender<Event>>>,
+}
+
+/// Decode chunked UTF-8 data and return complete lines plus remaining bytes.
+///
+/// This helper accepts a single chunk of bytes and returns a tuple:
+/// - Vec<String>: complete lines found in the data (split on '\n' or '\r'),
+///   trimmed and with empty lines omitted.
+/// - Vec<u8>: remaining bytes that should be kept and prepended to the next
+///   chunk (this includes any bytes belonging to an incomplete UTF-8 sequence
+///   or a trailing partial line without a newline).
+/// Decode chunked frames (raw bytes) and keep remainder in `buffer`.
+///
+/// This helper appends `data` to `buffer`, then drains and returns all
+/// complete frames ending with `\n` or `\r` as raw `Vec<u8>` items
+/// (each frame includes everything up to and including the delimiter).
+/// Any trailing partial bytes are left in `buffer` for the next call.
+///
+/// This mirrors the simpler inline logic previously used in the on_write
+/// handler: append, find delimiter position, drain(..=pos) and collect.
+fn decode_chunked_utf8(data: &[u8], buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
+    // Append new data into the buffer
+    buffer.extend_from_slice(data);
+
+    let mut frames: Vec<Vec<u8>> = Vec::new();
+
+    // Drain complete frames/lines using the simple delimiter-based logic.
+    while let Some(pos) = buffer.iter().position(|b| *b == b'\n' || *b == b'\r') {
+        let frame: Vec<u8> = buffer.drain(..=pos).collect();
+        frames.push(frame);
+    }
+
+    frames
 }
 
 impl Bluetooth {
-    pub fn create_and_spawn(device_name: &str, request_timeout: Duration) -> Self {
-        Self::create_and_spawn_internal(device_name, request_timeout, None)
-    }
-
-    pub fn create_and_spawn_with_game_sender(
+    pub fn create_and_spawn(
         device_name: &str,
         request_timeout: Duration,
         game_load_tx: Sender<Event>,
-    ) -> Self {
-        Self::create_and_spawn_internal(device_name, request_timeout, Some(game_load_tx))
-    }
-
-    fn create_and_spawn_internal(
-        device_name: &str,
-        request_timeout: Duration,
-        game_load_tx: Option<Sender<Event>>,
     ) -> Self {
         let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
         let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
@@ -285,9 +298,10 @@ impl Bluetooth {
             chr.lock().on_write(move |args| {
                 let data = args.recv_data();
                 info!("chunk received {:?}", std::str::from_utf8(data));
-                let mut buffer = rx_buffer.lock().unwrap();
 
                 const MAX_MULTI_FRAME_LEN: usize = 4096;
+
+                let mut buffer = rx_buffer.lock().unwrap();
 
                 if buffer.len() + data.len() > MAX_MULTI_FRAME_LEN {
                     warn!(
@@ -301,17 +315,17 @@ impl Bluetooth {
                     }
                 }
 
-                buffer.extend_from_slice(data);
+                let frames = decode_chunked_utf8(data, &mut *buffer);
 
-                while let Some(pos) = buffer.iter().position(|b| *b == b'\n' || *b == b'\r') {
-                    let frame: Vec<u8> = buffer.drain(..=pos).collect();
+                for frame in frames {
                     match decode_frame(&frame) {
                         Ok(msg) => {
+                            info!("decoded incoming BLE frame: {:?}", msg);
                             if let Err(e) = tx.send(msg) {
                                 error!("Failed to queue incoming BLE frame: {:?}", e);
                             }
                         }
-                        Err(e) => warn!("Failed to decode incoing BLE frame: {:?}", e),
+                        Err(e) => warn!("Failed to decode incoming BLE frame: {:?}", e),
                     }
                 }
             });
@@ -320,30 +334,37 @@ impl Bluetooth {
         {
             let event_tx = Arc::clone(&self.game_load_tx);
             let chr = game_key_characteristic.clone();
+            let game_key_buffer = Arc::new(Mutex::new(Vec::new()));
             chr.lock().on_write(move |args| {
-                //TODO: use common utility to read multi-chunk messages
+                // Receive incoming chunk
+                let data = args.recv_data();
+                info!("game key chunk received {:?}", std::str::from_utf8(data));
 
-                let raw = args.recv_data();
-                match String::from_utf8(Vec::from(raw)) {
-                    Ok(body) => {
-                        let game_id = body.trim();
-                        if game_id.is_empty() {
-                            warn!("Received empty game id over BLE load characteristic");
-                            return;
-                        }
-                        if let Some(sender) = event_tx.lock().unwrap().clone() {
-                            if let Err(e) = sender.send(Event::GameCommand(
-                                GameCommandEvent::LoadNewGame(game_id.to_string()),
-                            )) {
-                                warn!("Failed to forward BLE game id: {:?}", e);
-                            } else {
-                                info!("Forwarded BLE game id: {}", game_id);
-                            }
-                        } else {
-                            warn!("No game load handler registered; dropping BLE game id");
-                        }
+                // Decode complete lines, buffer is updated in-place by the utility
+                // Combine with any previously stored partial bytes and decode raw frames
+                let mut buf_guard = game_key_buffer.lock().unwrap();
+                let frames = decode_chunked_utf8(data, &mut *buf_guard);
+
+                // Forward each complete raw frame as a LoadNewGame event (decode UTF-8)
+                for frame in frames {
+                    // Try to convert to UTF-8; fall back to lossy replacement if invalid
+                    let maybe_str = match String::from_utf8(frame) {
+                        Ok(s) => s,
+                        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
+                    };
+                    let game_id = maybe_str.trim();
+                    if game_id.is_empty() {
+                        warn!("Received empty game id over BLE load characteristic");
+                        continue;
                     }
-                    Err(e) => warn!("Invalid UTF-8 in game load characteristic: {:?}", e),
+                    let sender = event_tx.lock().unwrap().clone();
+                    if let Err(e) = sender.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
+                        game_id.to_string(),
+                    ))) {
+                        warn!("Failed to forward BLE game id: {:?}", e);
+                    } else {
+                        info!("Forwarded BLE game id: {}", game_id);
+                    }
                 }
             });
         }
@@ -401,15 +422,6 @@ impl Bluetooth {
                 Some(PhoneToBoard::StreamClosed { id: resp_id }) if resp_id == id => {
                     return Ok(String::new());
                 }
-                Some(PhoneToBoard::Error {
-                    id: Some(err_id),
-                    message,
-                }) if err_id == id || err_id == 0 => {
-                    return Err(BluetoothError::Remote(message));
-                }
-                Some(PhoneToBoard::Error { id: None, message }) => {
-                    return Err(BluetoothError::Remote(message));
-                }
                 Some(msg) => self.stash_message(msg),
                 None => return Err(BluetoothError::Timeout),
             }
@@ -450,17 +462,6 @@ impl Bluetooth {
                     Bluetooth::push_chunk(&tx, &mut buffer, &chunk);
                 }
                 Ok(Some(PhoneToBoard::StreamClosed { id: msg_id })) if msg_id == id => break,
-                Ok(Some(PhoneToBoard::Error {
-                    id: Some(err_id),
-                    message,
-                })) if err_id == id => {
-                    let _ = tx.send(format!("Error: {}", message));
-                    break;
-                }
-                Ok(Some(PhoneToBoard::Error { id: None, message })) => {
-                    let _ = tx.send(format!("Error: {}", message));
-                    break;
-                }
                 Ok(Some(other)) => {
                     inner.pending.lock().unwrap().push(other);
                 }
@@ -508,15 +509,6 @@ impl Requester for Bluetooth {
                 }
                 Some(PhoneToBoard::StreamClosed { id: msg_id }) if msg_id == id => {
                     return Ok(());
-                }
-                Some(PhoneToBoard::Error {
-                    id: Some(err_id),
-                    message,
-                }) if err_id == id || err_id == 0 => {
-                    return Err(BluetoothError::Remote(message));
-                }
-                Some(PhoneToBoard::Error { id: None, message }) => {
-                    return Err(BluetoothError::Remote(message));
                 }
                 Some(msg) => self.stash_message(msg),
                 None => return Err(BluetoothError::Timeout),

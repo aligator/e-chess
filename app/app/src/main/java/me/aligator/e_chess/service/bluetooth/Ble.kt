@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
@@ -35,6 +36,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.UUID
 import kotlin.math.acos
+
+private val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID =
+    UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
 data class SimpleDevice(
     val device: BluetoothDevice,
@@ -174,7 +178,7 @@ class Ble(
 ) {
     private val bleActions: MutableList<BleAction> = mutableListOf()
 
-    private val maxChunkSize = 20
+    private val maxChunkSize = 128
 
     /// current connection state
     val _bleState = MutableStateFlow(BleState())
@@ -345,28 +349,6 @@ class Ble(
         for (action in bleActions) {
             action.onServiceDiscovered(gatt, service)
         }
-
-        // TODO: add listener and call all that need to know
-
-
-        // TODO: pass event to the parent classes so that these can handle their
-        // respective characteristics.
-//
-//                txCharacteristic = service.getCharacteristic(DATA_TX_CHARACTERISTIC_UUID)
-//                rxCharacteristic = service.getCharacteristic(DATA_RX_CHARACTERISTIC_UUID)
-//                gameLoadCharacteristic = service.getCharacteristic(GAME_KEY_CHARACTERISTIC_UUID)
-//                if (txCharacteristic == null ||
-//                    rxCharacteristic == null ||
-//                    gameLoadCharacteristic == null
-//                ) {
-//                    Log.e(LOG_TAG, "Charakteristiken nicht gefunden")
-//                    postState(onStateChange, "Charakteristik fehlt", false)
-//                    return
-//                }
-//
-//                enableNotifications(gatt, txCharacteristic!!)
-//                postState(onStateChange, "Verbunden und bereit", true)
-//                Log.d(LOG_TAG, "connected to ble")
     }
 
     private fun handleCharacteristicChanged(
@@ -539,16 +521,9 @@ class Ble(
             action.onDisconnect()
         }
 
-        //TODO: implement - maybe with the listeners of the parent classes?
-
         responseJob?.cancel()
         responseJob = null
 
-
-//        pendingBuffer.clear()
-//        rxCharacteristic = null
-//        txCharacteristic = null
-//        gameLoadCharacteristic = null
         try {
             gatt?.close()
         } catch (err: SecurityException) {
@@ -569,6 +544,23 @@ class Ble(
             ))
 
             Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
+        }
+    }
+
+    fun enableNotifications(
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic
+    ) {
+        val notificationSet = gatt.setCharacteristicNotification(characteristic, true)
+        if (!notificationSet) {
+            Log.w(LOG_TAG, "setCharacteristicNotification fehlgeschlagen")
+        }
+
+        val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
+        if (descriptor != null) {
+            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+        } else {
+            Log.w(LOG_TAG, "CCCD Descriptor nicht gefunden")
         }
     }
 }

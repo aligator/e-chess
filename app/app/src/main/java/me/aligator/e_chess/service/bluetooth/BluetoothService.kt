@@ -47,7 +47,7 @@ class BluetoothService : Service() {
             serviceUuid = SERVICE_UUID
         )
         ble.checkBluetooth()
-        httpBridge = HttpBleBridge(ble)
+        httpBridge = HttpBleBridge(ble, applicationContext)
         chessBoardAction = ChessBoardDeviceAction(ble)
     }
 

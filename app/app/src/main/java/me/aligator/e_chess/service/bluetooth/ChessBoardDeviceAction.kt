@@ -10,7 +10,7 @@ private val LOG_TAG = "ChessBoardDeviceAction"
 
 private val GAME_KEY_CHARACTERISTIC_UUID: UUID = UUID.fromString("d4f1e338-3396-4e72-a7d7-7c037fbcc0a1")
 
-class ChessBoardDeviceAction(val ble: Ble): BleAction {
+class ChessBoardDeviceAction(val ble: Ble) : BleAction {
     private var gameKeyCharacteristic: BluetoothGattCharacteristic? = null
     private var gatt: BluetoothGatt? = null
 
@@ -32,7 +32,7 @@ class ChessBoardDeviceAction(val ble: Ble): BleAction {
         characteristic: BluetoothGattCharacteristic,
         value: ByteArray
     ) {
-        TODO("Not yet implemented")
+        // TODO("Not yet implemented")
     }
 
     override fun onServiceDiscovered(
@@ -51,7 +51,7 @@ class ChessBoardDeviceAction(val ble: Ble): BleAction {
             Log.e(LOG_TAG, "Cannot load game since no gatt or gameKey characteristic exists")
             return false
         }
-        ble.sendCharacteristic(gatt!!, gameKeyCharacteristic!!, key.toByteArray())
+        ble.sendCharacteristic(gatt!!, gameKeyCharacteristic!!, (key + "\n").toByteArray())
 
         return true
     }
