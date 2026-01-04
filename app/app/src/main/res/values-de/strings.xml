@@ -25,4 +25,8 @@
         name="load_game_failed"
     >Spielschlüssel konnte nicht gesendet werden. Verbindung prüfen.</string>
     <string name="standard_game_option">Standardspiel (lokal)</string>
+    <string name="available_devices">Verfügbare Geräte</string>
+    <string name="load_game_title">Lade Spiel</string>
+    <string name="disconnect_button">Trennen</string>
+    <string name="refresh_games">Spiele aktualisieren</string>
 </resources>

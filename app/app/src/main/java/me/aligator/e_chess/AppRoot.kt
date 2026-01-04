@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import me.aligator.e_chess.service.ConfigurationStore
 import me.aligator.e_chess.ui.BleScreen
 import me.aligator.e_chess.ui.ConfigScreen
 import me.aligator.e_chess.service.bluetooth.hasPermissions
@@ -40,8 +41,12 @@ private enum class AppDestination {
 @Composable
 fun EChessApp() {
     val context = LocalContext.current
+    val configStore = remember { ConfigurationStore(context.applicationContext) }
+
     var destination by rememberSaveable { mutableStateOf(AppDestination.BLE) }
-    var language by rememberSaveable { mutableStateOf(AppLanguage.DE) }
+    var language by rememberSaveable {
+        mutableStateOf(AppLanguage.fromCode(configStore.getLanguage()))
+    }
     var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
 
     // Create launchers BEFORE CompositionLocalProvider
@@ -100,7 +105,10 @@ fun EChessApp() {
 
                     AppDestination.CONFIG -> ConfigScreen(
                         selectedLanguage = language,
-                        onLanguageSelected = { language = it }
+                        onLanguageSelected = { newLanguage ->
+                            language = newLanguage
+                            configStore.saveLanguage(newLanguage.code)
+                        }
                     )
                 }
             }

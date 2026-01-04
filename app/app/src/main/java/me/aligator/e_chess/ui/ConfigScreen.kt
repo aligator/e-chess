@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import me.aligator.e_chess.AppLanguage
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.LichessTokenStore
+import me.aligator.e_chess.service.ConfigurationStore
 import me.aligator.e_chess.ui.theme.EChessTheme
 
 @Composable
@@ -33,13 +33,13 @@ fun ConfigScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val tokenStore = remember { LichessTokenStore(context.applicationContext) }
+    val configStore = remember { ConfigurationStore(context.applicationContext) }
 
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
 
-    LaunchedEffect(tokenStore) {
-        tokenStore.getToken()?.let { token = it }
+    LaunchedEffect(configStore) {
+        configStore.getLichessToken()?.let { token = it }
     }
 
     Column(
@@ -64,7 +64,7 @@ fun ConfigScreen(
         )
         Button(
             onClick = {
-                tokenStore.saveToken(token)
+                configStore.saveLichessToken(token)
                 savedMessage = context.getString(R.string.token_saved)
             },
             modifier = Modifier.padding(top = 12.dp)

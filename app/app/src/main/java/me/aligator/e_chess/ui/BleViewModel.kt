@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.aligator.e_chess.service.ConfigurationStore
 import me.aligator.e_chess.service.GameOption
 import me.aligator.e_chess.service.LichessApi
 import me.aligator.e_chess.service.bluetooth.BleState
@@ -30,11 +31,12 @@ data class BleUiState(
 
 class BleViewModel(application: Application) : AndroidViewModel(application) {
     private val lichessApi = LichessApi(application)
+    private val configStore = ConfigurationStore(application)
 
     private val _availableGames = MutableStateFlow<List<GameOption>>(emptyList())
     private val _isLoadingGames = MutableStateFlow(false)
     private val _isLoadingGame = MutableStateFlow(false)
-    private val _selectedGameKey = MutableStateFlow("")
+    private val _selectedGameKey = MutableStateFlow(configStore.getLastLoadedGame() ?: "")
     private val _bleState = MutableStateFlow(BleState())
 
     private var bluetoothService: BluetoothService? = null
@@ -113,6 +115,10 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         Log.d(LOG_TAG, "loadGame called with key: $gameKey")
         _isLoadingGame.value = true
         Log.d(LOG_TAG, "Set isLoadingGame to true")
+
+        // Save the game key for next time
+        configStore.saveLastLoadedGame(gameKey)
+
         val actualGameKey = if (gameKey == "standard") {
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         } else {

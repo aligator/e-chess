@@ -36,7 +36,7 @@ data class GameOption(
 )
 
 class LichessApi(context: Context) {
-    private val tokenStore = LichessTokenStore(context)
+    private val configStore = ConfigurationStore(context)
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -50,7 +50,7 @@ class LichessApi(context: Context) {
 
     suspend fun getOngoingGames(): List<GameOption> = withContext(Dispatchers.IO) {
         try {
-            val token = tokenStore.getToken()
+            val token = configStore.getLichessToken()
             if (token == null) {
                 Log.d(LOG_TAG, "No token available")
                 return@withContext emptyList()

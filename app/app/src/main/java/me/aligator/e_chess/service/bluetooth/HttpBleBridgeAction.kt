@@ -5,7 +5,7 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattService
 import android.content.Context
 import android.util.Log
-import me.aligator.e_chess.service.LichessTokenStore
+import me.aligator.e_chess.service.ConfigurationStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -114,7 +114,7 @@ private const val PROTOCOL_VERSION = 1
  * creates a new response for each "line".
  */
 class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
-    private val tokenStore = LichessTokenStore(context)
+    private val configStore = ConfigurationStore(context)
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -249,7 +249,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                 .get()
 
             if (url.startsWith("https://lichess.org/api")) {
-                tokenStore.getToken()?.let { token ->
+                configStore.getLichessToken()?.let { token ->
                     requestBuilder.header("Authorization", "Bearer $token")
                 }
             }
@@ -277,7 +277,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                 .post(requestBody)
 
             if (url.startsWith("https://lichess.org/api")) {
-                tokenStore.getToken()?.let { token ->
+                configStore.getLichessToken()?.let { token ->
                     requestBuilder.header("Authorization", "Bearer $token")
                 }
             }
@@ -305,7 +305,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                     .get()
 
                 if (url.startsWith("https://lichess.org/api")) {
-                    tokenStore.getToken()?.let { token ->
+                    configStore.getLichessToken()?.let { token ->
                         requestBuilder.header("Authorization", "Bearer $token")
                     }
                 }
