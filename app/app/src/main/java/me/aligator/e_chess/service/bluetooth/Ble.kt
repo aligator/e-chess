@@ -211,6 +211,7 @@ class Ble(
         val gatt: BluetoothGatt,
         val characteristic: BluetoothGattCharacteristic
     )
+
     private var descriptorWriteQueue = mutableListOf<DescriptorWriteRequest>()
     private var isWritingDescriptor = false
 
@@ -426,7 +427,7 @@ class Ble(
                 characteristic: BluetoothGattCharacteristic,
                 value: ByteArray
             ) {
-                Log.d(LOG_TAG, "received characteristic change: $value")
+                Log.d(LOG_TAG, "received characteristic change: ${value.decodeToString()}")
                 handleCharacteristicChanged(gatt, characteristic, value)
             }
 
@@ -446,7 +447,10 @@ class Ble(
             ) {
                 if (descriptor?.uuid == CLIENT_CHARACTERISTIC_CONFIG_UUID) {
                     if (status != BluetoothGatt.GATT_SUCCESS) {
-                        Log.e(LOG_TAG, "CCCD descriptor write failed with status $status for ${descriptor.characteristic?.uuid}")
+                        Log.e(
+                            LOG_TAG,
+                            "CCCD descriptor write failed with status $status for ${descriptor.characteristic?.uuid}"
+                        )
                     }
 
                     // Mark the current operation as complete and process the next one
@@ -605,6 +609,8 @@ class Ble(
 
         val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)
         if (descriptor != null) {
+            // Setting multiple notifications at once can lead to problems, so we queue them
+            // and process them one by one.
             synchronized(descriptorWriteQueue) {
                 descriptorWriteQueue.add(DescriptorWriteRequest(gatt, characteristic))
                 processNextDescriptorWrite()

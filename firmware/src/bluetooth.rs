@@ -2,29 +2,49 @@
 //! Implements a protocol over BLE GATT characteristics to send HTTP-like
 //! requests from the chess board to a connected client, which performs
 //! the actual network requests and streams data back to the board.
+//!
+//! Implements also some direct communication for the game state.
+//! Note that the architecture is designed so that the app does not really know much about lichess.
+//! (except the api key - for now)
+//! That way all chess logic is only defined on the board side at one place.
+//! The app can however query higher level game state information via the game state characteristic.
 use std::{
     str,
     sync::{
         atomic::{AtomicU32, Ordering},
-        mpsc::{Receiver, RecvTimeoutError, Sender},
+        mpsc::{Receiver, Sender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
-use crate::{game::GameCommandEvent, Event};
-use chess_game::requester::Requester;
+use crate::{
+    event::EventManager,
+    game::{GameCommandEvent, GameStateEvent},
+    Event,
+};
+use chess_game::{chess_connector::OngoingGame, requester::Requester};
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
 use log::*;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
+
+// The bridge is only for bridging upstream (e.g. lichess) http calls from the board over ble.
+// It should not be used to query data directly.
 pub const BRIDGE_REQUEST_CHARACTERISTIC_UUID: &str = "aa8381af-049a-46c2-9c92-1db7bd28883c";
 pub const BRIDGE_RESPONSE_CHARACTERISTIC_UUID: &str = "29e463e6-a210-4234-8d1d-4daf345b41de";
-pub const GAME_KEY_CHARACTERISTIC_UUID: &str = "0de794de-c3a3-48b8-bd81-893d30342c87";
-pub const GAME_STATE_CHARACTERISTIC_UUID: &str = "ccdffbc5-44ce-41a7-9a15-d70b82f81b1a";
+
+// For direct communication extra ble characteristics are used.
+/// The action characteristic is used to send commands from the phone to the board.
+/// E.g. to start a new game, refresh open games, takeback, ...
+pub const ACTION_CHARACTERISTIC_UUID: &str = "0de794de-c3a3-48b8-bd81-893d30342c87";
+
+// The following characteristic is readonly and expose information about the board/game.
+/// Get game state events
+pub const EVENT_CHARACTERISTIC_UUID: &str = "a1a289ce-d553-4d81-b52d-44e6484507b3";
 
 // TODO: can I increase the MTU?
 // Keep notifications within the lowest possible BLE ATT MTU (20 bytes -> 23 byte payload).
@@ -59,7 +79,7 @@ pub enum RequestMethod {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum BoardToPhone {
+pub enum BridgeRequest {
     Request {
         id: u32,
         method: RequestMethod,
@@ -73,7 +93,7 @@ pub enum BoardToPhone {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum PhoneToBoard {
+pub enum BridgeResponse {
     Response { id: u32, body: String },
     StreamData { id: u32, chunk: String },
     StreamClosed { id: u32 },
@@ -86,33 +106,9 @@ pub struct Frame<T> {
     pub msg: T,
 }
 
-pub fn encode_frame(msg: &BoardToPhone) -> Result<Vec<u8>, BluetoothError> {
-    serde_json::to_string(&Frame {
-        v: PROTOCOL_VERSION,
-        msg: msg.clone(),
-    })
-    .map(|mut body| {
-        body.push('\n');
-        body.into_bytes()
-    })
-    .map_err(|e| BluetoothError::Protocol(e.to_string()))
-}
-
-pub fn decode_frame(payload: &[u8]) -> Result<PhoneToBoard, BluetoothError> {
-    let without_newline = payload
-        .iter()
-        .copied()
-        .take_while(|b| *b != b'\n' && *b != b'\r')
-        .collect::<Vec<u8>>();
-
-    serde_json::from_slice::<Frame<PhoneToBoard>>(&without_newline)
-        .map(|frame| frame.msg)
-        .map_err(|e| BluetoothError::Protocol(e.to_string()))
-}
-
 pub trait Transport: Send + Sync {
-    fn send(&self, msg: BoardToPhone) -> Result<(), BluetoothError>;
-    fn recv(&self) -> Result<PhoneToBoard, BluetoothError>;
+    fn send(&self, msg: BridgeRequest) -> Result<(), BluetoothError>;
+    fn recv(&self) -> Result<BridgeResponse, BluetoothError>;
 }
 
 /// Channel-based transport: integrate BLE callbacks by writing decoded
@@ -120,12 +116,12 @@ pub trait Transport: Send + Sync {
 /// notifications from `from_board`.
 #[derive(Clone)]
 pub struct ChannelTransport {
-    from_board: Sender<BoardToPhone>,
-    to_board: Arc<Mutex<Receiver<PhoneToBoard>>>,
+    from_board: Sender<BridgeRequest>,
+    to_board: Arc<Mutex<Receiver<BridgeResponse>>>,
 }
 
 impl ChannelTransport {
-    pub fn new(from_board: Sender<BoardToPhone>, to_board: Receiver<PhoneToBoard>) -> Self {
+    pub fn new(from_board: Sender<BridgeRequest>, to_board: Receiver<BridgeResponse>) -> Self {
         Self {
             from_board,
             to_board: Arc::new(Mutex::new(to_board)),
@@ -134,14 +130,14 @@ impl ChannelTransport {
 }
 
 impl Transport for ChannelTransport {
-    fn send(&self, msg: BoardToPhone) -> Result<(), BluetoothError> {
+    fn send(&self, msg: BridgeRequest) -> Result<(), BluetoothError> {
         info!("{:?}", msg);
         self.from_board
             .send(msg)
             .map_err(|e| BluetoothError::Transport(e.to_string()))
     }
 
-    fn recv(&self) -> Result<PhoneToBoard, BluetoothError> {
+    fn recv(&self) -> Result<BridgeResponse, BluetoothError> {
         self.to_board
             .lock()
             .unwrap()
@@ -155,16 +151,14 @@ struct BluetoothInner {
     request_timeout: Duration,
     next_request_id: AtomicU32,
     // Registry of active requests: maps request_id -> channel to send responses
-    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<PhoneToBoard>>>>,
+    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<BridgeResponse>>>>,
 }
 
 #[derive(Clone)]
 pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
     is_connected: Arc<Mutex<bool>>,
-    game_load_tx: Arc<Mutex<Sender<Event>>>,
-    game_state_characteristic:
-        Option<Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>>,
+    event_manager: &'static EventManager<Event>,
 }
 
 /// Append incoming bytes to `buffer` and extract complete frames terminated by
@@ -206,7 +200,7 @@ fn decode_chunked(data: &[u8], buffer: &mut Vec<u8>) -> Vec<Vec<u8>> {
 /// Central dispatcher thread that routes incoming messages to the right request handlers
 fn dispatch_messages(
     transport: Arc<dyn Transport>,
-    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<PhoneToBoard>>>>,
+    request_channels: Arc<Mutex<std::collections::HashMap<u32, Sender<BridgeResponse>>>>,
 ) {
     thread::spawn(move || {
         info!("Dispatcher thread started");
@@ -215,9 +209,9 @@ fn dispatch_messages(
                 Ok(msg) => {
                     // Extract the ID from the message
                     let id = match &msg {
-                        PhoneToBoard::Response { id, .. } => *id,
-                        PhoneToBoard::StreamData { id, .. } => *id,
-                        PhoneToBoard::StreamClosed { id } => *id,
+                        BridgeResponse::Response { id, .. } => *id,
+                        BridgeResponse::StreamData { id, .. } => *id,
+                        BridgeResponse::StreamClosed { id } => *id,
                     };
 
                     // Find the channel for this request ID and send the message
@@ -250,7 +244,7 @@ impl Bluetooth {
     pub fn create_and_spawn(
         device_name: &str,
         request_timeout: Duration,
-        game_load_tx: Sender<Event>,
+        event_manager: &'static EventManager<Event>,
     ) -> Self {
         let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
         let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
@@ -269,15 +263,14 @@ impl Bluetooth {
                 request_channels,
             }),
             is_connected: Arc::new(Mutex::new(false)),
-            game_load_tx: Arc::new(Mutex::new(game_load_tx)),
-            game_state_characteristic: None,
+            event_manager: event_manager,
         };
 
-        let ble_runtime = bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx);
+        let ble_runtime =
+            bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx, event_manager);
 
         ble_runtime
-            .map(|(runtime, game_state_char)| {
-                bluetooth.game_state_characteristic = Some(game_state_char);
+            .map(|runtime| {
                 runtime.spawn();
             })
             .unwrap_or_else(|e| {
@@ -290,15 +283,10 @@ impl Bluetooth {
     fn setup_runtime(
         &mut self,
         device_name: &str,
-        to_phone_rx: Receiver<BoardToPhone>,
-        from_phone_tx: Sender<PhoneToBoard>,
-    ) -> Result<
-        (
-            BleRuntime,
-            Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
-        ),
-        BluetoothError,
-    > {
+        outgoing_rx: Receiver<BridgeRequest>,
+        incoming_tx: Sender<BridgeResponse>,
+        event_manager: &'static EventManager<Event>,
+    ) -> Result<BleRuntime, BluetoothError> {
         self.is_connected = Arc::new(Mutex::new(false));
 
         let ble_device = BLEDevice::take();
@@ -319,8 +307,8 @@ impl Bluetooth {
         let (
             bridge_request_characteristic,
             bridge_response_characteristic,
-            game_key_characteristic,
-            game_state_characteristic,
+            action_characteristic,
+            event_characteristic,
         ) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
             // Request characteristic: board -> phone notifications only.
@@ -332,70 +320,58 @@ impl Bluetooth {
             // Response characteristic: phone -> board writes only.
             let bridge_response_characteristic = service.lock().create_characteristic(
                 uuid128!(BRIDGE_RESPONSE_CHARACTERISTIC_UUID),
-                NimbleProperties::READ | NimbleProperties::WRITE,
+                NimbleProperties::WRITE,
             );
 
-            // Game key characteristic: phone -> board game id
-            let game_key_characteristic = service.lock().create_characteristic(
-                uuid128!(GAME_KEY_CHARACTERISTIC_UUID),
-                NimbleProperties::READ | NimbleProperties::WRITE,
+            // Action characteristic: send actions from phone to board
+            let action_characteristic = service.lock().create_characteristic(
+                uuid128!(ACTION_CHARACTERISTIC_UUID),
+                NimbleProperties::WRITE,
             );
 
-            // Game state characteristic: board -> phone notifications for game events
-            let game_state_characteristic = service.lock().create_characteristic(
-                uuid128!(GAME_STATE_CHARACTERISTIC_UUID),
+            // Game state event characteristic: board -> phone notifications for new events
+            let event_characteristic = service.lock().create_characteristic(
+                uuid128!(EVENT_CHARACTERISTIC_UUID),
                 NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
             );
 
             (
                 bridge_request_characteristic,
                 bridge_response_characteristic,
-                game_key_characteristic,
-                game_state_characteristic,
+                action_characteristic,
+                event_characteristic,
             )
         };
 
         {
-            let chr = bridge_request_characteristic.clone();
+            let characteristic = bridge_request_characteristic.clone();
             let connection_flag = Arc::clone(&self.is_connected);
             server.on_disconnect(move |_desc, _reason| {
                 info!("BLE disconnected, restarting advertising");
                 let _ = ble_advertiser.lock().start();
-                let _ = chr.lock().set_value(b"");
+                let _ = characteristic.lock().set_value(b"");
                 *connection_flag.lock().unwrap() = false;
             });
         }
 
+        // Setup all the on_write handlers
         {
-            let tx = from_phone_tx.clone();
-            let rx_buffer = Arc::new(Mutex::new(Vec::new()));
-            let characteristic = bridge_response_characteristic.clone();
-            info!("start listening on rx characteristic changes");
-            characteristic.lock().on_write(move |args| {
+            info!("start listening on incoming http response characteristic");
+            let buffer = Arc::new(Mutex::new(Vec::new()));
+            pub fn decode_frame(payload: &[u8]) -> Result<BridgeResponse, BluetoothError> {
+                serde_json::from_slice::<Frame<BridgeResponse>>(&payload)
+                    .map(|frame| frame.msg)
+                    .map_err(|e| BluetoothError::Protocol(e.to_string()))
+            }
+            bridge_response_characteristic.lock().on_write(move |args| {
                 let data = args.recv_data();
-
-                const MAX_MULTI_FRAME_LEN: usize = 4096;
-
-                let mut buffer = rx_buffer.lock().unwrap();
-
-                if buffer.len() + data.len() > MAX_MULTI_FRAME_LEN {
-                    warn!(
-                        "Incoming BLE data exceeded max frame length ({}), clearing buffer",
-                        MAX_MULTI_FRAME_LEN
-                    );
-                    buffer.clear();
-                    if data.len() > MAX_MULTI_FRAME_LEN {
-                        warn!("Single BLE write too large, dropping");
-                        return;
-                    }
-                }
-
+                let mut buffer = buffer.lock().unwrap();
                 let frames = decode_chunked(data, &mut *buffer);
 
                 for frame in frames {
                     match decode_frame(&frame) {
                         Ok(msg) => {
-                            if let Err(e) = tx.send(msg) {
+                            if let Err(e) = incoming_tx.send(msg) {
                                 error!("Failed to queue incoming BLE frame: {:?}", e);
                             }
                         }
@@ -406,37 +382,27 @@ impl Bluetooth {
         }
 
         {
-            let event_tx = Arc::clone(&self.game_load_tx);
-            let characteristic = game_key_characteristic.clone();
-            let game_key_buffer = Arc::new(Mutex::new(Vec::new()));
-            characteristic.lock().on_write(move |args| {
-                // Receive incoming chunk
+            let event_tx = self.event_manager.create_sender();
+            let buffer = Arc::new(Mutex::new(Vec::new()));
+            pub fn decode_frame(payload: &[u8]) -> Result<GameCommandEvent, BluetoothError> {
+                serde_json::from_slice::<Frame<GameCommandEvent>>(&payload)
+                    .map(|frame| frame.msg)
+                    .map_err(|e| BluetoothError::Protocol(e.to_string()))
+            }
+
+            action_characteristic.lock().on_write(move |args| {
                 let data = args.recv_data();
+                let mut buffer = buffer.lock().unwrap();
+                let frames = decode_chunked(data, &mut *buffer);
 
-                // Decode complete lines, buffer is updated in-place by the utility
-                // Combine with any previously stored partial bytes and decode raw frames
-                let mut buf_guard = game_key_buffer.lock().unwrap();
-                let frames = decode_chunked(data, &mut *buf_guard);
-
-                // Forward each complete raw frame as a LoadNewGame event (decode UTF-8)
                 for frame in frames {
-                    // Try to convert to UTF-8; fall back to lossy replacement if invalid
-                    let maybe_str = match String::from_utf8(frame) {
-                        Ok(s) => s,
-                        Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
-                    };
-                    let game_id = maybe_str.trim();
-                    if game_id.is_empty() {
-                        warn!("Received empty game id over BLE load characteristic");
-                        continue;
-                    }
-                    let sender = event_tx.lock().unwrap().clone();
-                    if let Err(e) = sender.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
-                        game_id.to_string(),
-                    ))) {
-                        warn!("Failed to forward BLE game id: {:?}", e);
-                    } else {
-                        info!("Forwarded BLE game id: {}", game_id);
+                    match decode_frame(&frame) {
+                        Ok(event) => event_tx
+                            .send(Event::GameCommand(event))
+                            .unwrap_or_else(|e| {
+                                warn!("Failed to forward BLE game command event: {:?}", e)
+                            }),
+                        Err(e) => warn!("Failed to decode incoming BLE frame: {:?}", e),
                     }
                 }
             });
@@ -456,13 +422,13 @@ impl Bluetooth {
             .start()
             .map_err(|e| BluetoothError::Transport(e.to_string()))?;
 
-        Ok((
-            BleRuntime {
-                outgoing_rx: to_phone_rx,
-                tx_characteristic: bridge_request_characteristic,
-            },
-            game_state_characteristic,
-        ))
+        Ok(BleRuntime {
+            outgoing_rx,
+            bridge_request_characteristic,
+
+            event_rx: event_manager.create_receiver(),
+            event_characteristic: event_characteristic,
+        })
     }
 
     fn next_id(&self) -> u32 {
@@ -491,12 +457,12 @@ impl Bluetooth {
 
             let timeout = deadline.saturating_duration_since(now);
             match rx.recv_timeout(timeout) {
-                Ok(PhoneToBoard::Response { id: resp_id, body }) if resp_id == id => {
+                Ok(BridgeResponse::Response { id: resp_id, body }) if resp_id == id => {
                     // Cleanup: remove the channel
                     self.inner.request_channels.lock().unwrap().remove(&id);
                     return Ok(body);
                 }
-                Ok(PhoneToBoard::StreamClosed { id: resp_id }) if resp_id == id => {
+                Ok(BridgeResponse::StreamClosed { id: resp_id }) if resp_id == id => {
                     // Cleanup: remove the channel
                     self.inner.request_channels.lock().unwrap().remove(&id);
                     return Ok(String::new());
@@ -530,15 +496,15 @@ impl Bluetooth {
     }
 
     /// Stream handler thread - reads from a dedicated channel and processes stream data
-    fn handle_stream(rx: Receiver<PhoneToBoard>, id: u32, tx: Sender<String>) {
+    fn handle_stream(rx: Receiver<BridgeResponse>, id: u32, tx: Sender<String>) {
         let mut buffer = String::new();
 
         loop {
             match rx.recv() {
-                Ok(PhoneToBoard::StreamData { id: msg_id, chunk }) if msg_id == id => {
+                Ok(BridgeResponse::StreamData { id: msg_id, chunk }) if msg_id == id => {
                     Bluetooth::push_chunk(&tx, &mut buffer, &chunk);
                 }
-                Ok(PhoneToBoard::StreamClosed { id: msg_id }) if msg_id == id => {
+                Ok(BridgeResponse::StreamClosed { id: msg_id }) if msg_id == id => {
                     info!("handle_stream: stream closed for id {}", msg_id);
                     break;
                 }
@@ -550,19 +516,6 @@ impl Bluetooth {
                     break;
                 }
             }
-        }
-    }
-
-    /// Send a game state notification to the connected phone
-    pub fn notify_game_state(&self, state: &str) {
-        if let Some(characteristic) = &self.game_state_characteristic {
-            let mut chr = characteristic.lock();
-            let data = format!("{}\n", state);
-            chr.set_value(data.as_bytes());
-            chr.notify();
-            info!("Sent game state notification: {}", state);
-        } else {
-            warn!("Game state characteristic not available");
         }
     }
 }
@@ -586,7 +539,7 @@ impl Requester for Bluetooth {
         }
 
         // Send the stream request
-        self.inner.transport.send(BoardToPhone::Request {
+        self.inner.transport.send(BridgeRequest::Request {
             id,
             method: RequestMethod::Stream,
             url: url.to_string(),
@@ -609,7 +562,7 @@ impl Requester for Bluetooth {
     fn post(&self, url: &str, body: &str) -> Result<String, BluetoothError> {
         let id = self.next_id();
 
-        self.inner.transport.send(BoardToPhone::Request {
+        self.inner.transport.send(BridgeRequest::Request {
             id,
             method: RequestMethod::Post,
             url: url.to_string(),
@@ -622,7 +575,7 @@ impl Requester for Bluetooth {
     fn get(&self, url: &str) -> Result<String, BluetoothError> {
         let id = self.next_id();
 
-        self.inner.transport.send(BoardToPhone::Request {
+        self.inner.transport.send(BridgeRequest::Request {
             id,
             method: RequestMethod::Get,
             url: url.to_string(),
@@ -640,8 +593,30 @@ impl Requester for Bluetooth {
 /// BLE transport that owns the NimBLE TX characteristic and bridges the connector
 /// channel to outbound GATT notifications.
 pub struct BleRuntime {
-    outgoing_rx: Receiver<BoardToPhone>,
-    tx_characteristic: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+    outgoing_rx: Receiver<BridgeRequest>,
+    bridge_request_characteristic: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+
+    event_rx: Receiver<Event>,
+    event_characteristic: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+}
+
+pub fn encode_json_frame<T: Serialize>(msg: &T) -> Result<Vec<u8>, BluetoothError> {
+    serde_json::to_string(&Frame {
+        v: PROTOCOL_VERSION,
+        msg: msg,
+    })
+    .map(|mut body| {
+        body.push('\n');
+        body.into_bytes()
+    })
+    .map_err(|e| BluetoothError::Protocol(e.to_string()))
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SerializableGameStateEvent {
+    OngoingGamesLoaded(Vec<OngoingGame>),
+    GameLoaded(String),
 }
 
 impl BleRuntime {
@@ -649,11 +624,11 @@ impl BleRuntime {
     /// characteristic as BLE notifications. Returns the thread handle in case
     /// the caller wants to join/monitor.
     pub fn spawn(self) -> JoinHandle<()> {
-        std::thread::spawn(move || {
+        let bridge_join_handle = std::thread::spawn(move || {
             while let Ok(msg) = self.outgoing_rx.recv() {
-                match encode_frame(&msg) {
+                match encode_json_frame(&msg) {
                     Ok(frame) => {
-                        let mut chr = self.tx_characteristic.lock();
+                        let mut chr = self.bridge_request_characteristic.lock();
                         for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
                             chr.set_value(chunk);
                             chr.notify();
@@ -662,6 +637,36 @@ impl BleRuntime {
                     Err(e) => warn!("Failed to encode frame: {:?}", e),
                 }
             }
+        });
+
+        let event_join_handle = std::thread::spawn(move || {
+            while let Ok(event) = self.event_rx.recv() {
+                let serializeable = match event {
+                    Event::GameState(GameStateEvent::OngoingGamesLoaded(ongoing)) => {
+                        Some(SerializableGameStateEvent::OngoingGamesLoaded(ongoing))
+                    }
+                    Event::GameState(GameStateEvent::GameLoaded(game_key)) => {
+                        Some(SerializableGameStateEvent::GameLoaded(game_key))
+                    }
+                    _ => None,
+                };
+
+                match encode_json_frame(&serializeable) {
+                    Ok(frame) => {
+                        let mut chr = self.event_characteristic.lock();
+                        for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
+                            chr.set_value(chunk);
+                            chr.notify();
+                        }
+                    }
+                    Err(e) => warn!("Failed to encode frame: {:?}", e),
+                }
+            }
+        });
+
+        thread::spawn(move || {
+            bridge_join_handle.join().unwrap();
+            event_join_handle.join().unwrap();
         })
     }
 }

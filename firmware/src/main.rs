@@ -18,6 +18,7 @@ use esp_idf_hal::spi::{SpiConfig, SpiDeviceDriver, SpiDriver};
 use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
 use game::GameStateEvent;
 use log::*;
+use std::sync::OnceLock;
 use std::thread::sleep;
 use std::time::Duration;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -29,7 +30,7 @@ mod display;
 mod eink_display;
 mod event;
 mod game;
-mod storage;
+mod util;
 
 #[derive(Debug, Clone)]
 enum Event {
@@ -40,11 +41,13 @@ enum Event {
 unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
+static EVENT_MANAGER: OnceLock<EventManager<Event>> = OnceLock::new();
+
 fn run_game<'a, ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>(
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     eink_display: &mut ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>,
-    event_manager: &EventManager<Event>,
+    event_manager: &'static EventManager<Event>,
 ) -> Result<()>
 where
     ButtonA: embedded_hal::digital::InputPin,
@@ -217,7 +220,7 @@ fn main() -> Result<()> {
     let mut button_b_driver = PinDriver::input(button_b)?;
     button_b_driver.set_pull(esp_idf_hal::gpio::Pull::Up)?;
 
-    let event_manager = EventManager::<Event>::new();
+    let event_manager = EVENT_MANAGER.get_or_init(|| EventManager::<Event>::new());
 
     let mut eink_display = eink_display::ChessEinkDisplay::new(
         button_a_driver,
@@ -228,12 +231,12 @@ fn main() -> Result<()> {
         PinDriver::output(rst)?,
         delay,
         None,
-        &event_manager,
+        event_manager,
     )?;
 
     eink_display.setup()?;
 
-    match run_game(mcp23017, ws2812, &mut eink_display, &event_manager) {
+    match run_game(mcp23017, ws2812, &mut eink_display, event_manager) {
         Ok(_) => {
             warn!("Stopping game loop");
             Ok(())

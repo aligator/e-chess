@@ -1,35 +1,38 @@
+use crate::util::bitboard_serializer;
+use crate::{bluetooth::Bluetooth, event::EventManager, Event};
+use anyhow::Result;
+use chess::BitBoard;
+use chess_game::chess_connector::OngoingGame;
+use chess_game::{
+    chess_connector::{ChessConnector, LocalChessConnector},
+    game::{ChessGame, ChessGameError, ChessGameState},
+    lichess::LichessConnector,
+};
+use log::*;
+use serde::{Deserialize, Serialize};
+use std::thread;
+use std::thread::sleep;
 use std::{
     fmt::Debug,
     sync::{mpsc::Sender, Arc, Mutex},
     time::Duration,
 };
 
-use anyhow::Result;
-use chess::BitBoard;
-use chess_game::{
-    chess_connector::{ChessConnector, LocalChessConnector},
-    game::{ChessGame, ChessGameError, ChessGameState},
-    lichess::LichessConnector,
-};
-
-use log::*;
-use std::thread;
-use std::thread::sleep;
-
-use crate::{bluetooth::Bluetooth, event::EventManager, Event};
-
 #[derive(Debug, Clone)]
 /// Events that are sent from the game thread to the main thread
 pub enum GameStateEvent {
+    OngoingGamesLoaded(Vec<OngoingGame>),
     UpdateGame(ChessGameState),
     GameLoaded(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
 /// Events that are sent from the main thread to the game thread
 pub enum GameCommandEvent {
+    LoadOpenGames,
     LoadNewGame(String),
-    UpdatePhysical(BitBoard),
+    UpdatePhysical(#[serde(with = "bitboard_serializer")] BitBoard),
     RequestTakeBack,
     AcceptTakeBack,
 }
@@ -88,12 +91,11 @@ fn load_game(
     }
 }
 
-pub fn run_game(event_manager: &EventManager<Event>) {
+pub fn run_game(event_manager: &'static EventManager<Event>) {
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
-    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone());
-    let bluetooth_clone = bluetooth.clone();
+    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), &event_manager);
 
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
@@ -123,6 +125,23 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                     Event::GameCommand(GameCommandEvent::AcceptTakeBack) => {
                         warn!("Not implemented");
                     }
+                    Event::GameCommand(GameCommandEvent::LoadOpenGames) => {
+                        info!("Loading open games");
+                        let mut open_games: Vec<OngoingGame> = vec![];
+                        for connector in &connectors {
+                            match connector.lock().unwrap().find_open_games() {
+                                Ok(games) => {
+                                    open_games.extend(games.clone());
+                                }
+                                Err(e) => error!("Error loading open games: {:?}", e),
+                            }
+                        }
+                        tx.send(Event::GameState(GameStateEvent::OngoingGamesLoaded(
+                            open_games,
+                        )))
+                        .map_err(|err| error!("Error sending ongoing games: {:?}", err))
+                        .ok();
+                    }
                     Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
                         info!("Loading new game: {}", game_id);
                         match load_game(game_id, tx.clone(), &connectors) {
@@ -134,14 +153,6 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                                 chess_game = new_chess_game;
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
-                        }
-                    }
-                    Event::GameState(GameStateEvent::GameLoaded(game_id)) => {
-                        info!("Game loaded event received: {}", game_id);
-                        if game_id.is_empty() {
-                            bluetooth_clone.notify_game_state("error");
-                        } else {
-                            bluetooth_clone.notify_game_state("loaded");
                         }
                     }
                     _ => {}
