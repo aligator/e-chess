@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">EChess</string>
-    <string name="nav_bluetooth">Bluetooth</string>
+    <string name="nav_chess">Schach</string>
     <string name="nav_settings">Einstellungen</string>
     <string name="bluetooth_enable">Bluetooth aktivieren</string>
     <string name="bluetooth_unavailable">Bluetooth nicht verfügbar</string>

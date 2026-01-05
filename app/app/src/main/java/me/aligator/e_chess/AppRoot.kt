@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -74,25 +76,31 @@ fun EChessApp() {
         context.createConfigurationContext(config)
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar(modifier = Modifier.fillMaxWidth()) {
-                NavigationBarItem(
-                    selected = destination == AppDestination.BLE,
-                    onClick = { destination = AppDestination.BLE },
-                    icon = { },
-                    label = { Text(stringResource(R.string.nav_bluetooth)) }
-                )
-                NavigationBarItem(
-                    selected = destination == AppDestination.CONFIG,
-                    onClick = { destination = AppDestination.CONFIG },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text(stringResource(R.string.nav_settings)) }
-                )
+    CompositionLocalProvider(LocalContext provides localizedContext) {
+        Scaffold(
+            bottomBar = {
+                NavigationBar(modifier = Modifier.fillMaxWidth()) {
+                    NavigationBarItem(
+                        selected = destination == AppDestination.BLE,
+                        onClick = { destination = AppDestination.BLE },
+                        icon = {
+                            Text(
+                                text = "♟",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        },
+                        label = { Text(stringResource(R.string.nav_chess)) }
+                    )
+                    NavigationBarItem(
+                        selected = destination == AppDestination.CONFIG,
+                        onClick = { destination = AppDestination.CONFIG },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        label = { Text(stringResource(R.string.nav_settings)) }
+                    )
+                }
             }
-        }
-    ) { innerPadding ->
-        CompositionLocalProvider(LocalContext provides localizedContext) {
+        ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
