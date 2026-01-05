@@ -8,8 +8,8 @@ pub struct EventManager<T: Send + Clone + 'static> {
     // The global receiver for all events
     receiver: Arc<Mutex<Receiver<T>>>,
 
-    // The global sender for all events
-    sender: Arc<Mutex<Sender<T>>>,
+    // The global sender for all events - Sender is already Clone + Send + Sync, no need for Arc<Mutex<>>
+    sender: Sender<T>,
 }
 
 impl<T: Send + Clone + 'static> EventManager<T> {
@@ -19,13 +19,13 @@ impl<T: Send + Clone + 'static> EventManager<T> {
         EventManager {
             senders: Arc::new(Mutex::new(Vec::new())),
             receiver: Arc::new(Mutex::new(receiver)),
-            sender: Arc::new(Mutex::new(sender)),
+            sender,
         }
     }
 
     /// Creates a new sender for a specific event type
     pub fn create_sender(&self) -> Sender<T> {
-        self.sender.lock().unwrap().clone()
+        self.sender.clone()
     }
 
     /// Creates a new receiver for a specific event type

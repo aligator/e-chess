@@ -95,11 +95,11 @@ fn load_game(
     }
 }
 
-pub fn run_game(event_manager: &'static EventManager<Event>) {
+pub fn run_game(event_manager: &EventManager<Event>) {
     let tx = event_manager.create_sender();
     let rx = event_manager.create_receiver();
 
-    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), &event_manager);
+    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone());
 
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
