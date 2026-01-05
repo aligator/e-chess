@@ -81,9 +81,9 @@ where
     // Always start with a local game (standard chess position)
     let initial_game_id = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
 
-    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
-        initial_game_id,
-    )))?;
+    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame {
+        game_key: initial_game_id,
+    }))?;
 
     // Start the event manager after setting up everything.
     event_manager.start_thread();
@@ -92,9 +92,9 @@ where
         let physical = board.tick(last_physical)?;
         if physical != last_physical {
             last_physical = physical;
-            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical(
-                physical,
-            ))) {
+            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical {
+                bitboard: physical,
+            })) {
                 warn!("Failed to send update physical event: {:?}", e);
             }
         }

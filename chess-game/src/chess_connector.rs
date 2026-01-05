@@ -72,7 +72,7 @@ impl ChessConnector for LocalChessConnector {
             game_id: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
             opponent: PlayerInfo {
                 id: "local_opponent".to_string(),
-                username: "Local Opponent".to_string(),
+                username: "local".to_string(),
             },
         }])
     }

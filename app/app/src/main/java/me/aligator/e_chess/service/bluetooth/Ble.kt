@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.UUID
+import kotlin.Boolean
 import kotlin.math.acos
 
 private val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID =
@@ -74,8 +75,8 @@ enum class ConnectionStep {
 }
 
 enum class DeviceState {
-    CONNECTED,
     CONNECTING,
+    CONNECTED,
     DISCONNECTING,
     DISCONNECTED,
     UNKNOWN
@@ -84,6 +85,7 @@ enum class DeviceState {
 data class ConnectedDevice(
     val deviceState: DeviceState,
     val address: String?,
+    val characteristicsReady: Boolean,
 )
 
 data class BleState(
@@ -95,12 +97,13 @@ data class BleState(
     val connectedDevice: ConnectedDevice = ConnectedDevice(
         deviceState = DeviceState.UNKNOWN,
         address = null,
+        characteristicsReady = false
     ),
 
     /**
      * List of found devices, filtered by the specific service id of the chess board.
      */
-    val devices: List<SimpleDevice> = emptyList(),
+    val devices: List<SimpleDevice> = emptyList()
 )
 
 private const val LOG_TAG = "BLE"
@@ -227,12 +230,21 @@ class Ble(
         // So this must use the mainLoopHandler.
         mainLoopHandler.post {
             _bleState.update {
-                it.copy(
+                var result = it.copy(
                     connectedDevice = it.connectedDevice.copy(
                         deviceState = state,
                         address = address,
                     )
                 )
+                if (it.connectedDevice.deviceState != DeviceState.CONNECTED) {
+                    result = result.copy(
+                        connectedDevice = result.connectedDevice.copy(
+                            characteristicsReady = false
+                        )
+                    )
+                }
+
+                result
             }
         }
     }
@@ -361,6 +373,15 @@ class Ble(
     private fun handleServiceDiscovered(gatt: BluetoothGatt, service: BluetoothGattService) {
         for (action in bleActions) {
             action.onServiceDiscovered(gatt, service)
+        }
+
+        _bleState.update {
+            it.copy(
+                connectedDevice = it.connectedDevice.copy(
+                    deviceState = DeviceState.CONNECTED,
+                    characteristicsReady = true,
+                )
+            )
         }
     }
 

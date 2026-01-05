@@ -44,7 +44,8 @@ private fun BleScreenConnectedPreview() {
                 devices = emptyList(),
                 connectedDevice = ConnectedDevice(
                     deviceState = DeviceState.CONNECTED,
-                    address = "AA:BB:CC:DD:EE:FF"
+                    address = "AA:BB:CC:DD:EE:FF",
+                    characteristicsReady = true
                 )
             )
         )
@@ -62,7 +63,7 @@ private fun BleScreenPreview(
             GameOption("abc123", "vs Magnus (abc123)"),
             GameOption("def456", "vs Hikaru (def456)")
         ),
-        isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED,
+        isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady,
         selectedGameKey = ""
     )
 

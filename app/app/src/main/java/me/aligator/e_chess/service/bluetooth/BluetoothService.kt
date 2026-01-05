@@ -42,8 +42,6 @@ class BluetoothService : Service() {
      */
     lateinit var chessBoardAction: ChessBoardDeviceAction
 
-    private val _gameLoadState = MutableStateFlow<String?>(null)
-    val gameLoadState: StateFlow<String?> = _gameLoadState.asStateFlow()
 
     override fun onCreate() {
         super.onCreate()
@@ -54,10 +52,7 @@ class BluetoothService : Service() {
         )
         ble.checkBluetooth()
         httpBridgeAction = HttpBleBridgeAction(ble, applicationContext)
-        chessBoardAction = ChessBoardDeviceAction(ble) { state ->
-            Log.d(LOG_TAG, "Game load state changed to: $state")
-            _gameLoadState.value = state
-        }
+        chessBoardAction = ChessBoardDeviceAction(ble)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

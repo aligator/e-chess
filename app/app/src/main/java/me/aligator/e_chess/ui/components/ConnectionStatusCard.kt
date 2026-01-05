@@ -53,7 +53,7 @@ fun ConnectionStatusCard(
                 }
             }
 
-            if (connectionState.deviceState == DeviceState.CONNECTED) {
+            if (connectionState.deviceState == DeviceState.CONNECTED && connectionState.characteristicsReady) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = onDisconnect,

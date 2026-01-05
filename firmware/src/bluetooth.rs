@@ -375,7 +375,7 @@ impl Bluetooth {
                                 error!("Failed to queue incoming BLE frame: {:?}", e);
                             }
                         }
-                        Err(e) => warn!("Failed to decode incoming BLE frame: {:?}", e),
+                        Err(e) => warn!("Failed to decode incoming bridge BLE frame: {:?}", e),
                     }
                 }
             });
@@ -402,7 +402,7 @@ impl Bluetooth {
                             .unwrap_or_else(|e| {
                                 warn!("Failed to forward BLE game command event: {:?}", e)
                             }),
-                        Err(e) => warn!("Failed to decode incoming BLE frame: {:?}", e),
+                        Err(e) => warn!("Failed to decode incoming BLE action frame: {:?}", e),
                     }
                 }
             });
@@ -615,8 +615,8 @@ pub fn encode_json_frame<T: Serialize>(msg: &T) -> Result<Vec<u8>, BluetoothErro
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SerializableGameStateEvent {
-    OngoingGamesLoaded(Vec<OngoingGame>),
-    GameLoaded(String),
+    OngoingGamesLoaded { games: Vec<OngoingGame> },
+    GameLoaded { game_key: String },
 }
 
 impl BleRuntime {
@@ -643,13 +643,16 @@ impl BleRuntime {
             while let Ok(event) = self.event_rx.recv() {
                 let serializeable = match event {
                     Event::GameState(GameStateEvent::OngoingGamesLoaded(ongoing)) => {
-                        Some(SerializableGameStateEvent::OngoingGamesLoaded(ongoing))
+                        Some(SerializableGameStateEvent::OngoingGamesLoaded { games: ongoing })
                     }
                     Event::GameState(GameStateEvent::GameLoaded(game_key)) => {
-                        Some(SerializableGameStateEvent::GameLoaded(game_key))
+                        Some(SerializableGameStateEvent::GameLoaded { game_key })
                     }
                     _ => None,
                 };
+                if serializeable.is_none() {
+                    continue;
+                }
 
                 match encode_json_frame(&serializeable) {
                     Ok(frame) => {

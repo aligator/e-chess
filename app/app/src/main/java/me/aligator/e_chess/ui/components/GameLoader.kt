@@ -118,13 +118,16 @@ fun GameLoader(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.standard_game_option)) },
                         onClick = {
-                            onGameKeyChanged("standard")
+                            onGameKeyChanged("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
                             expanded = false
                         }
                     )
 
                     // Available Lichess games
                     availableGames.forEach { game ->
+                        if (game.id == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+                            return@forEach
+                        }
                         DropdownMenuItem(
                             text = { Text(game.displayName) },
                             onClick = {

@@ -28,11 +28,15 @@ pub enum GameStateEvent {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
-/// Events that are sent from the main thread to the game thread
 pub enum GameCommandEvent {
     LoadOpenGames,
-    LoadNewGame(String),
-    UpdatePhysical(#[serde(with = "bitboard_serializer")] BitBoard),
+    LoadNewGame {
+        game_key: String,
+    },
+    UpdatePhysical {
+        #[serde(with = "bitboard_serializer")]
+        bitboard: BitBoard,
+    },
     RequestTakeBack,
     AcceptTakeBack,
 }
@@ -115,9 +119,8 @@ pub fn run_game(event_manager: &'static EventManager<Event>) {
             sleep(Duration::from_millis(100));
             while let Ok(event) = rx.try_recv() {
                 match event {
-                    // Handle WiFi connection state changes if needed
-                    Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
-                        physical = new_physical;
+                    Event::GameCommand(GameCommandEvent::UpdatePhysical { bitboard }) => {
+                        physical = bitboard;
                     }
                     Event::GameCommand(GameCommandEvent::RequestTakeBack) => {
                         warn!("Not implemented");
@@ -142,9 +145,9 @@ pub fn run_game(event_manager: &'static EventManager<Event>) {
                         .map_err(|err| error!("Error sending ongoing games: {:?}", err))
                         .ok();
                     }
-                    Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
-                        info!("Loading new game: {}", game_id);
-                        match load_game(game_id, tx.clone(), &connectors) {
+                    Event::GameCommand(GameCommandEvent::LoadNewGame { game_key }) => {
+                        info!("Loading new game: {}", game_key);
+                        match load_game(game_key, tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick
                                 last_game_state = None;

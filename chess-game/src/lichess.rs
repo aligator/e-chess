@@ -110,7 +110,13 @@ fn map_ongoing_game(json_value: &serde_json::Value) -> Option<OngoingGame> {
     }
 
     let opponent = oppenent_info.unwrap();
-    let id = opponent.get("id")?.as_str()?.to_string();
+
+    let id = opponent
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
     let username = opponent.get("username")?.as_str()?.to_string();
 
     if let Some(game_id) = game_id.and_then(|v| v.as_str()) {
