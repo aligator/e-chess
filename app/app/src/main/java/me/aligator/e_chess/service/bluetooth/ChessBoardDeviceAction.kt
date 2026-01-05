@@ -32,8 +32,8 @@ class ChessBoardDeviceAction(
     private var gatt: BluetoothGatt? = null
     private val eventBuffer = StringBuilder()
 
-    private val _gameLoadState = MutableStateFlow<String?>(null)
-    val gameLoadState: StateFlow<String?> = _gameLoadState.asStateFlow()
+    private val _isLoadingGame = MutableStateFlow(false)
+    val isLoadingGame: StateFlow<Boolean> = _isLoadingGame.asStateFlow()
 
     private val _ongoingGames = MutableStateFlow<String?>(null)
     val ongoingGames: StateFlow<String?> = _ongoingGames.asStateFlow()
@@ -53,6 +53,9 @@ class ChessBoardDeviceAction(
         actionCharacteristic = null
         eventCharacteristic = null
         gatt = null
+        _isLoadingGame.value = false
+        _isLoadingGames.value = false
+        _ongoingGames.value = null
         eventBuffer.clear()
     }
 
@@ -108,7 +111,7 @@ class ChessBoardDeviceAction(
                 "game_loaded" -> {
                     val gameKey = json.getString("game_key")
                     Log.d(LOG_TAG, "Game loaded: $gameKey")
-                    _gameLoadState.value = gameKey
+                    _isLoadingGame.value = false
                 }
 
                 else -> {
@@ -166,6 +169,7 @@ class ChessBoardDeviceAction(
     }
 
     fun loadGame(key: String): Boolean {
+        _isLoadingGame.value = true
         val command = JSONObject()
         command.put("type", "load_new_game")
         command.put("game_key", key)

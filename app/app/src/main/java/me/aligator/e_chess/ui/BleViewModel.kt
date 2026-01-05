@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,13 +34,12 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     private val configStore = ConfigurationStore(application)
 
     private val _availableGames = MutableStateFlow<List<GameOption>>(emptyList())
+    private val _isLoadingGames = MutableStateFlow(false)
+
     private val _isLoadingGame = MutableStateFlow(false)
     private val _selectedGameKey = MutableStateFlow(configStore.getLastLoadedGame() ?: "")
     private val _bleState = MutableStateFlow(BleState())
-
-    private val _isLoadingGames = MutableStateFlow(false)
-
-    private var bluetoothService: BluetoothService? = null
+    private var bluetoothServiceRef: WeakReference<BluetoothService>? = null
 
     val uiState: StateFlow<BleUiState> = combine(
         _bleState,
@@ -63,20 +63,12 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     fun setBluetoothService(service: BluetoothService?) {
-        bluetoothService = service
+        bluetoothServiceRef = service?.let { WeakReference(it) }
 
         if (service != null) {
             viewModelScope.launch {
                 service.ble.bleState.collect { state ->
                     _bleState.value = state
-                }
-            }
-            viewModelScope.launch {
-                service.chessBoardAction.gameLoadState.collect { state ->
-                    Log.d(LOG_TAG, "Received game load state: $state")
-                    if (state != null) {
-                        _isLoadingGame.value = false
-                    }
                 }
             }
             viewModelScope.launch {
@@ -97,44 +89,45 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
                     _isLoadingGames.value = isLoading
                 }
             }
+            viewModelScope.launch {
+                service.chessBoardAction.isLoadingGame.collect { isLoading ->
+                    _isLoadingGame.value = isLoading
+                }
+            }
         } else {
             _bleState.value = BleState()
         }
     }
 
     fun startScan() {
-        bluetoothService?.ble?.startScan()
+        bluetoothServiceRef?.get()?.ble?.startScan()
     }
 
     fun stopScan() {
-        bluetoothService?.ble?.stopScan()
+        bluetoothServiceRef?.get()?.ble?.stopScan()
     }
 
     fun connect(device: SimpleDevice) {
-        bluetoothService?.ble?.connect(device)
+        bluetoothServiceRef?.get()?.ble?.connect(device)
     }
 
     fun disconnect() {
         Log.d(LOG_TAG, "disconnect called")
-        bluetoothService?.ble?.disconnect()
-        // Reset loading state
-        _isLoadingGame.value = false
+        bluetoothServiceRef?.get()?.ble?.disconnect()
     }
 
     fun loadGame(gameKey: String) {
         Log.d(LOG_TAG, "loadGame called with key: $gameKey")
-        _isLoadingGame.value = true
         Log.d(LOG_TAG, "Set isLoadingGame to true")
 
         // Save the game key for next time
         configStore.saveLastLoadedGame(gameKey)
-        val success = bluetoothService?.chessBoardAction?.loadGame(gameKey)
+        val success = bluetoothServiceRef?.get()?.chessBoardAction?.loadGame(gameKey)
         Log.d(LOG_TAG, "loadGame sent to board, success: $success")
-        // Loading state will be cleared when we receive the game state notification
     }
 
     fun fetchGames() {
-        bluetoothService?.chessBoardAction?.loadOpenGames()
+        bluetoothServiceRef?.get()?.chessBoardAction?.loadOpenGames()
     }
 
     private fun parseOngoingGames(json: String): List<GameOption> {
