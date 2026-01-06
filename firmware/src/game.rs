@@ -96,10 +96,11 @@ fn load_game(
 }
 
 pub fn run_game(event_manager: &EventManager<Event>) {
-    let tx = event_manager.create_sender();
-    let rx = event_manager.create_receiver();
+    let event_tx = event_manager.create_sender();
+    let event_rx = event_manager.create_receiver();
 
-    let bluetooth = Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), tx.clone());
+    let (bluetooth, mut ble_runtime) =
+        Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), event_tx.clone());
 
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
@@ -117,7 +118,8 @@ pub fn run_game(event_manager: &EventManager<Event>) {
         loop {
             // Sleep for 100ms to avoid busy-waiting
             sleep(Duration::from_millis(100));
-            while let Ok(event) = rx.try_recv() {
+            while let Ok(event) = event_rx.try_recv() {
+                ble_runtime.tick(event.clone());
                 match event {
                     Event::GameCommand(GameCommandEvent::UpdatePhysical { bitboard }) => {
                         physical = bitboard;
@@ -139,15 +141,16 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                                 Err(e) => error!("Error loading open games: {:?}", e),
                             }
                         }
-                        tx.send(Event::GameState(GameStateEvent::OngoingGamesLoaded(
-                            open_games,
-                        )))
-                        .map_err(|err| error!("Error sending ongoing games: {:?}", err))
-                        .ok();
+                        event_tx
+                            .send(Event::GameState(GameStateEvent::OngoingGamesLoaded(
+                                open_games,
+                            )))
+                            .map_err(|err| error!("Error sending ongoing games: {:?}", err))
+                            .ok();
                     }
                     Event::GameCommand(GameCommandEvent::LoadNewGame { game_key }) => {
                         info!("Loading new game: {}", game_key);
-                        match load_game(game_key, tx.clone(), &connectors) {
+                        match load_game(game_key, event_tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
                                 // Reset the game state so that it updates on the next tick
                                 last_game_state = None;
@@ -172,7 +175,7 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                         }
 
                         let event = Event::GameState(GameStateEvent::UpdateGame(state));
-                        if let Err(e) = tx.send(event) {
+                        if let Err(e) = event_tx.send(event) {
                             error!("Failed to send new game state: {:?}", e);
                         }
 

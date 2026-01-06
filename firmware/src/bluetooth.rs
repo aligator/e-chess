@@ -15,19 +15,32 @@ use std::{
         mpsc::{Receiver, Sender},
         Arc, Mutex,
     },
-    thread::{self, JoinHandle},
+    thread,
     time::{Duration, Instant},
 };
 
 use crate::{
-    event::EventManager,
     game::{GameCommandEvent, GameStateEvent},
     Event,
 };
 use chess_game::{chess_connector::OngoingGame, requester::Requester};
-use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, NimbleProperties};
+use esp32_nimble::{uuid128, BLEAdvertisementData, BLEDevice, NimbleProperties};
 use log::*;
 use serde::{Deserialize, Serialize};
+
+/// Message types for the unified BLE sender thread
+#[derive(Debug, Clone)]
+enum BleOutgoingMessage {
+    BridgeRequest(BridgeRequest),
+    GameStateEvent(SerializableGameStateEvent),
+}
+
+/// Target characteristic for outgoing BLE messages
+#[derive(Debug, Clone, Copy)]
+enum BleCharacteristic {
+    BridgeRequest,
+    GameStateEvent,
+}
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const SERVICE_UUID: &str = "b4d75b6c-7284-4268-8621-6e3cef3c6ac4";
@@ -158,6 +171,7 @@ struct BluetoothInner {
 pub struct Bluetooth {
     inner: Arc<BluetoothInner>,
     is_connected: Arc<Mutex<bool>>,
+    event_tx: Arc<Mutex<Sender<Event>>>,
 }
 
 /// Append incoming bytes to `buffer` and extract complete frames terminated by
@@ -244,25 +258,18 @@ impl Bluetooth {
         device_name: &str,
         request_timeout: Duration,
         event_tx: Sender<Event>,
-    ) -> Self {
-        info!("create_and_spawn: creating channels");
+    ) -> (Self, BleRuntime) {
         let (to_phone_tx, to_phone_rx) = std::sync::mpsc::channel();
         let (from_phone_tx, from_phone_rx) = std::sync::mpsc::channel();
-        info!("create_and_spawn: creating transport");
         let transport = Arc::new(ChannelTransport::new(to_phone_tx, from_phone_rx));
 
-        info!("create_and_spawn: creating request_channels");
         let request_channels = Arc::new(Mutex::new(std::collections::HashMap::new()));
 
         // Start the central dispatcher thread
-        info!("create_and_spawn: cloning transport for dispatcher");
         let transport_clone = transport.clone();
-        info!("create_and_spawn: cloning request_channels for dispatcher");
         let request_channels_clone = request_channels.clone();
-        info!("create_and_spawn: starting dispatcher");
         dispatch_messages(transport_clone, request_channels_clone);
 
-        info!("create_and_spawn: creating Bluetooth struct");
         let mut bluetooth = Self {
             inner: Arc::new(BluetoothInner {
                 transport,
@@ -271,34 +278,27 @@ impl Bluetooth {
                 request_channels,
             }),
             is_connected: Arc::new(Mutex::new(false)),
+            event_tx: Arc::new(Mutex::new(event_tx)),
         };
-        info!("create_and_spawn: Bluetooth struct created");
 
-        info!("create_and_spawn: calling setup_runtime");
+        let event_tx_clone = bluetooth.event_tx.clone();
         let ble_runtime =
-            bluetooth.setup_runtime(device_name, to_phone_rx, from_phone_tx, event_tx);
+            bluetooth.setup_runtime(device_name, from_phone_tx, event_tx_clone, to_phone_rx);
 
-        info!("create_and_spawn: setup_runtime completed");
-        ble_runtime
-            .map(|runtime| {
-                info!("create_and_spawn: spawning BLE runtime");
-                runtime.spawn();
-                info!("create_and_spawn: BLE runtime spawned");
-            })
-            .unwrap_or_else(|e| {
-                error!("Failed to setup BLE runtime: {:?}", e);
-            });
+        let runtime = ble_runtime.unwrap_or_else(|e| {
+            error!("Failed to setup BLE runtime: {:?}", e);
+            panic!("Cannot continue without BLE runtime");
+        });
 
-        info!("create_and_spawn: returning bluetooth");
-        bluetooth
+        (bluetooth, runtime)
     }
 
     fn setup_runtime(
         &mut self,
         device_name: &str,
-        outgoing_rx: Receiver<BridgeRequest>,
-        incoming_tx: Sender<BridgeResponse>,
-        event_tx: Sender<Event>,
+        bridge_tx: Sender<BridgeResponse>,
+        event_tx: Arc<Mutex<Sender<Event>>>,
+        bridge_rx: Receiver<BridgeRequest>,
     ) -> Result<BleRuntime, BluetoothError> {
         info!("setup_runtime: starting");
         self.is_connected = Arc::new(Mutex::new(false));
@@ -323,7 +323,7 @@ impl Bluetooth {
             bridge_request_characteristic,
             bridge_response_characteristic,
             action_characteristic,
-            // event_characteristic, // TODO: Re-enable
+            event_characteristic,
         ) = {
             let service = server.create_service(uuid128!(SERVICE_UUID));
             // Request characteristic: board -> phone notifications only.
@@ -344,18 +344,17 @@ impl Bluetooth {
                 NimbleProperties::WRITE,
             );
 
-            // TODO: Re-enable event characteristic once clone() issue is fixed
             // Game state event characteristic: board -> phone notifications for new events
-            // let event_characteristic = service.lock().create_characteristic(
-            //     uuid128!(EVENT_CHARACTERISTIC_UUID),
-            //     NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
-            // );
+            let event_characteristic = service.lock().create_characteristic(
+                uuid128!(EVENT_CHARACTERISTIC_UUID),
+                NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            );
 
             (
                 bridge_request_characteristic,
                 bridge_response_characteristic,
                 action_characteristic,
-                // event_characteristic,
+                event_characteristic,
             )
         };
 
@@ -387,7 +386,7 @@ impl Bluetooth {
                 for frame in frames {
                     match decode_frame(&frame) {
                         Ok(msg) => {
-                            if let Err(e) = incoming_tx.send(msg) {
+                            if let Err(e) = bridge_tx.send(msg) {
                                 error!("Failed to queue incoming BLE frame: {:?}", e);
                             }
                         }
@@ -399,6 +398,7 @@ impl Bluetooth {
 
         {
             info!("setup_runtime: setting up action characteristic with event_tx");
+            let event_tx_clone = event_tx.clone();
             let buffer = Arc::new(Mutex::new(Vec::new()));
             pub fn decode_frame(payload: &[u8]) -> Result<GameCommandEvent, BluetoothError> {
                 serde_json::from_slice::<Frame<GameCommandEvent>>(&payload)
@@ -413,7 +413,9 @@ impl Bluetooth {
 
                 for frame in frames {
                     match decode_frame(&frame) {
-                        Ok(event) => event_tx
+                        Ok(event) => event_tx_clone
+                            .lock()
+                            .unwrap()
                             .send(Event::GameCommand(event))
                             .unwrap_or_else(|e| {
                                 warn!("Failed to forward BLE game command event: {:?}", e)
@@ -438,13 +440,66 @@ impl Bluetooth {
             .start()
             .map_err(|e| BluetoothError::Transport(e.to_string()))?;
 
-        Ok(BleRuntime {
-            outgoing_rx,
-            bridge_request_characteristic,
-            // TODO: Re-enable event broadcasting
-            // event_rx: event_receiver,
-            // event_characteristic: event_characteristic,
-        })
+        // Create unified channel for all outgoing BLE messages
+        let (ble_tx, ble_rx) = std::sync::mpsc::channel::<BleOutgoingMessage>();
+
+        // Clone sender for bridge requests
+        let ble_tx_bridge = ble_tx.clone();
+
+        // Start thread to forward bridge requests to unified sender
+        thread::spawn(move || {
+            while let Ok(msg) = bridge_rx.recv() {
+                if let Err(e) = ble_tx_bridge.send(BleOutgoingMessage::BridgeRequest(msg)) {
+                    error!("Failed to forward bridge request to BLE sender: {:?}", e);
+                    break;
+                }
+            }
+        });
+
+        // Start unified BLE sender thread
+        thread::spawn(move || {
+            info!("Unified BLE sender thread started");
+            while let Ok(msg) = ble_rx.recv() {
+                let data = match &msg {
+                    BleOutgoingMessage::BridgeRequest(req) => {
+                        Some((encode_json_frame(req), BleCharacteristic::BridgeRequest))
+                    }
+                    BleOutgoingMessage::GameStateEvent(evt) => {
+                        Some((encode_json_frame(evt), BleCharacteristic::GameStateEvent))
+                    }
+                    _ => None,
+                };
+                let (frame_result, characteristic) = if let Some(data) = data {
+                    data
+                } else {
+                    continue;
+                };
+
+                match frame_result {
+                    Ok(frame) => {
+                        let chr = match characteristic {
+                            BleCharacteristic::BridgeRequest => &bridge_request_characteristic,
+                            BleCharacteristic::GameStateEvent => &event_characteristic,
+                        };
+
+                        for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
+                            let mut chr_lock = chr.lock();
+                            chr_lock.set_value(chunk);
+                            chr_lock.notify();
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to encode BLE frame for {:?}: {:?}",
+                            characteristic, e
+                        );
+                    }
+                }
+            }
+            info!("Unified BLE sender thread exiting");
+        });
+
+        Ok(BleRuntime { ble_tx })
     }
 
     fn next_id(&self) -> u32 {
@@ -609,11 +664,7 @@ impl Requester for Bluetooth {
 /// BLE transport that owns the NimBLE TX characteristic and bridges the connector
 /// channel to outbound GATT notifications.
 pub struct BleRuntime {
-    outgoing_rx: Receiver<BridgeRequest>,
-    bridge_request_characteristic: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
-    // TODO: Re-enable event broadcasting once we figure out the clone() issue
-    // event_rx: Receiver<Event>,
-    // event_characteristic: Arc<esp32_nimble::utilities::mutex::Mutex<BLECharacteristic>>,
+    ble_tx: Sender<BleOutgoingMessage>,
 }
 
 pub fn encode_json_frame<T: Serialize>(msg: &T) -> Result<Vec<u8>, BluetoothError> {
@@ -636,57 +687,23 @@ pub enum SerializableGameStateEvent {
 }
 
 impl BleRuntime {
-    /// Spawn a background bridge that forwards BoardToPhone frames over the TX
-    /// characteristic as BLE notifications. Returns the thread handle in case
-    /// the caller wants to join/monitor.
-    pub fn spawn(self) -> JoinHandle<()> {
-        std::thread::spawn(move || {
-            while let Ok(msg) = self.outgoing_rx.recv() {
-                match encode_json_frame(&msg) {
-                    Ok(frame) => {
-                        let mut chr = self.bridge_request_characteristic.lock();
-                        for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
-                            chr.set_value(chunk);
-                            chr.notify();
-                        }
-                    }
-                    Err(e) => warn!("Failed to encode frame: {:?}", e),
-                }
+    /// Tick method to process outgoing BLE event messages (non-blocking)
+    /// Call this regularly from the main loop
+    pub fn tick(&mut self, event: Event) {
+        let serializeable = match event {
+            Event::GameState(GameStateEvent::OngoingGamesLoaded(ongoing)) => {
+                Some(SerializableGameStateEvent::OngoingGamesLoaded { games: ongoing })
             }
-        })
-
-        // TODO: Re-enable event broadcasting once clone() issue is fixed
-        // let event_join_handle = std::thread::spawn(move || {
-        //     while let Ok(event) = self.event_rx.recv() {
-        //         let serializeable = match event {
-        //             Event::GameState(GameStateEvent::OngoingGamesLoaded(ongoing)) => {
-        //                 Some(SerializableGameStateEvent::OngoingGamesLoaded { games: ongoing })
-        //             }
-        //             Event::GameState(GameStateEvent::GameLoaded(game_key)) => {
-        //                 Some(SerializableGameStateEvent::GameLoaded { game_key })
-        //             }
-        //             _ => None,
-        //         };
-        //         if serializeable.is_none() {
-        //             continue;
-        //         }
-        //
-        //         match encode_json_frame(&serializeable) {
-        //             Ok(frame) => {
-        //                 let mut chr = self.event_characteristic.lock();
-        //                 for chunk in frame.chunks(MIN_MTU_PAYLOAD) {
-        //                     chr.set_value(chunk);
-        //                     chr.notify();
-        //                 }
-        //             }
-        //             Err(e) => warn!("Failed to encode frame: {:?}", e),
-        //         }
-        //     }
-        // });
-        //
-        // thread::spawn(move || {
-        //     bridge_join_handle.join().unwrap();
-        //     event_join_handle.join().unwrap();
-        // })
+            Event::GameState(GameStateEvent::GameLoaded(game_key)) => {
+                Some(SerializableGameStateEvent::GameLoaded { game_key })
+            }
+            _ => None,
+        };
+        if let Some(event) = serializeable {
+            self.ble_tx
+                .send(BleOutgoingMessage::GameStateEvent(event))
+                .map_err(|err| error!("Could not send bt event: {:?}", err))
+                .ok();
+        }
     }
 }

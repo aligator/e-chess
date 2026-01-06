@@ -98,7 +98,7 @@ where
 
         // Check if event happens
         if let Ok(event) = rx.try_recv() {
-            match event {
+            match event.clone() {
                 Event::GameState(game_state_event) => match game_state_event {
                     GameStateEvent::UpdateGame(game_state) => {
                         info!("Received update game state event: {:?}", game_state);
