@@ -1,5 +1,5 @@
 use crate::util::bitboard_serializer;
-use crate::{bluetooth::Bluetooth, event::EventManager, Event};
+use crate::{bluetooth::BluetoothService, event::EventManager, Event};
 use anyhow::Result;
 use chess::BitBoard;
 use chess_game::chess_connector::OngoingGame;
@@ -99,12 +99,13 @@ pub fn run_game(event_manager: &EventManager<Event>) {
     let event_tx = event_manager.create_sender();
     let event_rx = event_manager.create_receiver();
 
-    let (bluetooth, mut ble_runtime) =
-        Bluetooth::create_and_spawn("E-Chess", Duration::from_secs(10), event_tx.clone());
+    let (_ble_service, bridge_handler, game_event_tx) =
+        BluetoothService::new("E-Chess", Duration::from_secs(10), event_tx.clone())
+            .expect("Failed to initialize Bluetooth service");
 
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
         Arc::new(Mutex::new(LocalChessConnector {})),
-        Arc::new(Mutex::new(LichessConnector::new(bluetooth))),
+        Arc::new(Mutex::new(LichessConnector::new(bridge_handler))),
     ];
 
     info!("Starting game thread");
@@ -119,7 +120,11 @@ pub fn run_game(event_manager: &EventManager<Event>) {
             // Sleep for 100ms to avoid busy-waiting
             sleep(Duration::from_millis(100));
             while let Ok(event) = event_rx.try_recv() {
-                ble_runtime.tick(event.clone());
+                // Send game state events to BLE
+                if let Event::GameState(ref game_state) = event {
+                    let _ = game_event_tx.send(game_state.clone());
+                }
+
                 match event {
                     Event::GameCommand(GameCommandEvent::UpdatePhysical { bitboard }) => {
                         physical = bitboard;

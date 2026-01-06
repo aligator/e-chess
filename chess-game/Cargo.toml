@@ -11,7 +11,7 @@ path = "src/lib.rs"
 chess = { git = "https://github.com/aligator/chess-rs" }
 thiserror = "2.0.17"
 colored = { version = "3.0", optional = true }
-serde_json = "1.0.148"
+serde_json = "1.0.149"
 reqwest = { version = "0.13.1", features = ["stream"], optional = true }
 tokio = { version = "1.49.0", features = ["full"], optional = true }
 futures-util = { version = "0.3.31", optional = true }
