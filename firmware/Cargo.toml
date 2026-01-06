@@ -11,7 +11,7 @@ name = "e-chess"
 harness = false # do not use the built in cargo test harness -> resolve rust-analyzer errors
 
 [profile.release]
-opt-level = "s"
+opt-level = "z" # Not sure why but ble is broken with "s"
 
 [profile.dev]
 debug = true    # Symbols are nice and they don't increase the size on Flash
