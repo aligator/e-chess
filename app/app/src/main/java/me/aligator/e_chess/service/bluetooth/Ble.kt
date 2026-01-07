@@ -182,7 +182,7 @@ class Ble(
 ) {
     private val bleActions: MutableList<BleAction> = mutableListOf()
 
-    private val maxChunkSize = 128
+    private var maxChunkSize = 20 // Default for MTU 23, will be updated after MTU negotiation
 
     /// current connection state
     val _bleState = MutableStateFlow(BleState())
@@ -437,7 +437,9 @@ class Ble(
 
             override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
-                    Log.d(LOG_TAG, "MTU changed to $mtu bytes")
+                    // MTU includes 3 bytes for ATT header
+                    maxChunkSize = mtu - 3
+                    Log.d(LOG_TAG, "MTU changed to $mtu bytes, maxChunkSize set to $maxChunkSize")
                 } else {
                     Log.w(LOG_TAG, "MTU change failed, using default")
                 }
