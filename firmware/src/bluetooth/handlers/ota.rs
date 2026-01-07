@@ -1,6 +1,6 @@
 //! OTA (Over-The-Air) Update Handler
 //!
-//! Protocol: First bytes until space are ASCII size, rest is binary firmware data.
+//! Protocol: First message is 4 bytes size as u32 little-endian, following messages are raw binary firmware data.
 
 use crate::bluetooth::{types::*, util::*};
 use esp32_nimble::{utilities::mutex::Mutex as NimbleMutex, uuid128, BLEService, NimbleProperties};
@@ -17,7 +17,7 @@ pub const OTA_EVENT_CHARACTERISTIC_UUID: &str = "4d46d598-6141-448c-92bd-fed799e
 
 #[derive(Debug, Clone)]
 pub enum OtaCommand {
-    Start { size: u32, data: Vec<u8> },
+    Start { size: u32 },
     Data { data: Vec<u8> },
 }
 
@@ -31,10 +31,10 @@ pub enum OtaEvent {
 
 enum OtaState {
     Idle,
-    InProgress {
+    Receiving {
         ota: OtaUpdate,
         expected_size: u32,
-        bytes_written: u32,
+        bytes_received: u32,
     },
 }
 
@@ -61,22 +61,24 @@ impl OtaHandler {
         );
 
         {
+            let first_message = Arc::new(Mutex::new(true));
             ota_action.lock().on_write(move |args| {
                 let data = args.recv_data();
 
-                if let Some(space_pos) = data.iter().position(|&b| b == b' ') {
-                    if let Ok(size_str) = std::str::from_utf8(&data[..space_pos]) {
-                        if let Ok(size) = size_str.parse::<u32>() {
-                            let firmware_data = data[space_pos + 1..].to_vec();
-                            let _ = ota_command_tx.send(OtaCommand::Start {
-                                size,
-                                data: firmware_data,
-                            });
-                            return;
-                        }
-                    }
+                let mut is_first = first_message.lock().unwrap();
+
+                // First message should be exactly 4 bytes with size
+                if *is_first && data.len() == 4 {
+                    *is_first = false;
+                    let size_bytes: [u8; 4] = [data[0], data[1], data[2], data[3]];
+                    let size = u32::from_le_bytes(size_bytes);
+                    let _ = ota_command_tx.send(OtaCommand::Start { size });
+                    return;
                 }
 
+                *is_first = false;
+
+                // All other messages are data chunks
                 let _ = ota_command_tx.send(OtaCommand::Data {
                     data: data.to_vec(),
                 });
@@ -91,24 +93,29 @@ impl OtaHandler {
         ota_command_rx: std::sync::mpsc::Receiver<OtaCommand>,
         ota_event: Arc<NimbleMutex<esp32_nimble::BLECharacteristic>>,
     ) {
-        thread::spawn(move || {
-            info!("OTA processor thread started");
-            let state = Arc::new(Mutex::new(OtaState::Idle));
+        thread::Builder::new()
+            .stack_size(8 * 1024) // 8KB stack for OTA operations
+            .spawn(move || {
+                info!("OTA processor thread started");
+                let state = Arc::new(Mutex::new(OtaState::Idle));
 
-            while let Ok(cmd) = ota_command_rx.recv() {
-                if let Err(e) = Self::handle_ota_command(&state, &ota_event, cmd) {
-                    error!("OTA error: {:?}", e);
-                    let _ = Self::send_event(
-                        &ota_event,
-                        OtaEvent::OtaError {
-                            message: e.to_string(),
-                        },
-                    );
-                    *state.lock().unwrap() = OtaState::Idle;
+                loop {
+                    match ota_command_rx.recv() {
+                        Ok(cmd) => {
+                            if Self::handle_ota_command(&state, &ota_event, cmd).is_err() {
+                                // Reset state on error - no logging to avoid stack overflow
+                                if let Ok(mut guard) = state.lock() {
+                                    *guard = OtaState::Idle;
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            break;
+                        }
+                    }
                 }
-            }
-            info!("OTA processor thread exiting");
-        });
+            })
+            .expect("Failed to spawn OTA processor thread");
     }
 
     fn handle_ota_command(
@@ -119,29 +126,17 @@ impl OtaHandler {
         let mut state_guard = state.lock().unwrap();
 
         match cmd {
-            OtaCommand::Start { size, data } => {
+            OtaCommand::Start { size } => {
                 info!("OTA: Starting update, size={} bytes", size);
 
+                // Begin OTA
                 let ota = OtaUpdate::begin()
-                    .map_err(|e| BluetoothError::Transport(format!("OTA begin failed: {:?}", e)))?;
+                    .map_err(|_| BluetoothError::Transport(format!("OTA begin failed")))?;
 
-                let bytes_written = data.len() as u32;
-
-                if !data.is_empty() {
-                    info!("OTA: Writing initial chunk of {} bytes", bytes_written);
-                }
-
-                let mut ota_update = ota;
-                if !data.is_empty() {
-                    ota_update.write(&data).map_err(|e| {
-                        BluetoothError::Transport(format!("OTA write failed: {:?}", e))
-                    })?;
-                }
-
-                *state_guard = OtaState::InProgress {
-                    ota: ota_update,
+                *state_guard = OtaState::Receiving {
+                    ota,
                     expected_size: size,
-                    bytes_written,
+                    bytes_received: 0,
                 };
 
                 Self::send_event(event_char, OtaEvent::OtaStarted { size })?;
@@ -149,52 +144,50 @@ impl OtaHandler {
                 Ok(())
             }
             OtaCommand::Data { data } => {
-                if let OtaState::InProgress {
-                    ota,
-                    bytes_written,
-                    expected_size,
-                } = &mut *state_guard
-                {
-                    ota.write(&data).map_err(|e| {
-                        BluetoothError::Transport(format!("OTA write failed: {:?}", e))
-                    })?;
+                match &mut *state_guard {
+                    OtaState::Receiving {
+                        ota,
+                        expected_size,
+                        bytes_received,
+                    } => {
+                        // Write this chunk
+                        ota.write(&data)
+                            .map_err(|_| BluetoothError::Transport(format!("Write failed")))?;
 
-                    *bytes_written += data.len() as u32;
+                        *bytes_received += data.len() as u32;
 
-                    if *bytes_written >= *expected_size {
-                        info!("OTA: All data received, finalizing update");
+                        // Check if all data received
+                        if *bytes_received >= *expected_size {
+                            info!("OTA: All data received, finalizing");
 
-                        let temp_state = std::mem::replace(&mut *state_guard, OtaState::Idle);
+                            let temp_state = std::mem::replace(&mut *state_guard, OtaState::Idle);
 
-                        if let OtaState::InProgress { ota, .. } = temp_state {
-                            let mut completed = ota.finalize().map_err(|e| {
-                                BluetoothError::Transport(format!("OTA finalize failed: {:?}", e))
-                            })?;
+                            if let OtaState::Receiving { ota, .. } = temp_state {
+                                let mut completed = ota.finalize().map_err(|_| {
+                                    BluetoothError::Transport(format!("Finalize failed"))
+                                })?;
 
-                            completed.set_as_boot_partition().map_err(|e| {
-                                BluetoothError::Transport(format!(
-                                    "Set boot partition failed: {:?}",
-                                    e
-                                ))
-                            })?;
+                                completed.set_as_boot_partition().map_err(|_| {
+                                    BluetoothError::Transport(format!("Set boot failed"))
+                                })?;
 
-                            info!("OTA: Update successful, new partition set as boot");
+                                info!("OTA: Success, rebooting soon");
 
-                            Self::send_event(event_char, OtaEvent::OtaComplete)?;
+                                Self::send_event(event_char, OtaEvent::OtaComplete)?;
 
-                            thread::spawn(|| {
-                                info!("OTA: Restarting in 2 seconds...");
-                                thread::sleep(Duration::from_secs(2));
-                                unsafe {
-                                    esp_idf_sys::esp_restart();
-                                }
-                            });
+                                thread::spawn(|| {
+                                    info!("OTA: Restarting in 2s");
+                                    thread::sleep(Duration::from_secs(2));
+                                    unsafe {
+                                        esp_idf_sys::esp_restart();
+                                    }
+                                });
+                            }
                         }
-                    }
 
-                    Ok(())
-                } else {
-                    Err(BluetoothError::Protocol("OTA not in progress".into()))
+                        Ok(())
+                    }
+                    OtaState::Idle => Err(BluetoothError::Protocol("OTA not in progress".into())),
                 }
             }
         }

@@ -183,20 +183,30 @@ class OtaAction(
                     progress = 0f
                 )
 
-                // Protocol: First bytes until space are ASCII size, rest is binary firmware data.
-                val sizeStr = data.size.toString()
-                val header = "$sizeStr ".toByteArray()
-                val payload = header + data
+                // Protocol: First message is 4 bytes size as u32 little-endian, then data messages follow
+                val sizeBytes = ByteArray(4)
+                sizeBytes[0] = (data.size and 0xFF).toByte()
+                sizeBytes[1] = ((data.size shr 8) and 0xFF).toByte()
+                sizeBytes[2] = ((data.size shr 16) and 0xFF).toByte()
+                sizeBytes[3] = ((data.size shr 24) and 0xFF).toByte()
 
                 Log.d(LOG_TAG, "Starting OTA upload, size: ${data.size} bytes")
 
-                // Send the entire payload - the Ble class will handle chunking
-                // We simulate progress since we don't have chunk-level callbacks
                 val currentGatt = ble.gatt
                 if (currentGatt != null) {
-                    // Start progress simulation
-                    simulateProgress(totalBytes)
-                    ble.sendCharacteristic(currentGatt, characteristic, payload)
+                    // First send size only
+                    ble.sendCharacteristic(currentGatt, characteristic, sizeBytes)
+
+                    // Then send the data with progress tracking
+                    ble.sendCharacteristicWithProgress(currentGatt, characteristic, data) { bytesSent, total ->
+                        val progress = (bytesSent.toFloat() / total).coerceAtMost(0.95f)
+                        _otaState.value = OtaState(
+                            status = OtaStatus.UPLOADING,
+                            totalBytes = total,
+                            bytesUploaded = bytesSent,
+                            progress = progress
+                        )
+                    }
                 } else {
                     _otaState.value = OtaState(
                         status = OtaStatus.ERROR,
@@ -213,13 +223,19 @@ class OtaAction(
         }
     }
 
-    private fun simulateProgress(totalBytes: Long) {
+    private fun trackProgress(totalBytes: Long) {
         scope.launch {
-            // Simulate progress until we get actual feedback from firmware
-            var progress = 0f
-            while (progress < 0.95f && _otaState.value.status == OtaStatus.UPLOADING) {
-                kotlinx.coroutines.delay(100)
-                progress += 0.05f
+            // Track progress based on time estimate
+            // Assume ~20KB/s transfer rate (conservative estimate)
+            val estimatedDurationMs = (totalBytes / 20).toInt() // totalBytes in bytes, rate in KB/s
+            val updateIntervalMs = 500L
+            val totalUpdates = (estimatedDurationMs / updateIntervalMs).coerceAtLeast(1)
+
+            var updateCount = 0
+            while (updateCount < totalUpdates && _otaState.value.status == OtaStatus.UPLOADING) {
+                kotlinx.coroutines.delay(updateIntervalMs)
+                updateCount++
+                val progress = (updateCount.toFloat() / totalUpdates).coerceAtMost(0.95f)
                 val bytesUploaded = (totalBytes * progress).toLong()
                 _otaState.value = _otaState.value.copy(
                     progress = progress,

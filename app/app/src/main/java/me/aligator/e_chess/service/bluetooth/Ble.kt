@@ -427,11 +427,22 @@ class Ble(
                     }
                 setDeviceState(state, gatt.device.address)
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    gatt.discoverServices()
+                    // Request higher MTU for faster data transfer (max 517 bytes)
+                    gatt.requestMtu(517)
                 }
                 if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     disconnect()
                 }
+            }
+
+            override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    Log.d(LOG_TAG, "MTU changed to $mtu bytes")
+                } else {
+                    Log.w(LOG_TAG, "MTU change failed, using default")
+                }
+                // Continue with service discovery after MTU negotiation
+                gatt.discoverServices()
             }
 
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
@@ -458,7 +469,6 @@ class Ble(
                 characteristic: BluetoothGattCharacteristic?,
                 status: Int
             ) {
-                Log.d(LOG_TAG, "characteristic ${characteristic?.uuid} written: $status")
                 handleCharacteristicWrite(gatt, characteristic, status)
             }
 
@@ -509,7 +519,7 @@ class Ble(
             }
 
             for (chunk in chunks) {
-                Log.d(LOG_TAG, "send chunk of message ${chunk.decodeToString()}")
+                // Log.d(LOG_TAG, "send chunk of message ${chunk.decodeToString()}")
                 try {
 
 
@@ -615,7 +625,30 @@ class Ble(
                 )
             )
 
-            Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
+            // Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
+        }
+    }
+
+    fun sendCharacteristicWithProgress(
+        gatt: BluetoothGatt,
+        characteristic: BluetoothGattCharacteristic,
+        payload: ByteArray,
+        onProgress: (bytesSent: Long, totalBytes: Long) -> Unit
+    ) {
+        parentScope.launch {
+            val chunks = payload.asList().chunked(maxChunkSize).map { it.toByteArray() }
+            var bytesSent = 0L
+
+            for (chunk in chunks) {
+                responseChannel.send(
+                    BleResponse(
+                        characteristic = characteristic.uuid,
+                        data = chunk
+                    )
+                )
+                bytesSent += chunk.size
+                onProgress(bytesSent, payload.size.toLong())
+            }
         }
     }
 

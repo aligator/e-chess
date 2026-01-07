@@ -42,6 +42,11 @@ class BluetoothService : Service() {
      */
     lateinit var chessBoardAction: ChessBoardDeviceAction
 
+    /**
+     * Handles OTA firmware updates.
+     */
+    lateinit var otaAction: OtaAction
+
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +58,7 @@ class BluetoothService : Service() {
         ble.checkBluetooth()
         httpBridgeAction = HttpBleBridgeAction(ble, applicationContext)
         chessBoardAction = ChessBoardDeviceAction(ble)
+        otaAction = OtaAction(ble)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -60,6 +66,7 @@ class BluetoothService : Service() {
     override fun onDestroy() {
         httpBridgeAction.onDestroy()
         chessBoardAction.onDestroy()
+        otaAction.onDestroy()
         ble.onDestroy()
         super.onDestroy()
     }

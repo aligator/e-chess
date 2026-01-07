@@ -10,9 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.aligator.e_chess.service.bluetooth.OtaAction
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.util.zip.GZIPOutputStream
 
 private const val LOG_TAG = "ConfigViewModel"
 
@@ -38,17 +36,13 @@ class ConfigViewModel : ViewModel() {
                     return@launch
                 }
 
-                // Get file size for progress tracking
-                val fileSize = context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                    it.statSize
-                } ?: 0L
-
-                val data = inputStream.readBytes()
+                // Read raw firmware data
+                val firmwareData = inputStream.readBytes()
                 inputStream.close()
 
-                Log.d(LOG_TAG, "Read ${data.size} bytes from file (size: $fileSize)")
+                Log.d(LOG_TAG, "Uploading firmware: ${firmwareData.size} bytes")
 
-                otaAction?.uploadFirmware(data, fileSize)
+                otaAction?.uploadFirmware(firmwareData, firmwareData.size.toLong())
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "Failed to read firmware file", e)
                 _otaUploadInProgress.value = false

@@ -100,7 +100,7 @@ pub fn run_game(event_manager: &EventManager<Event>) {
     let event_rx = event_manager.create_receiver();
 
     let (_ble_service, bridge_handler, game_event_tx) =
-        BluetoothService::new("E-Chess", Duration::from_secs(10), event_tx.clone())
+        BluetoothService::new("E-Chesssss", Duration::from_secs(10), event_tx.clone())
             .expect("Failed to initialize Bluetooth service");
 
     let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
