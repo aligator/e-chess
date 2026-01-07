@@ -29,4 +29,9 @@
     <string name="load_game_title">Load game</string>
     <string name="disconnect_button">Disconnect</string>
     <string name="refresh_games">Refresh games</string>
+    <string name="ota_title">Firmware Update (OTA)</string>
+    <string name="ota_select_file">Select firmware file</string>
+    <string name="ota_uploading">Uploading firmware…</string>
+    <string name="ota_completed">Update completed! Device will restart.</string>
+    <string name="ota_error">Update failed: %s</string>
 </resources>

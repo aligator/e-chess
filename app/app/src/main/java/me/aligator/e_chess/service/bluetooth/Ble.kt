@@ -201,7 +201,8 @@ class Ble(
 
     private var currentScanCallback: ScanCallback? = null
 
-    private var gatt: BluetoothGatt? = null
+    var gatt: BluetoothGatt? = null
+        private set
 
     private var responseJob: Job? = null
     private var responseChannel: Channel<BleResponse> = Channel()
