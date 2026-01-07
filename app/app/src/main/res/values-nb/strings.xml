@@ -16,6 +16,7 @@
     <string name="token_label">Token</string>
     <string name="save_token">Lagre</string>
     <string name="token_saved">Token lagret</string>
+    <string name="create_token_link">Opprett nytt token på Lichess</string>
     <string name="language_label">Språk</string>
     <string name="game_key_label">Spillnøkkel</string>
     <string name="game_key_placeholder">Skriv inn Lichess-spillnøkkel</string>
@@ -29,4 +30,14 @@
     <string name="load_game_title">Last spill</string>
     <string name="disconnect_button">Koble fra</string>
     <string name="refresh_games">Oppdater spill</string>
+    <string name="ota_title">Fastvare-oppdatering (OTA)</string>
+    <string name="ota_select_file">Velg fastvare-fil</string>
+    <string name="ota_uploading">Laster opp fastvare…</string>
+    <string
+        name="ota_completed"
+    >Oppdatering fullført! Enheten starter på nytt.</string>
+    <string name="ota_error">Oppdatering feilet: %s</string>
+    <string
+        name="ota_device_not_connected"
+    >Vennligst koble til en enhet først</string>
 </resources>

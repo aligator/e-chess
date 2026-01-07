@@ -173,6 +173,7 @@ fun EChessApp() {
                             configStore.saveLanguage(newLanguage.code)
                         },
                         otaAction = bluetoothService?.otaAction,
+                        bleService = bluetoothService,
                         onOtaSelectFile = { otaFilePicker.launch("*/*") },
                         otaFileUri = otaFileUri,
                         onOtaFileConsumed = { otaFileUri = null }

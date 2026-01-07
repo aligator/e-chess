@@ -93,6 +93,7 @@ private fun BleContentPreview(
             DeviceScanner(
                 scanning = uiState.bleState.step == ConnectionStep.SCANNING,
                 devices = uiState.bleState.devices,
+                connectedDevice = uiState.bleState.connectedDevice,
                 onStartScan = {},
                 onStopScan = {},
                 onConnect = {}

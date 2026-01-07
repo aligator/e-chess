@@ -22,6 +22,23 @@ class ConfigViewModel : ViewModel() {
 
     fun setOtaAction(action: OtaAction) {
         otaAction = action
+
+        // Observe OTA state changes to auto-reset UI on completion, error, or disconnect
+        viewModelScope.launch {
+            action.otaState.collect { state ->
+                when (state.status) {
+                    me.aligator.e_chess.service.bluetooth.OtaStatus.IDLE,
+                    me.aligator.e_chess.service.bluetooth.OtaStatus.COMPLETED,
+                    me.aligator.e_chess.service.bluetooth.OtaStatus.ERROR -> {
+                        _otaUploadInProgress.value = false
+                    }
+
+                    me.aligator.e_chess.service.bluetooth.OtaStatus.UPLOADING -> {
+                        // Keep upload in progress
+                    }
+                }
+            }
+        }
     }
 
     fun uploadFirmware(context: Context, uri: Uri) {

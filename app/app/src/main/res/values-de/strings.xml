@@ -16,6 +16,7 @@
     <string name="token_label">Token</string>
     <string name="save_token">Speichern</string>
     <string name="token_saved">Token gespeichert</string>
+    <string name="create_token_link">Neues Token auf Lichess erstellen</string>
     <string name="language_label">Sprache</string>
     <string name="game_key_label">Spielschlüssel</string>
     <string name="game_key_placeholder">Lichess-Spielschlüssel eingeben</string>
@@ -29,4 +30,14 @@
     <string name="load_game_title">Lade Spiel</string>
     <string name="disconnect_button">Trennen</string>
     <string name="refresh_games">Spiele aktualisieren</string>
+    <string name="ota_title">Firmware-Update (OTA)</string>
+    <string name="ota_select_file">Firmware-Datei auswählen</string>
+    <string name="ota_uploading">Firmware wird hochgeladen…</string>
+    <string
+        name="ota_completed"
+    >Update abgeschlossen! Gerät wird neu gestartet.</string>
+    <string name="ota_error">Update fehlgeschlagen: %s</string>
+    <string
+        name="ota_device_not_connected"
+    >Bitte zuerst ein Gerät verbinden</string>
 </resources>

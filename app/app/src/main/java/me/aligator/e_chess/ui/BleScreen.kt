@@ -150,6 +150,7 @@ private fun BleContent(
             DeviceScanner(
                 scanning = uiState.bleState.step == ConnectionStep.SCANNING,
                 devices = uiState.bleState.devices,
+                connectedDevice = uiState.bleState.connectedDevice,
                 onStartScan = onStartScan,
                 onStopScan = onStopScan,
                 onConnect = onConnect

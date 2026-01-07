@@ -12,13 +12,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -27,9 +36,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -55,6 +70,7 @@ fun ConfigScreen(
     onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
     otaAction: OtaAction? = null,
+    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService? = null,
     onOtaSelectFile: (() -> Unit)? = null,
     otaFileUri: Uri? = null,
     onOtaFileConsumed: () -> Unit = {},
@@ -87,12 +103,22 @@ fun ConfigScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(text = stringResource(R.string.config_title))
         LanguageSelector(
             selectedLanguage = selectedLanguage,
             onLanguageSelected = onLanguageSelected,
-            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
+            modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = stringResource(R.string.config_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        TokenLink()
+
         OutlinedTextField(
             value = token,
             onValueChange = { token = it },
@@ -125,6 +151,7 @@ fun ConfigScreen(
             OtaSection(
                 viewModel = viewModel,
                 otaAction = otaAction,
+                bleService = bleService,
                 onSelectFileClick = onOtaSelectFile
             )
         }
@@ -146,10 +173,24 @@ private fun ConfigScreenPreview() {
 private fun OtaSection(
     viewModel: ConfigViewModel,
     otaAction: OtaAction,
+    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService?,
     onSelectFileClick: () -> Unit
 ) {
     val otaState by otaAction.otaState.collectAsState()
     val uploadInProgress by viewModel.otaUploadInProgress.collectAsState()
+    val bleState by (bleService?.ble?.bleState
+        ?: MutableStateFlow(me.aligator.e_chess.service.bluetooth.BleState())).collectAsState()
+
+    val isDeviceConnected =
+        bleState.connectedDevice.deviceState == me.aligator.e_chess.service.bluetooth.DeviceState.CONNECTED
+
+    // Auto-reset UI after 3 seconds on completion or error
+    LaunchedEffect(otaState.status) {
+        if (otaState.status == OtaStatus.COMPLETED || otaState.status == OtaStatus.ERROR) {
+            kotlinx.coroutines.delay(3000)
+            viewModel.resetOtaStatus()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -212,13 +253,46 @@ private fun OtaSection(
             }
 
             else -> {
-                Button(
-                    onClick = onSelectFileClick
-                ) {
-                    Text(text = stringResource(R.string.ota_select_file))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onSelectFileClick,
+                        enabled = isDeviceConnected
+                    ) {
+                        Text(text = stringResource(R.string.ota_select_file))
+                    }
+
+                    if (!isDeviceConnected) {
+                        Text(
+                            text = stringResource(R.string.ota_device_not_connected),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TokenLink(
+    modifier: Modifier = Modifier
+) {
+    val uriHandler = LocalUriHandler.current
+    val url =
+        "https://lichess.org/account/oauth/token/create?scopes[]=follow:read&scopes[]=challenge:read&scopes[]=challenge:write&scopes[]=board:play&description=EChess+Board+Token"
+
+    TextButton(
+        onClick = { uriHandler.openUri(url) },
+        modifier = modifier.padding(top = 4.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.create_token_link),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = TextDecoration.Underline
+        )
     }
 }
 
@@ -228,19 +302,38 @@ private fun LanguageSelector(
     onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(text = stringResource(R.string.language_label))
-        Row(
-            modifier = Modifier.padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Text(
+            text = stringResource(R.string.language_label),
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.padding(top = 8.dp)
+        ) {
+            Text(text = "${selectedLanguage.flag} ${selectedLanguage.name}")
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = null
+            )
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
         ) {
             AppLanguage.values().forEach { lang ->
-                Button(
-                    onClick = { onLanguageSelected(lang) },
-                    enabled = lang != selectedLanguage
-                ) {
-                    Text(text = "${lang.flag} ${lang.name}")
-                }
+                DropdownMenuItem(
+                    text = { Text("${lang.flag} ${lang.name}") },
+                    onClick = {
+                        onLanguageSelected(lang)
+                        expanded = false
+                    }
+                )
             }
         }
     }
