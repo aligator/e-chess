@@ -157,10 +157,7 @@ pub fn run_game(event_manager: &EventManager<Event>) {
                         info!("Loading new game: {}", game_key);
                         match load_game(game_key, event_tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
-                                // Reset the game state so that it updates on the next tick
                                 last_game_state = None;
-
-                                // Replace the game instance.
                                 chess_game = new_chess_game;
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
