@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">EChess</string>
+    <string name="nav_chess">Chess</string>
+    <string name="nav_settings">Settings</string>
+    <string name="bluetooth_enable">Enable Bluetooth</string>
+    <string name="bluetooth_unavailable">Bluetooth unavailable</string>
+    <string name="permissions_required">Permissions required</string>
+    <string name="location_button">Enable location</string>
+    <string name="service_connecting">Connecting to Bluetooth service…</string>
+    <string name="status_label">Status</string>
+    <string name="scan_start">Search devices</string>
+    <string name="scan_stop">Stop scan</string>
+    <string name="connect_button">Connect</string>
+    <string name="unknown_device">Unknown</string>
+    <string name="config_title">Lichess API Token</string>
+    <string name="token_label">Token</string>
+    <string name="save_token">Save</string>
+    <string name="token_saved">Token saved</string>
+    <string name="create_token_link">Create a new token on Lichess</string>
+    <string name="language_label">Language</string>
+    <string name="game_key_label">Game key</string>
+    <string name="game_key_placeholder">Enter Lichess game key</string>
+    <string name="load_game_button">Load game</string>
+    <string name="load_game_sent">Game key sent to the board</string>
+    <string
+        name="load_game_failed"
+    >Could not send the game key. Check the connection.</string>
+    <string name="standard_game_option">Standard game (local)</string>
+    <string name="available_devices">Available devices</string>
+    <string name="load_game_title">Load game</string>
+    <string name="disconnect_button">Disconnect</string>
+    <string name="refresh_games">Refresh games</string>
+    <string name="ota_title">Firmware Update (OTA)</string>
+    <string name="ota_select_file">Select firmware file</string>
+    <string name="ota_uploading">Uploading firmware…</string>
+    <string name="ota_completed">Update completed! Device will restart.</string>
+    <string name="ota_error">Update failed: %s</string>
+    <string
+        name="ota_device_not_connected"
+    >Please connect to a device first</string>
+</resources>

@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">EChess</string>
+    <string name="nav_chess">Sjakk</string>
+    <string name="nav_settings">Innstillinger</string>
+    <string name="bluetooth_enable">Aktiver Bluetooth</string>
+    <string name="bluetooth_unavailable">Bluetooth ikke tilgjengelig</string>
+    <string name="permissions_required">Tillatelser kreves</string>
+    <string name="location_button">Slå på posisjon</string>
+    <string name="service_connecting">Kobler til Bluetooth-tjeneste…</string>
+    <string name="status_label">Status</string>
+    <string name="scan_start">Søk etter enheter</string>
+    <string name="scan_stop">Stopp skann</string>
+    <string name="connect_button">Koble til</string>
+    <string name="unknown_device">Ukjent</string>
+    <string name="config_title">Lichess API-token</string>
+    <string name="token_label">Token</string>
+    <string name="save_token">Lagre</string>
+    <string name="token_saved">Token lagret</string>
+    <string name="create_token_link">Opprett nytt token på Lichess</string>
+    <string name="language_label">Språk</string>
+    <string name="game_key_label">Spillnøkkel</string>
+    <string name="game_key_placeholder">Skriv inn Lichess-spillnøkkel</string>
+    <string name="load_game_button">Last spill</string>
+    <string name="load_game_sent">Spillnøkkel sendt til brettet</string>
+    <string
+        name="load_game_failed"
+    >Kunne ikke sende spillnøkkelen. Sjekk tilkoblingen.</string>
+    <string name="standard_game_option">Standardspill (lokalt)</string>
+    <string name="available_devices">Tilgjengelige enheter</string>
+    <string name="load_game_title">Last spill</string>
+    <string name="disconnect_button">Koble fra</string>
+    <string name="refresh_games">Oppdater spill</string>
+    <string name="ota_title">Fastvare-oppdatering (OTA)</string>
+    <string name="ota_select_file">Velg fastvare-fil</string>
+    <string name="ota_uploading">Laster opp fastvare…</string>
+    <string
+        name="ota_completed"
+    >Oppdatering fullført! Enheten starter på nytt.</string>
+    <string name="ota_error">Oppdatering feilet: %s</string>
+    <string
+        name="ota_device_not_connected"
+    >Vennligst koble til en enhet først</string>
+</resources>

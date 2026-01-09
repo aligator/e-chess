@@ -3,7 +3,6 @@ use crate::board::Board;
 use crate::board::FakeBoard;
 use crate::event::EventManager;
 use crate::game::GameCommandEvent;
-use crate::wifi::ConnectionStateEvent;
 use anyhow::Result;
 use board::MCP23017Board;
 use chess::BitBoard;
@@ -17,35 +16,25 @@ use esp_idf_hal::rmt::TxRmtDriver;
 use esp_idf_hal::spi::config::DriverConfig;
 use esp_idf_hal::spi::{SpiConfig, SpiDeviceDriver, SpiDriver};
 use esp_idf_hal::{i2c::*, rmt::config::TransmitConfig};
-use esp_idf_svc::eventloop::EspSystemEventLoop;
-use esp_idf_svc::http::server::EspHttpServer;
-use esp_idf_svc::nvs::EspDefaultNvsPartition;
-use esp_idf_svc::wifi::EspWifi;
 use game::GameStateEvent;
 use log::*;
-use std::sync::{Arc, Mutex};
+use std::thread::sleep;
 use std::time::Duration;
-use std::{thread, thread::sleep};
-use storage::Storage;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
-mod api;
+mod bluetooth;
 mod board;
 mod constants;
 mod display;
 mod eink_display;
 mod event;
 mod game;
-mod request;
-mod storage;
-mod web;
-mod wifi;
+mod util;
 
 #[derive(Debug, Clone)]
 enum Event {
     GameState(GameStateEvent),
     GameCommand(GameCommandEvent),
-    ConnectionState(ConnectionStateEvent),
 }
 
 unsafe impl Send for Event {}
@@ -55,9 +44,7 @@ fn run_game<'a, ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>(
     mcp23017: I2cDriver<'_>,
     ws2812: Ws2812Esp32Rmt,
     eink_display: &mut ChessEinkDisplay<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>,
-    mut server: &mut EspHttpServer<'static>,
     event_manager: &EventManager<Event>,
-    settings: Arc<Mutex<game::Settings>>,
 ) -> Result<()>
 where
     ButtonA: embedded_hal::digital::InputPin,
@@ -78,18 +65,7 @@ where
     let mut display = display::Display::new(ws2812);
     display.setup()?;
 
-    let test_rx = event_manager.create_receiver();
-    thread::spawn(move || {
-        while let Ok(event) = test_rx.recv() {
-            info!("Received event: {:?}", event);
-        }
-    });
-
-    let web = web::Web::new();
-    web.register(&mut server, &event_manager, settings.clone())?;
-    info!("Registered web interface");
-
-    game::run_game(&event_manager, settings.clone());
+    game::run_game(event_manager);
 
     // Start the main loop
     info!("Start app loop");
@@ -99,20 +75,12 @@ where
     let mut last_physical = BitBoard::new(0);
     let mut last_game_state: Option<ChessGameState> = None;
 
-    let initial_game_id: String = {
-        let settings = settings.lock().unwrap();
-        let id = settings.last_game_id.clone();
+    // Always start with a local game (standard chess position)
+    let initial_game_id = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string();
 
-        if id.is_empty() {
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
-        } else {
-            id
-        }
-    };
-    // Load the initial game (standard chess starting position)
-    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame(
-        initial_game_id,
-    )))?;
+    tx.send(Event::GameCommand(GameCommandEvent::LoadNewGame {
+        game_key: initial_game_id,
+    }))?;
 
     // Start the event manager after setting up everything.
     event_manager.start_thread();
@@ -121,16 +89,16 @@ where
         let physical = board.tick(last_physical)?;
         if physical != last_physical {
             last_physical = physical;
-            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical(
-                physical,
-            ))) {
+            if let Err(e) = tx.send(Event::GameCommand(GameCommandEvent::UpdatePhysical {
+                bitboard: physical,
+            })) {
                 warn!("Failed to send update physical event: {:?}", e);
             }
         }
 
         // Check if event happens
         if let Ok(event) = rx.try_recv() {
-            match event {
+            match event.clone() {
                 Event::GameState(game_state_event) => match game_state_event {
                     GameStateEvent::UpdateGame(game_state) => {
                         info!("Received update game state event: {:?}", game_state);
@@ -263,29 +231,9 @@ fn main() -> Result<()> {
         &event_manager,
     )?;
 
-    let nvs = EspDefaultNvsPartition::take()?;
-    let sys_loop = EspSystemEventLoop::take()?;
-    let wifi_driver = EspWifi::new(peripherals.modem, sys_loop, Some(nvs.clone()))?;
-    let storage = Storage::new(nvs.clone(), "e-chess")?;
-
-    let settings = Arc::new(Mutex::new(game::Settings::new(storage)?));
-
-    {
-        info!("Settings: {:?}", settings.lock().unwrap());
-    }
-
     eink_display.setup()?;
 
-    let mut server = wifi::start_wifi(&event_manager, wifi_driver, settings.clone())?;
-
-    match run_game(
-        mcp23017,
-        ws2812,
-        &mut eink_display,
-        &mut server,
-        &event_manager,
-        settings,
-    ) {
+    match run_game(mcp23017, ws2812, &mut eink_display, &event_manager) {
         Ok(_) => {
             warn!("Stopping game loop");
             Ok(())

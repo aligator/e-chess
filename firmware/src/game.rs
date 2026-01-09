@@ -1,87 +1,66 @@
+use crate::util::bitboard_serializer;
+use crate::{bluetooth::BluetoothService, event::EventManager, Event};
+use anyhow::Result;
+use chess::BitBoard;
+use chess_game::chess_connector::OngoingGame;
+use chess_game::{
+    chess_connector::{ChessConnector, LocalChessConnector},
+    game::{ChessGame, ChessGameError, ChessGameState},
+    lichess::LichessConnector,
+};
+use log::*;
+use serde::{Deserialize, Serialize};
+use std::thread;
+use std::thread::sleep;
 use std::{
     fmt::Debug,
     sync::{mpsc::Sender, Arc, Mutex},
     time::Duration,
 };
 
-use anyhow::Result;
-use chess::BitBoard;
-use chess_game::{
-    chess_connector::LocalChessConnector,
-    game::{ChessGame, ChessGameError, ChessGameState},
-};
-
-use esp_idf_svc::nvs::NvsDefault;
-use log::*;
-use std::thread;
-use std::thread::sleep;
-
-use crate::{api, event::EventManager, storage::Storage, wifi::ConnectionStateEvent, Event};
-
-#[derive(Clone)]
-pub struct Settings {
-    pub token: String,
-    pub last_game_id: String,
-
-    storage: Arc<Mutex<Storage<NvsDefault>>>,
-}
-
-impl Debug for Settings {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Settings")
-            .field("token", &self.token)
-            .field("last_game_id", &self.last_game_id)
-            .finish()
-    }
-}
-
-impl Settings {
-    pub fn new(storage: Storage<NvsDefault>) -> Result<Self> {
-        Ok(Settings {
-            token: storage.get_str::<25>("api_token")?.unwrap_or_default(),
-            last_game_id: storage.get_str::<57>("last_game_id")?.unwrap_or_default(), // use 57 so it may be used for FEN strings also...
-
-            storage: Arc::new(Mutex::new(storage)),
-        })
-    }
-
-    pub fn save(&self) -> Result<()> {
-        let mut storage = self.storage.lock().unwrap();
-
-        storage.set_str("api_token", &self.token)?;
-        storage.set_str("last_game_id", &self.last_game_id)?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 /// Events that are sent from the game thread to the main thread
 pub enum GameStateEvent {
+    OngoingGamesLoaded(Vec<OngoingGame>),
     UpdateGame(ChessGameState),
     GameLoaded(String),
 }
 
-#[derive(Debug, Clone)]
-/// Events that are sent from the main thread to the game thread
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum GameCommandEvent {
-    LoadNewGame(String),
-    UpdatePhysical(BitBoard),
+    LoadOpenGames,
+    LoadNewGame {
+        game_key: String,
+    },
+    UpdatePhysical {
+        #[serde(with = "bitboard_serializer")]
+        bitboard: BitBoard,
+    },
     RequestTakeBack,
     AcceptTakeBack,
 }
 
 fn load_game(
     game_key: String,
-    settings: Arc<Mutex<Settings>>,
     tx: Sender<Event>,
+    connectors: &[Arc<Mutex<dyn ChessConnector + Send>>],
 ) -> Result<ChessGame, ChessGameError> {
     // If the game key is a FEN string, parse it and start a local game.
     // Otherwise, start a lichess game.
-    let mut chess_game = ChessGame::new(if game_key.contains(" ") {
-        LocalChessConnector::new()
+    let mut chess_game: Option<ChessGame> = None;
+    for connector in connectors {
+        if connector.lock().unwrap().is_valid_key(game_key.clone()) {
+            chess_game = Some(ChessGame::new(connector.clone())?);
+            break;
+        }
+    }
+
+    let mut chess_game = if chess_game.is_none() {
+        return Err(ChessGameError::InvalidGameKey);
     } else {
-        api::create(settings.clone()).unwrap()
-    })?;
+        chess_game.unwrap()
+    };
 
     // Load the new game
     match chess_game.reset(&game_key) {
@@ -102,11 +81,6 @@ fn load_game(
                 warn!("Failed to send game loaded event: {:?}", e);
             }
 
-            // Update the last_game_id in settings
-            let mut settings = settings.lock().unwrap();
-            settings.last_game_id = game_key;
-            settings.save().unwrap();
-
             Ok(chess_game)
         }
         Err(e) => {
@@ -121,34 +95,39 @@ fn load_game(
     }
 }
 
-pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Settings>>) {
-    let tx = event_manager.create_sender();
-    let rx = event_manager.create_receiver();
+pub fn run_game(event_manager: &EventManager<Event>) {
+    let event_tx = event_manager.create_sender();
+    let event_rx = event_manager.create_receiver();
+
+    let (_ble_service, bridge_handler, game_event_tx) =
+        BluetoothService::new("E-Chesssss", Duration::from_secs(10), event_tx.clone())
+            .expect("Failed to initialize Bluetooth service");
+
+    let connectors: Vec<Arc<Mutex<dyn ChessConnector + Send>>> = vec![
+        Arc::new(Mutex::new(LocalChessConnector {})),
+        Arc::new(Mutex::new(LichessConnector::new(bridge_handler))),
+    ];
 
     info!("Starting game thread");
     thread::spawn(move || {
-        let mut chess_game: ChessGame = ChessGame::new(LocalChessConnector::new()).unwrap();
+        let mut chess_game: ChessGame = ChessGame::new(connectors[0].clone()).unwrap();
         info!("Created ChessGame");
 
         let mut physical = BitBoard::new(0);
         let mut last_game_state: Option<ChessGameState> = None;
 
-        let mut wifi_connected = false;
         loop {
             // Sleep for 100ms to avoid busy-waiting
             sleep(Duration::from_millis(100));
-            while let Ok(event) = rx.try_recv() {
+            while let Ok(event) = event_rx.try_recv() {
+                // Send game state events to BLE
+                if let Event::GameState(ref game_state) = event {
+                    let _ = game_event_tx.send(game_state.clone());
+                }
+
                 match event {
-                    Event::ConnectionState(ConnectionStateEvent::Wifi(_wifi_info)) => {
-                        wifi_connected = true;
-                    }
-                    Event::ConnectionState(ConnectionStateEvent::NotConnected) => {
-                        wifi_connected = false;
-                    }
-                    // Handle WiFi connection state changes if needed
-                    // Handle WiFi connection state changes if needed
-                    Event::GameCommand(GameCommandEvent::UpdatePhysical(new_physical)) => {
-                        physical = new_physical;
+                    Event::GameCommand(GameCommandEvent::UpdatePhysical { bitboard }) => {
+                        physical = bitboard;
                     }
                     Event::GameCommand(GameCommandEvent::RequestTakeBack) => {
                         warn!("Not implemented");
@@ -156,20 +135,29 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
                     Event::GameCommand(GameCommandEvent::AcceptTakeBack) => {
                         warn!("Not implemented");
                     }
-                    Event::GameCommand(GameCommandEvent::LoadNewGame(game_id)) => {
-                        if !game_id.contains(" ") && !wifi_connected {
-                            warn!("Cannot load new game, WiFi not connected");
-                            continue;
+                    Event::GameCommand(GameCommandEvent::LoadOpenGames) => {
+                        info!("Loading open games");
+                        let mut open_games: Vec<OngoingGame> = vec![];
+                        for connector in &connectors {
+                            match connector.lock().unwrap().find_open_games() {
+                                Ok(games) => {
+                                    open_games.extend(games.clone());
+                                }
+                                Err(e) => error!("Error loading open games: {:?}", e),
+                            }
                         }
-
-                        info!("Loading new game: {}", game_id);
-
-                        match load_game(game_id, settings.clone(), tx.clone()) {
+                        event_tx
+                            .send(Event::GameState(GameStateEvent::OngoingGamesLoaded(
+                                open_games,
+                            )))
+                            .map_err(|err| error!("Error sending ongoing games: {:?}", err))
+                            .ok();
+                    }
+                    Event::GameCommand(GameCommandEvent::LoadNewGame { game_key }) => {
+                        info!("Loading new game: {}", game_key);
+                        match load_game(game_key, event_tx.clone(), &connectors) {
                             Ok(new_chess_game) => {
-                                // Reset the game state so that it updates on the next tick
                                 last_game_state = None;
-
-                                // Replace the game instance.
                                 chess_game = new_chess_game;
                             }
                             Err(e) => error!("Error loading game: {:?}", e),
@@ -189,7 +177,7 @@ pub fn run_game(event_manager: &EventManager<Event>, settings: Arc<Mutex<Setting
                         }
 
                         let event = Event::GameState(GameStateEvent::UpdateGame(state));
-                        if let Err(e) = tx.send(event) {
+                        if let Err(e) = event_tx.send(event) {
                             error!("Failed to send new game state: {:?}", e);
                         }
 

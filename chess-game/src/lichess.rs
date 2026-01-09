@@ -102,7 +102,7 @@ impl<R: Requester> LichessConnector<R> {
 }
 
 fn map_ongoing_game(json_value: &serde_json::Value) -> Option<OngoingGame> {
-    let game_id = json_value.get("gameId");
+    let game_id = json_value.get("fullId");
     let oppenent_info = json_value.get("opponent");
 
     if game_id.is_none() || oppenent_info.is_none() {
@@ -110,7 +110,13 @@ fn map_ongoing_game(json_value: &serde_json::Value) -> Option<OngoingGame> {
     }
 
     let opponent = oppenent_info.unwrap();
-    let id = opponent.get("id")?.as_str()?.to_string();
+
+    let id = opponent
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
     let username = opponent.get("username")?.as_str()?.to_string();
 
     if let Some(game_id) = game_id.and_then(|v| v.as_str()) {
@@ -234,5 +240,15 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
             }
             Err(_) => Ok(None),
         }
+    }
+
+    fn is_connected(&self) -> bool {
+        self.request.is_connected()
+    }
+
+    fn is_valid_key(&self, key: String) -> bool {
+        let len = key.len();
+        let valid = len >= 8 && len <= 12 && key.chars().all(|c| c.is_ascii_alphanumeric());
+        valid
     }
 }

@@ -20,6 +20,10 @@
             "path": "./electronics",
             "name": "Electronics"
         },
+        {
+            "path": "./app",
+            "name": "Android App"
+        }
     ],
     "settings": {
         "cSpell.words": [

@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">EChess</string>
+    <string name="nav_chess">Schach</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="bluetooth_enable">Bluetooth aktivieren</string>
+    <string name="bluetooth_unavailable">Bluetooth nicht verfügbar</string>
+    <string name="permissions_required">Berechtigungen erforderlich</string>
+    <string name="location_button">Standort einschalten</string>
+    <string name="service_connecting">Bluetooth-Service wird verbunden…</string>
+    <string name="status_label">Status</string>
+    <string name="scan_start">Nach Geräten suchen</string>
+    <string name="scan_stop">Scan stoppen</string>
+    <string name="connect_button">Verbinden</string>
+    <string name="unknown_device">Unbekannt</string>
+    <string name="config_title">Lichess API Token</string>
+    <string name="token_label">Token</string>
+    <string name="save_token">Speichern</string>
+    <string name="token_saved">Token gespeichert</string>
+    <string name="create_token_link">Neues Token auf Lichess erstellen</string>
+    <string name="language_label">Sprache</string>
+    <string name="game_key_label">Spielschlüssel</string>
+    <string name="game_key_placeholder">Lichess-Spielschlüssel eingeben</string>
+    <string name="load_game_button">Spiel laden</string>
+    <string name="load_game_sent">Spielschlüssel an das Brett gesendet</string>
+    <string
+        name="load_game_failed"
+    >Spielschlüssel konnte nicht gesendet werden. Verbindung prüfen.</string>
+    <string name="standard_game_option">Standardspiel (lokal)</string>
+    <string name="available_devices">Verfügbare Geräte</string>
+    <string name="load_game_title">Lade Spiel</string>
+    <string name="disconnect_button">Trennen</string>
+    <string name="refresh_games">Spiele aktualisieren</string>
+    <string name="ota_title">Firmware-Update (OTA)</string>
+    <string name="ota_select_file">Firmware-Datei auswählen</string>
+    <string name="ota_uploading">Firmware wird hochgeladen…</string>
+    <string
+        name="ota_completed"
+    >Update abgeschlossen! Gerät wird neu gestartet.</string>
+    <string name="ota_error">Update fehlgeschlagen: %s</string>
+    <string
+        name="ota_device_not_connected"
+    >Bitte zuerst ein Gerät verbinden</string>
+</resources>
