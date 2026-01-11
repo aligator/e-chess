@@ -9,6 +9,7 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::prelude::{Point, Primitive, Size};
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::Text;
+use embedded_graphics::text::renderer::TextRenderer;
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::spi::SpiDevice;
@@ -58,6 +59,8 @@ where
 
     event_rx: std::sync::mpsc::Receiver<Event>,
     event_tx: std::sync::mpsc::Sender<Event>,
+
+    ble_pin: Option<u32>,
 }
 
 impl<ButtonA, ButtonB, SPI, BUSY, DC, RST, DELAY>
@@ -104,6 +107,8 @@ where
 
             event_rx: event_manager.create_receiver(),
             event_tx: event_manager.create_sender(),
+
+            ble_pin: None
         })
     }
 
@@ -150,6 +155,9 @@ where
 
         match self.event_rx.try_recv() {
             Ok(event) => match event {
+                Event::Setup(e) => match e {
+                    crate::SetupEvent::BLEPin(ble_pin) => self.ble_pin = Some(ble_pin)
+                }
                 _ => {}
             },
             Err(_) => {}
@@ -161,14 +169,21 @@ where
                 _ => {
                     self.fill_empty()?;
                     Text::new(
-                        &format!("Game Info"),
-                        Point::new(1, 1),
+                        &format!("BLE Pin"),
+                        Point::new(1,  self.normal_text_style.line_height() as i32),
                         self.normal_text_style,
                     )
                     .draw(&mut self.display)?;
 
-                    Text::new("TODO", Point::new(10, 10), self.normal_text_style)
-                        .draw(&mut self.display)?;
+                    
+                    if let Some(ble_pin) =  self.ble_pin {
+                        Text::new(format!("{:0>6}", ble_pin).as_str(), Point::new(1, self.normal_text_style.line_height() as i32 * 2), self.normal_text_style)
+                            .draw(&mut self.display)?;
+                    } else {
+                        Text::new("No BLE Pin", Point::new(10, 10), self.normal_text_style)
+                            .draw(&mut self.display)?;
+                    }
+                    
                     self.update_and_display_frame()?;
                 }
             }

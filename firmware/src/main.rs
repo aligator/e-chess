@@ -32,9 +32,15 @@ mod game;
 mod util;
 
 #[derive(Debug, Clone)]
+pub enum SetupEvent {
+    BLEPin(u32)
+}
+
+#[derive(Debug, Clone)]
 enum Event {
     GameState(GameStateEvent),
     GameCommand(GameCommandEvent),
+    Setup(SetupEvent),
 }
 
 unsafe impl Send for Event {}

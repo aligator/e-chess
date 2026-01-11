@@ -8,7 +8,8 @@
 pub mod handlers;
 pub mod types;
 pub mod util;
-
+use rand::Rng;
+use esp32_nimble::enums::{AuthReq, SecurityIOCap};
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLEDevice};
 use handlers::{BridgeHandler, GameHandler, OtaHandler};
 use log::*;
@@ -31,8 +32,30 @@ impl BluetoothService {
     ) -> Result<(Self, BridgeHandler, Sender<GameStateEvent>)> {
         info!("Initializing Bluetooth service");
 
+
+
         let device = BLEDevice::take();
+        device
+            .security()
+            .set_auth(AuthReq::all())
+            .set_io_cap(SecurityIOCap::DisplayOnly)
+            .resolve_rpa();
+
         let server = device.get_server();
+        {
+            let rng_event_tx = event_tx.clone();
+            server.on_passkey_request(move || {
+                println!("REQUESTING PIN");
+
+                let mut rng = rand::rng();
+                let pin = rng.random_range(..=999999);
+                println!("REQUESTING PIN {}", pin);
+                rng_event_tx.send(Event::Setup(crate::SetupEvent::BLEPin(pin))).unwrap();
+
+                return pin;
+            });
+        }
+
         let advertiser = device.get_advertising();
 
         let is_connected = Arc::new(Mutex::new(false));
@@ -60,6 +83,10 @@ impl BluetoothService {
         let ota_event = ota_handler.register_characteristics(&service, ota_command_tx)?;
 
         OtaHandler::start_processor(ota_command_rx, ota_event);
+
+        server.on_authentication_complete(|_, res, err| {
+            info!("Authentication completed: {:?} {:?}", res, err)
+        });
 
         {
             let connection_flag_connect = is_connected.clone();
