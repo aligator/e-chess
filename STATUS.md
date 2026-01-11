@@ -1,7 +1,7 @@
 # Android App Refactoring - Status
 
 **Start**: 2026-01-11
-**Aktueller Stand**: Phase 2 - Settings Layer
+**Aktueller Stand**: Phase 3 - Games Layer
 
 ## ✅ Phase 1: Foundation (ABGESCHLOSSEN)
 - ✅ Koin Dependencies hinzugefügt (v3.5.6)
@@ -32,19 +32,30 @@
   - Koin injection für SettingsRepository
   - setOtaAction() called in onCreate()
 
-## Phase 3: Games Layer (TODO)
+## ✅ Phase 3: Games Layer (ABGESCHLOSSEN)
+- ✅ GamesRepository erstellt (~160 LOC)
+  - LichessApi wrapper
+  - Game loading logic with loadAvailableGames()
+  - ChessBoardDeviceAction integration via setChessBoardAction()
+  - StateFlows für availableGames, isLoadingGames, isLoadingGame, selectedGameKey, error
+  - Methods: loadAvailableGames(), selectGame(), loadOpenGamesOnDevice(), clearError(), reset()
+- ✅ BluetoothService updated
+  - Koin injection für GamesRepository
+  - setChessBoardAction() called in onCreate()
+- ✅ AppModule.kt updated
+  - LichessApi(androidContext()) fixed (requires Context parameter)
+  - GamesRepository registered in Koin DI
+
+## Phase 4: BLE Layer (TODO)
 
 ### Nächste Schritte
-1. GamesRepository erstellen (~200 LOC)
-   - LichessApi wrapper
-   - Game loading logic
-   - ChessBoardDeviceAction integration
-   - StateFlows für availableGames, isLoadingGames, isLoadingGame, selectedGameKey
-2. BluetoothService updaten (ChessBoardDeviceAction integration)
-
-### Fortschritt
-- [ ] GamesRepository
-- [ ] BluetoothService updated
+1. BleRepository erstellen (~200 LOC)
+   - Ble service wrapper
+   - BLE state propagation (fixed: proper StateFlow collection)
+   - Device scanning, connection, disconnection
+   - PIN/Bonding handling
+   - StateFlows für bleState, showPinDialog, error
+2. BluetoothService updaten (Ble integration)
 
 ---
 *Letzte Aktualisierung: 2026-01-11*

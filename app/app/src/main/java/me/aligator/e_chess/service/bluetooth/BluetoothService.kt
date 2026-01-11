@@ -31,6 +31,7 @@ class BluetoothService : Service() {
 
     // Koin injected repositories
     private val settingsRepository: me.aligator.e_chess.repository.SettingsRepository by org.koin.android.ext.android.inject()
+    private val gamesRepository: me.aligator.e_chess.repository.GamesRepository by org.koin.android.ext.android.inject()
 
     lateinit var ble: Ble
 
@@ -62,9 +63,9 @@ class BluetoothService : Service() {
         chessBoardAction = ChessBoardDeviceAction(ble)
         otaAction = OtaAction(ble)
 
-        // Inject OtaAction into SettingsRepository via Koin
-        val settingsRepository: me.aligator.e_chess.repository.SettingsRepository by org.koin.android.ext.android.inject()
+        // Inject actions into repositories
         settingsRepository.setOtaAction(otaAction)
+        gamesRepository.setChessBoardAction(chessBoardAction)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

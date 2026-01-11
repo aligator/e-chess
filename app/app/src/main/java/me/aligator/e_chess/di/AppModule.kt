@@ -14,7 +14,7 @@ import org.koin.dsl.module
 val appModule = module {
     // Services
     single { ConfigurationStore(androidContext()) }
-    single { LichessApi() }
+    single { LichessApi(androidContext()) }
 
     // Repositories (Service-scoped)
     single { BleRepository() }
