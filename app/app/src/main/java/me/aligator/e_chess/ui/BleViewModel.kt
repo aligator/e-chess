@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import me.aligator.e_chess.model.AppError
 import me.aligator.e_chess.repository.BleRepository
 import me.aligator.e_chess.repository.GamesRepository
 import me.aligator.e_chess.service.GameOption
@@ -94,6 +95,13 @@ class BleViewModel(
         // This is handled by selectGame, but kept for compatibility
         // Could be removed if UI doesn't need this
     }
+
+    // Error states - exposed separately for UI
+    val bleError: StateFlow<AppError?> = bleRepository.error
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val gamesError: StateFlow<AppError?> = gamesRepository.error
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // Error handling
     fun clearBleError() = bleRepository.clearError()

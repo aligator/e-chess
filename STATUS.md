@@ -1,7 +1,7 @@
 # Android App Refactoring - Status
 
 **Start**: 2026-01-11
-**Aktueller Stand**: Phase 5 - ViewModels
+**Aktueller Stand**: Phase 6 - UI Layer
 
 ## ✅ Phase 1: Foundation (ABGESCHLOSSEN)
 - ✅ Koin Dependencies hinzugefügt (v3.5.6)
@@ -74,14 +74,30 @@
 - ✅ AppModule.kt updated
   - BleViewModel(get(), get()) - beide Repositories injected
 
-## Phase 6: UI Layer (TODO)
+## ✅ Phase 6: UI Layer (ABGESCHLOSSEN)
+- ✅ BleViewModel error exposure
+  - bleError StateFlow exposed
+  - gamesError StateFlow exposed
+  - clearBleError(), clearGamesError() methods
+- ✅ BleScreen refactored
+  - koinViewModel() injection (removed viewModel())
+  - Removed bluetoothService parameter
+  - Removed setBluetoothService() LaunchedEffect
+  - Error handling UI: SnackbarHost + dual LaunchedEffects
+  - Separate Snackbars für BLE und Games errors
+- ✅ AppRoot.kt updated
+  - BleScreen call: removed bluetoothService parameter
+
+## Phase 7: Final Testing & Cleanup (TODO)
 
 ### Nächste Schritte
-1. BleScreen updaten
-   - koinViewModel() injection
-   - Removed setBluetoothService() call
-   - Error handling UI (Snackbar)
-2. MainActivity updaten falls nötig
+1. Test all flows manually
+   - BLE scan, connect, bonding
+   - Game loading
+   - OTA updates
+   - Error scenarios
+2. Remove unused code/imports
+3. Final code review
 
 ---
 *Letzte Aktualisierung: 2026-01-11*

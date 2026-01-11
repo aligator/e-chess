@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,10 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.viewmodel.compose.viewModel
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.bluetooth.BluetoothService
 import me.aligator.e_chess.service.bluetooth.ConnectionStep
+import org.koin.androidx.compose.koinViewModel
 import me.aligator.e_chess.ui.components.ConnectionStatusCard
 import me.aligator.e_chess.ui.components.DeviceScanner
 import me.aligator.e_chess.ui.components.GameLoader
@@ -41,16 +42,30 @@ private fun isLocationEnabled(context: Context): Boolean {
 fun BleScreen(
     permissionsGranted: Boolean,
     modifier: Modifier = Modifier,
-    bluetoothService: BluetoothService? = null,
-    viewModel: BleViewModel = viewModel()
+    viewModel: BleViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var locationEnabled by remember { mutableStateOf(isLocationEnabled(context)) }
     val uiState by viewModel.uiState.collectAsState()
+    val bleError by viewModel.bleError.collectAsState()
+    val gamesError by viewModel.gamesError.collectAsState()
 
-    LaunchedEffect(bluetoothService) {
-        viewModel.setBluetoothService(bluetoothService)
+    // Show BLE errors in Snackbar
+    LaunchedEffect(bleError) {
+        bleError?.let {
+            snackbarHostState.showSnackbar(it.message)
+            viewModel.clearBleError()
+        }
+    }
+
+    // Show Games errors in Snackbar
+    LaunchedEffect(gamesError) {
+        gamesError?.let {
+            snackbarHostState.showSnackbar(it.message)
+            viewModel.clearGamesError()
+        }
     }
 
     LaunchedEffect(uiState.isConnected) {
@@ -59,7 +74,10 @@ fun BleScreen(
         }
     }
 
-    Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { innerPadding ->
         val contentModifier = Modifier.padding(innerPadding)
 
         when {

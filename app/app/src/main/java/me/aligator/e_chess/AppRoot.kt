@@ -162,8 +162,7 @@ fun EChessApp() {
             ) {
                 when (destination) {
                     AppDestination.BLE -> BleScreen(
-                        permissionsGranted = permissionsGranted,
-                        bluetoothService = bluetoothService
+                        permissionsGranted = permissionsGranted
                     )
 
                     AppDestination.CONFIG -> ConfigScreen(
