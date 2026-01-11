@@ -28,6 +28,7 @@ data class BleUiState(
     val isLoadingGame: Boolean = false,
     val selectedGameKey: String = "",
     val isConnected: Boolean = false,
+    val showPinDialog: Boolean = false,
 )
 
 class BleViewModel(application: Application) : AndroidViewModel(application) {
@@ -39,22 +40,28 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLoadingGame = MutableStateFlow(false)
     private val _selectedGameKey = MutableStateFlow(configStore.getLastLoadedGame() ?: "")
     private val _bleState = MutableStateFlow(BleState())
+    private val _showPinDialog = MutableStateFlow(false)
     private var bluetoothServiceRef: WeakReference<BluetoothService>? = null
+    private var pinSubmitCallback: (suspend (String) -> Unit)? = null
 
     val uiState: StateFlow<BleUiState> = combine(
-        _bleState,
-        _availableGames,
-        _isLoadingGames,
-        _isLoadingGame,
-        _selectedGameKey
-    ) { bleState, games, loadingGames, loadingGame, gameKey ->
+        combine(_bleState, _availableGames, _isLoadingGames) { bleState, games, loadingGames ->
+            Triple(bleState, games, loadingGames)
+        },
+        combine(_isLoadingGame, _selectedGameKey, _showPinDialog) { loadingGame, gameKey, showPinDialog ->
+            Triple(loadingGame, gameKey, showPinDialog)
+        }
+    ) { first, second ->
+        val (bleState, games, loadingGames) = first
+        val (loadingGame, gameKey, showPinDialog) = second
         BleUiState(
             bleState = bleState,
             availableGames = games,
             isLoadingGames = loadingGames,
             isLoadingGame = loadingGame,
             selectedGameKey = gameKey,
-            isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady
+            isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady,
+            showPinDialog = showPinDialog
         )
     }.stateIn(
         scope = viewModelScope,
@@ -66,6 +73,12 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         bluetoothServiceRef = service?.let { WeakReference(it) }
 
         if (service != null) {
+            // Set up PIN request callback
+            service.ble.onPinRequested = { submitCallback ->
+                pinSubmitCallback = submitCallback
+                _showPinDialog.value = true
+            }
+
             viewModelScope.launch {
                 service.ble.bleState.collect { state ->
                     _bleState.value = state
@@ -153,5 +166,17 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSelectedGameKey(key: String) {
         _selectedGameKey.value = key
+    }
+
+    fun submitPin(pin: String) {
+        viewModelScope.launch {
+            pinSubmitCallback?.invoke(pin)
+            _showPinDialog.value = false
+        }
+    }
+
+    fun dismissPinDialog() {
+        _showPinDialog.value = false
+        disconnect()
     }
 }

@@ -48,13 +48,13 @@ impl GameHandler {
         // Action characteristic: phone -> board (writes)
         let action_characteristic = service.lock().create_characteristic(
             uuid128!(ACTION_CHARACTERISTIC_UUID),
-            NimbleProperties::WRITE,
+            NimbleProperties::WRITE | NimbleProperties::WRITE_ENC,
         );
 
         // Event characteristic: board -> phone (notifications)
         let event_characteristic = service.lock().create_characteristic(
             uuid128!(EVENT_CHARACTERISTIC_UUID),
-            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            NimbleProperties::READ | NimbleProperties::READ_ENC | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
         );
 
         // Setup action write handler

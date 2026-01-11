@@ -82,10 +82,18 @@ enum class DeviceState {
     UNKNOWN
 }
 
+enum class BondingState {
+    NONE,
+    BONDING,
+    BONDED,
+    FAILED
+}
+
 data class ConnectedDevice(
     val deviceState: DeviceState,
     val address: String?,
     val characteristicsReady: Boolean,
+    val bondingState: BondingState = BondingState.NONE,
 )
 
 data class BleState(
@@ -219,6 +227,68 @@ class Ble(
     private var descriptorWriteQueue = mutableListOf<DescriptorWriteRequest>()
     private var isWritingDescriptor = false
 
+    // Callback for PIN request
+    var onPinRequested: ((suspend (String) -> Unit) -> Unit)? = null
+
+    // Broadcast receiver for bonding state changes
+    private val bondingReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            val action = intent?.action ?: return
+            if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED) {
+                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                }
+
+                val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
+
+                if (device?.address == gatt?.device?.address) {
+                    val newBondingState = when (bondState) {
+                        BluetoothDevice.BOND_BONDING -> BondingState.BONDING
+                        BluetoothDevice.BOND_BONDED -> BondingState.BONDED
+                        BluetoothDevice.BOND_NONE -> {
+                            val previousBond = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR)
+                            if (previousBond == BluetoothDevice.BOND_BONDING) {
+                                BondingState.FAILED
+                            } else {
+                                BondingState.NONE
+                            }
+                        }
+                        else -> BondingState.NONE
+                    }
+
+                    _bleState.update {
+                        it.copy(
+                            connectedDevice = it.connectedDevice.copy(
+                                bondingState = newBondingState,
+                                characteristicsReady = if (newBondingState == BondingState.BONDED) true else it.connectedDevice.characteristicsReady
+                            )
+                        )
+                    }
+                }
+            } else if (action == BluetoothDevice.ACTION_PAIRING_REQUEST) {
+                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                }
+
+                val pairingVariant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, BluetoothDevice.ERROR)
+
+                if (device?.address == gatt?.device?.address && device != null && pairingVariant == BluetoothDevice.PAIRING_VARIANT_PIN) {
+                    abortBroadcast()
+                    val pairingDevice = device
+                    onPinRequested?.invoke { pin ->
+                        pairingDevice.setPin(pin.toByteArray())
+                    }
+                }
+            }
+        }
+    }
+
     fun register(action: BleAction) {
         bleActions.add(action)
     }
@@ -240,6 +310,7 @@ class Ble(
                 if (it.connectedDevice.deviceState != DeviceState.CONNECTED) {
                     result = result.copy(
                         connectedDevice = result.connectedDevice.copy(
+                            bondingState = BondingState.NONE,
                             characteristicsReady = false
                         )
                     )
@@ -255,6 +326,16 @@ class Ble(
         _bleState.update {
             it.copy(step = newStep)
         }
+    }
+
+    init {
+        // Register broadcast receiver for bonding events
+        val filter = android.content.IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+            priority = android.content.IntentFilter.SYSTEM_HIGH_PRIORITY
+        }
+        context.registerReceiver(bondingReceiver, filter)
     }
 
     /**
@@ -286,6 +367,11 @@ class Ble(
 
     fun onDestroy() {
         stopScan()
+        try {
+            context.unregisterReceiver(bondingReceiver)
+        } catch (e: Exception) {
+            // Receiver may not be registered
+        }
     }
 
     fun startScan() {
@@ -376,11 +462,15 @@ class Ble(
             action.onServiceDiscovered(gatt, service)
         }
 
+        // Only mark characteristics ready if device is bonded
+        val device = gatt.device
+        val isBonded = device.bondState == BluetoothDevice.BOND_BONDED
+
         _bleState.update {
             it.copy(
                 connectedDevice = it.connectedDevice.copy(
                     deviceState = DeviceState.CONNECTED,
-                    characteristicsReady = true,
+                    characteristicsReady = isBonded,
                 )
             )
         }
@@ -401,7 +491,9 @@ class Ble(
         characteristic: BluetoothGattCharacteristic?,
         status: Int
     ) {
-        if (characteristic?.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && characteristic.uuid != null && status == BluetoothGatt.GATT_SUCCESS) {
+        Log.d(LOG_TAG, "characteristic write to ${characteristic?.uuid}")
+
+        if ((characteristic?.writeType != BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) && characteristic?.uuid != null && status == BluetoothGatt.GATT_SUCCESS) {
             parentScope.launch {
                 responseAckChannel.send(characteristic.uuid)
             }
@@ -443,6 +535,21 @@ class Ble(
                 } else {
                     Log.w(LOG_TAG, "MTU change failed, using default")
                 }
+
+                // Initiate bonding if not already bonded
+                val device = gatt.device
+                if (device.bondState == BluetoothDevice.BOND_NONE) {
+                    device.createBond()
+                } else if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                    _bleState.update {
+                        it.copy(
+                            connectedDevice = it.connectedDevice.copy(
+                                bondingState = BondingState.BONDED
+                            )
+                        )
+                    }
+                }
+
                 // Continue with service discovery after MTU negotiation
                 gatt.discoverServices()
             }
@@ -626,8 +733,6 @@ class Ble(
                     data = payload
                 )
             )
-
-            // Log.d(LOG_TAG, "enqueued message to ${characteristic.uuid}: ${payload.decodeToString()}")
         }
     }
 

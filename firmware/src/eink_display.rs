@@ -180,7 +180,7 @@ where
                         Text::new(format!("{:0>6}", ble_pin).as_str(), Point::new(1, self.normal_text_style.line_height() as i32 * 2), self.normal_text_style)
                             .draw(&mut self.display)?;
                     } else {
-                        Text::new("No BLE Pin", Point::new(10, 10), self.normal_text_style)
+                        Text::new("No BLE Pin", Point::new(10, self.normal_text_style.line_height() as i32 * 2), self.normal_text_style)
                             .draw(&mut self.display)?;
                     }
                     

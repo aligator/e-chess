@@ -52,12 +52,12 @@ impl OtaHandler {
     ) -> Result<Arc<NimbleMutex<esp32_nimble::BLECharacteristic>>> {
         let ota_action = service.lock().create_characteristic(
             uuid128!(OTA_ACTION_CHARACTERISTIC_UUID),
-            NimbleProperties::WRITE,
+            NimbleProperties::WRITE | NimbleProperties::WRITE_ENC,
         );
 
         let ota_event = service.lock().create_characteristic(
             uuid128!(OTA_EVENT_CHARACTERISTIC_UUID),
-            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            NimbleProperties::READ | NimbleProperties::READ_ENC | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
         );
 
         {

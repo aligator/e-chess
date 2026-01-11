@@ -29,6 +29,7 @@ import me.aligator.e_chess.service.bluetooth.ConnectionStep
 import me.aligator.e_chess.ui.components.ConnectionStatusCard
 import me.aligator.e_chess.ui.components.DeviceScanner
 import me.aligator.e_chess.ui.components.GameLoader
+import me.aligator.e_chess.ui.components.PinEntryDialog
 
 private fun isLocationEnabled(context: Context): Boolean {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
@@ -112,6 +113,8 @@ fun BleScreen(
                     },
                     onFetchGames = viewModel::fetchGames,
                     onGameKeyChanged = viewModel::setSelectedGameKey,
+                    onPinEntered = viewModel::submitPin,
+                    onPinDialogDismiss = viewModel::dismissPinDialog,
                     modifier = contentModifier
                 )
         }
@@ -128,6 +131,8 @@ private fun BleContent(
     onLoadGame: (String) -> Unit,
     onFetchGames: () -> Unit,
     onGameKeyChanged: (String) -> Unit,
+    onPinEntered: (String) -> Unit,
+    onPinDialogDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -156,5 +161,12 @@ private fun BleContent(
                 onConnect = onConnect
             )
         }
+    }
+
+    if (uiState.showPinDialog) {
+        PinEntryDialog(
+            onPinEntered = onPinEntered,
+            onDismiss = onPinDialogDismiss
+        )
     }
 }

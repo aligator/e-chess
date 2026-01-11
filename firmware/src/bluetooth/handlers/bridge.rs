@@ -138,13 +138,13 @@ impl BridgeHandler {
         // Request characteristic: board -> phone notifications
         let request_characteristic = service.lock().create_characteristic(
             uuid128!(BRIDGE_REQUEST_CHARACTERISTIC_UUID),
-            NimbleProperties::READ | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
+            NimbleProperties::READ | NimbleProperties::READ_ENC | NimbleProperties::NOTIFY | NimbleProperties::INDICATE,
         );
 
         // Response characteristic: phone -> board writes
         let response_characteristic = service.lock().create_characteristic(
             uuid128!(BRIDGE_RESPONSE_CHARACTERISTIC_UUID),
-            NimbleProperties::WRITE,
+            NimbleProperties::WRITE | NimbleProperties::WRITE_ENC,
         );
 
         // Setup response write handler
