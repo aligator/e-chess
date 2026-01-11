@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,10 +39,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
-import me.aligator.e_chess.service.ConfigurationStore
 import me.aligator.e_chess.ui.BleScreen
 import me.aligator.e_chess.ui.ConfigScreen
+import me.aligator.e_chess.ui.ConfigViewModel
 import me.aligator.e_chess.service.bluetooth.BluetoothService
+import org.koin.androidx.compose.koinViewModel
 import me.aligator.e_chess.service.bluetooth.hasPermissions
 import me.aligator.e_chess.service.bluetooth.requiredPermissions
 
@@ -53,15 +55,12 @@ private enum class AppDestination {
 @Composable
 fun EChessApp() {
     val context = LocalContext.current
-    val configStore = remember { ConfigurationStore(context.applicationContext) }
     val isPreview = LocalInspectionMode.current
+    val configViewModel: ConfigViewModel = koinViewModel()
 
     var destination by rememberSaveable { mutableStateOf(AppDestination.BLE) }
-    var language by rememberSaveable {
-        mutableStateOf(AppLanguage.fromCode(configStore.getLanguage()))
-    }
     var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
-    var bluetoothService by remember { mutableStateOf<BluetoothService?>(null) }
+    val language by configViewModel.language.collectAsState()
 
     // Create launchers BEFORE CompositionLocalProvider
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -87,11 +86,11 @@ fun EChessApp() {
 
         val connection = object : android.content.ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                bluetoothService = (binder as? BluetoothService.LocalBinder)?.service
+                // BluetoothService is now managed via Koin repositories
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
-                bluetoothService = null
+                // BluetoothService is now managed via Koin repositories
             }
         }
 

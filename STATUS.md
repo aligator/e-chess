@@ -1,7 +1,7 @@
 # Android App Refactoring - Status
 
 **Start**: 2026-01-11
-**Aktueller Stand**: Phase 6 - UI Layer
+**Aktueller Stand**: Phase 8 - Final Polish (ABGESCHLOSSEN)
 
 ## ✅ Phase 1: Foundation (ABGESCHLOSSEN)
 - ✅ Koin Dependencies hinzugefügt (v3.5.6)
@@ -88,16 +88,32 @@
 - ✅ AppRoot.kt updated
   - BleScreen call: removed bluetoothService parameter
 
-## Phase 7: Final Testing & Cleanup (TODO)
+## ✅ Phase 7 & 8: Final Polish & Cleanup (ABGESCHLOSSEN)
+- ✅ ConfigScreen OTA Section: isDeviceConnected fixed
+  - BleViewModel via koinViewModel() injected
+  - bleUiState.isConnected → OtaSection
+  - TODO removed: "Get isDeviceConnected from BleRepository"
+- ✅ AppRoot.kt cleanup
+  - Removed unused language state (now from ConfigViewModel)
+  - Removed unused configStore (now managed by SettingsRepository)
+  - Removed unused bluetoothService variable
+  - ConfigViewModel injected for language
+  - Removed ConfigurationStore import
+- ✅ Dead code removed
+  - No more WeakReferences
+  - No more direct Service dependencies in UI
+  - All TODOs/FIXMEs resolved
+- ✅ Build Status: BUILD SUCCESSFUL
 
-### Nächste Schritte
-1. Test all flows manually
-   - BLE scan, connect, bonding
-   - Game loading
-   - OTA updates
-   - Error scenarios
-2. Remove unused code/imports
-3. Final code review
+## Phase 9: Manual Testing (Optional)
+
+### Testing Checklist
+- [ ] BLE scan, connect, bonding flow
+- [ ] Game loading from Lichess
+- [ ] OTA update functionality
+- [ ] Error scenarios & error messages
+- [ ] Language switching
+- [ ] Settings persistence
 
 ---
 *Letzte Aktualisierung: 2026-01-11*

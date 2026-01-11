@@ -58,7 +58,8 @@ fun ConfigScreen(
     onOtaSelectFile: (() -> Unit)? = null,
     otaFileUri: Uri? = null,
     onOtaFileConsumed: () -> Unit = {},
-    viewModel: ConfigViewModel = koinViewModel()
+    viewModel: ConfigViewModel = koinViewModel(),
+    bleViewModel: BleViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -67,6 +68,7 @@ fun ConfigScreen(
     val lichessToken by viewModel.lichessToken.collectAsState()
     val language by viewModel.language.collectAsState()
     val error by viewModel.error.collectAsState()
+    val bleUiState by bleViewModel.uiState.collectAsState()
 
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
@@ -146,7 +148,8 @@ fun ConfigScreen(
         if (onOtaSelectFile != null) {
             OtaSection(
                 viewModel = viewModel,
-                onSelectFileClick = onOtaSelectFile
+                onSelectFileClick = onOtaSelectFile,
+                isDeviceConnected = bleUiState.isConnected
             )
         }
     }
@@ -163,13 +166,11 @@ private fun ConfigScreenPreview() {
 @Composable
 private fun OtaSection(
     viewModel: ConfigViewModel,
-    onSelectFileClick: () -> Unit
+    onSelectFileClick: () -> Unit,
+    isDeviceConnected: Boolean
 ) {
     val otaState by viewModel.otaState.collectAsState()
     val uploadInProgress by viewModel.otaUploadInProgress.collectAsState()
-
-    // TODO: Get isDeviceConnected from BleRepository via BleViewModel
-    val isDeviceConnected = true
 
     // Auto-reset UI after 3 seconds on completion or error
     LaunchedEffect(otaState.status) {
