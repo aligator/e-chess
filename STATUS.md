@@ -13,22 +13,37 @@
 - ✅ AppModule.kt Koin DI module erstellt (basic structure)
 - ✅ AndroidManifest.xml aktualisiert (App class registriert)
 
-## Phase 2: Settings Layer (IN PROGRESS)
+## ✅ Phase 2: Settings Layer (ABGESCHLOSSEN)
+- ✅ SettingsRepository erstellt (~120 LOC)
+  - ConfigurationStore wrapper
+  - OtaAction integration via setOtaAction()
+  - Error handling mit AppError
+  - StateFlows für lichessToken, language, otaState, error
+- ✅ ConfigViewModel refactored (~90 LOC)
+  - Pure delegation zu SettingsRepository
+  - Removed direct OtaAction dependency
+  - Added saveLichessToken(), saveLanguage(), clearError()
+- ✅ ConfigScreen updated
+  - koinViewModel() injection
+  - Removed direct otaAction und bleService parameters
+  - Error Snackbar hinzugefügt
+  - Language selector uses ViewModel
+- ✅ BluetoothService updated
+  - Koin injection für SettingsRepository
+  - setOtaAction() called in onCreate()
+
+## Phase 3: Games Layer (TODO)
 
 ### Nächste Schritte
-1. SettingsRepository erstellen (~160 LOC)
-   - ConfigurationStore wrapper
-   - OtaAction integration
-   - Error handling mit AppError
-   - StateFlows für lichessToken, language, otaState
-2. ConfigViewModel refactoren
-3. ConfigScreen updaten
-4. BluetoothService updaten
+1. GamesRepository erstellen (~200 LOC)
+   - LichessApi wrapper
+   - Game loading logic
+   - ChessBoardDeviceAction integration
+   - StateFlows für availableGames, isLoadingGames, isLoadingGame, selectedGameKey
+2. BluetoothService updaten (ChessBoardDeviceAction integration)
 
 ### Fortschritt
-- [ ] SettingsRepository
-- [ ] ConfigViewModel refactored
-- [ ] ConfigScreen updated
+- [ ] GamesRepository
 - [ ] BluetoothService updated
 
 ---

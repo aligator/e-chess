@@ -45,8 +45,6 @@ impl BluetoothService {
         {
             let rng_event_tx = event_tx.clone();
             server.on_passkey_request(move || {
-                println!("REQUESTING PIN");
-
                 let mut rng = rand::rng();
                 let pin = rng.random_range(..=999999);
                 println!("REQUESTING PIN {}", pin);

@@ -8,9 +8,8 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import me.aligator.e_chess.repository.SettingsRepository
+import org.koin.android.ext.android.inject
 import java.util.UUID
 
 private const val LOG_TAG = "BluetoothService"
@@ -29,6 +28,9 @@ class BluetoothService : Service() {
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Koin injected repositories
+    private val settingsRepository: me.aligator.e_chess.repository.SettingsRepository by org.koin.android.ext.android.inject()
 
     lateinit var ble: Ble
 
@@ -59,6 +61,10 @@ class BluetoothService : Service() {
         httpBridgeAction = HttpBleBridgeAction(ble, applicationContext)
         chessBoardAction = ChessBoardDeviceAction(ble)
         otaAction = OtaAction(ble)
+
+        // Inject OtaAction into SettingsRepository via Koin
+        val settingsRepository: me.aligator.e_chess.repository.SettingsRepository by org.koin.android.ext.android.inject()
+        settingsRepository.setOtaAction(otaAction)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
