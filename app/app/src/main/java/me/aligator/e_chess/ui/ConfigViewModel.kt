@@ -9,36 +9,55 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import me.aligator.e_chess.service.bluetooth.OtaAction
+import me.aligator.e_chess.AppLanguage
+import me.aligator.e_chess.model.AppError
+import me.aligator.e_chess.repository.SettingsRepository
+import me.aligator.e_chess.service.bluetooth.OtaState
+import me.aligator.e_chess.service.bluetooth.OtaStatus
 import java.io.InputStream
 
 private const val LOG_TAG = "ConfigViewModel"
 
-class ConfigViewModel : ViewModel() {
-    private var otaAction: OtaAction? = null
+/**
+ * ViewModel for Settings/Config screen.
+ * Pure delegation to SettingsRepository.
+ */
+class ConfigViewModel(
+    private val settingsRepository: SettingsRepository
+) : ViewModel() {
+    // Delegate to repository
+    val lichessToken: StateFlow<String?> = settingsRepository.lichessToken
+    val language: StateFlow<AppLanguage> = settingsRepository.language
+    val otaState: StateFlow<OtaState> = settingsRepository.otaState
+    val error: StateFlow<AppError?> = settingsRepository.error
 
     private val _otaUploadInProgress = MutableStateFlow(false)
     val otaUploadInProgress: StateFlow<Boolean> = _otaUploadInProgress.asStateFlow()
 
-    fun setOtaAction(action: OtaAction) {
-        otaAction = action
-
+    init {
         // Observe OTA state changes to auto-reset UI on completion, error, or disconnect
         viewModelScope.launch {
-            action.otaState.collect { state ->
+            settingsRepository.otaState.collect { state ->
                 when (state.status) {
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.IDLE,
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.COMPLETED,
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.ERROR -> {
+                    OtaStatus.IDLE,
+                    OtaStatus.COMPLETED,
+                    OtaStatus.ERROR -> {
                         _otaUploadInProgress.value = false
                     }
-
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.UPLOADING -> {
+                    OtaStatus.UPLOADING -> {
                         // Keep upload in progress
                     }
                 }
             }
         }
+    }
+
+    fun saveLichessToken(token: String?) {
+        settingsRepository.saveLichessToken(token)
+    }
+
+    fun saveLanguage(language: AppLanguage) {
+        settingsRepository.saveLanguage(language)
     }
 
     fun uploadFirmware(context: Context, uri: Uri) {
@@ -59,7 +78,7 @@ class ConfigViewModel : ViewModel() {
 
                 Log.d(LOG_TAG, "Uploading firmware: ${firmwareData.size} bytes")
 
-                otaAction?.uploadFirmware(firmwareData, firmwareData.size.toLong())
+                settingsRepository.uploadFirmware(firmwareData)
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "Failed to read firmware file", e)
                 _otaUploadInProgress.value = false
@@ -68,7 +87,11 @@ class ConfigViewModel : ViewModel() {
     }
 
     fun resetOtaStatus() {
-        otaAction?.resetStatus()
+        settingsRepository.resetOtaStatus()
         _otaUploadInProgress.value = false
+    }
+
+    fun clearError() {
+        settingsRepository.clearError()
     }
 }

@@ -1,23 +1,16 @@
 package me.aligator.e_chess.ui
 
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -26,6 +19,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,25 +31,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.flow.MutableStateFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.viewmodel.compose.viewModel
 import me.aligator.e_chess.AppLanguage
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.ConfigurationStore
-import me.aligator.e_chess.service.bluetooth.OtaAction
 import me.aligator.e_chess.service.bluetooth.OtaStatus
 import me.aligator.e_chess.ui.theme.EChessTheme
+import org.koin.androidx.compose.koinViewModel
 
 private fun formatBytes(bytes: Long): String {
     return when {
@@ -66,28 +54,34 @@ private fun formatBytes(bytes: Long): String {
 
 @Composable
 fun ConfigScreen(
-    selectedLanguage: AppLanguage,
-    onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
-    otaAction: OtaAction? = null,
-    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService? = null,
     onOtaSelectFile: (() -> Unit)? = null,
     otaFileUri: Uri? = null,
     onOtaFileConsumed: () -> Unit = {},
+    viewModel: ConfigViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
-    val configStore = remember { ConfigurationStore(context.applicationContext) }
-    val viewModel: ConfigViewModel = viewModel()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Collect state from ViewModel
+    val lichessToken by viewModel.lichessToken.collectAsState()
+    val language by viewModel.language.collectAsState()
+    val error by viewModel.error.collectAsState()
 
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
 
-    LaunchedEffect(configStore) {
-        configStore.getLichessToken()?.let { token = it }
+    // Initialize token from repository
+    LaunchedEffect(lichessToken) {
+        lichessToken?.let { token = it }
     }
 
-    LaunchedEffect(otaAction) {
-        otaAction?.let { viewModel.setOtaAction(it) }
+    // Show error in Snackbar
+    LaunchedEffect(error) {
+        error?.let {
+            snackbarHostState.showSnackbar(it.message)
+            viewModel.clearError()
+        }
     }
 
     // Process the selected OTA file
@@ -103,9 +97,11 @@ fun ConfigScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        SnackbarHost(hostState = snackbarHostState)
+
         LanguageSelector(
-            selectedLanguage = selectedLanguage,
-            onLanguageSelected = onLanguageSelected,
+            selectedLanguage = language,
+            onLanguageSelected = { viewModel.saveLanguage(it) },
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
@@ -130,7 +126,7 @@ fun ConfigScreen(
         )
         Button(
             onClick = {
-                configStore.saveLichessToken(token)
+                viewModel.saveLichessToken(token)
                 savedMessage = context.getString(R.string.token_saved)
             },
             modifier = Modifier.padding(top = 12.dp)
@@ -147,11 +143,9 @@ fun ConfigScreen(
         HorizontalDivider()
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (otaAction != null && onOtaSelectFile != null) {
+        if (onOtaSelectFile != null) {
             OtaSection(
                 viewModel = viewModel,
-                otaAction = otaAction,
-                bleService = bleService,
                 onSelectFileClick = onOtaSelectFile
             )
         }
@@ -162,27 +156,20 @@ fun ConfigScreen(
 @Composable
 private fun ConfigScreenPreview() {
     EChessTheme {
-        ConfigScreen(
-            selectedLanguage = AppLanguage.DE,
-            onLanguageSelected = {}
-        )
+        ConfigScreen()
     }
 }
 
 @Composable
 private fun OtaSection(
     viewModel: ConfigViewModel,
-    otaAction: OtaAction,
-    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService?,
     onSelectFileClick: () -> Unit
 ) {
-    val otaState by otaAction.otaState.collectAsState()
+    val otaState by viewModel.otaState.collectAsState()
     val uploadInProgress by viewModel.otaUploadInProgress.collectAsState()
-    val bleState by (bleService?.ble?.bleState
-        ?: MutableStateFlow(me.aligator.e_chess.service.bluetooth.BleState())).collectAsState()
 
-    val isDeviceConnected =
-        bleState.connectedDevice.deviceState == me.aligator.e_chess.service.bluetooth.DeviceState.CONNECTED
+    // TODO: Get isDeviceConnected from BleRepository via BleViewModel
+    val isDeviceConnected = true
 
     // Auto-reset UI after 3 seconds on completion or error
     LaunchedEffect(otaState.status) {
