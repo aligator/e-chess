@@ -1,7 +1,7 @@
 # Android App Refactoring - Status
 
 **Start**: 2026-01-11
-**Aktueller Stand**: Phase 3 - Games Layer
+**Aktueller Stand**: Phase 4 - BLE Layer
 
 ## ✅ Phase 1: Foundation (ABGESCHLOSSEN)
 - ✅ Koin Dependencies hinzugefügt (v3.5.6)
@@ -46,16 +46,30 @@
   - LichessApi(androidContext()) fixed (requires Context parameter)
   - GamesRepository registered in Koin DI
 
-## Phase 4: BLE Layer (TODO)
+## ✅ Phase 4: BLE Layer (ABGESCHLOSSEN)
+- ✅ BleRepository erstellt (~190 LOC)
+  - Ble service wrapper
+  - BLE state propagation via StateFlow collection
+  - Device scanning: startScan(), stopScan()
+  - Connection management: connect(), disconnect(), checkBluetooth()
+  - PIN/Bonding handling: submitPin(), cancelPinDialog() with onPinRequested callback
+  - StateFlows für bleState, showPinDialog, error
+  - Methods: setBle(), startScan(), stopScan(), connect(), disconnect(), checkBluetooth(), submitPin(), cancelPinDialog(), clearError(), reset()
+- ✅ BluetoothService updated
+  - BleRepository via Koin injected
+  - setBle() bei onCreate aufgerufen
+  - Imports cleaned up (removed fully qualified names)
+
+## Phase 5: ViewModels (TODO)
 
 ### Nächste Schritte
-1. BleRepository erstellen (~200 LOC)
-   - Ble service wrapper
-   - BLE state propagation (fixed: proper StateFlow collection)
-   - Device scanning, connection, disconnection
-   - PIN/Bonding handling
-   - StateFlows für bleState, showPinDialog, error
-2. BluetoothService updaten (Ble integration)
+1. BleViewModel erstellen
+   - BleRepository delegation
+   - StateFlows propagation
+2. GamesViewModel erstellen
+   - GamesRepository delegation
+   - Game selection logic
+3. Existing ViewModels updaten falls nötig
 
 ---
 *Letzte Aktualisierung: 2026-01-11*

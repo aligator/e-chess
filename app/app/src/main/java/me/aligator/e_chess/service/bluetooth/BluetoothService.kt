@@ -8,6 +8,8 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import me.aligator.e_chess.repository.BleRepository
+import me.aligator.e_chess.repository.GamesRepository
 import me.aligator.e_chess.repository.SettingsRepository
 import org.koin.android.ext.android.inject
 import java.util.UUID
@@ -30,8 +32,9 @@ class BluetoothService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Koin injected repositories
-    private val settingsRepository: me.aligator.e_chess.repository.SettingsRepository by org.koin.android.ext.android.inject()
-    private val gamesRepository: me.aligator.e_chess.repository.GamesRepository by org.koin.android.ext.android.inject()
+    private val settingsRepository: SettingsRepository by inject()
+    private val gamesRepository: GamesRepository by inject()
+    private val bleRepository: BleRepository by inject()
 
     lateinit var ble: Ble
 
@@ -64,6 +67,7 @@ class BluetoothService : Service() {
         otaAction = OtaAction(ble)
 
         // Inject actions into repositories
+        bleRepository.setBle(ble)
         settingsRepository.setOtaAction(otaAction)
         gamesRepository.setChessBoardAction(chessBoardAction)
     }
