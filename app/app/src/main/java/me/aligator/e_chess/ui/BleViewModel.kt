@@ -1,67 +1,75 @@
 package me.aligator.e_chess.ui
 
-import android.app.Application
-import android.util.Log
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import java.lang.ref.WeakReference
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import me.aligator.e_chess.service.ConfigurationStore
+import me.aligator.e_chess.repository.BleRepository
+import me.aligator.e_chess.repository.GamesRepository
 import me.aligator.e_chess.service.GameOption
 import me.aligator.e_chess.service.bluetooth.BleState
-import org.json.JSONArray
-import me.aligator.e_chess.service.bluetooth.BluetoothService
 import me.aligator.e_chess.service.bluetooth.DeviceState
 import me.aligator.e_chess.service.bluetooth.SimpleDevice
 
-private const val LOG_TAG = "BleViewModel"
-
+/**
+ * UI State for BLE screen combining BLE and Games state
+ */
 data class BleUiState(
     val bleState: BleState = BleState(),
     val availableGames: List<GameOption> = emptyList(),
     val isLoadingGames: Boolean = false,
     val isLoadingGame: Boolean = false,
-    val selectedGameKey: String = "",
+    val selectedGameKey: String? = null,
     val isConnected: Boolean = false,
     val showPinDialog: Boolean = false,
 )
 
-class BleViewModel(application: Application) : AndroidViewModel(application) {
-    private val configStore = ConfigurationStore(application)
+/**
+ * ViewModel for BLE & Chess screen.
+ * Combines BleRepository + GamesRepository state.
+ * Uses nested combine() due to Kotlin Flow 5-parameter limit.
+ */
+class BleViewModel(
+    private val bleRepository: BleRepository,
+    private val gamesRepository: GamesRepository
+) : ViewModel() {
 
-    private val _availableGames = MutableStateFlow<List<GameOption>>(emptyList())
-    private val _isLoadingGames = MutableStateFlow(false)
+    // Combine 8 StateFlows via nested combine (Flow limit: 5)
+    // Group 1: BLE state (4 flows)
+    private val bleGroup = combine(
+        bleRepository.bleState,
+        bleRepository.showPinDialog,
+        gamesRepository.availableGames,
+        gamesRepository.isLoadingGames
+    ) { bleState, showPinDialog, games, loadingGames ->
+        BleGroup(bleState, showPinDialog, games, loadingGames)
+    }
 
-    private val _isLoadingGame = MutableStateFlow(false)
-    private val _selectedGameKey = MutableStateFlow(configStore.getLastLoadedGame() ?: "")
-    private val _bleState = MutableStateFlow(BleState())
-    private val _showPinDialog = MutableStateFlow(false)
-    private var bluetoothServiceRef: WeakReference<BluetoothService>? = null
-    private var pinSubmitCallback: (suspend (String) -> Unit)? = null
+    // Group 2: Games state (3 flows)
+    private val gamesGroup = combine(
+        gamesRepository.isLoadingGame,
+        gamesRepository.selectedGameKey,
+        gamesRepository.error
+    ) { loadingGame, gameKey, _ ->
+        GamesGroup(loadingGame, gameKey)
+    }
 
+    // Combined UI state
     val uiState: StateFlow<BleUiState> = combine(
-        combine(_bleState, _availableGames, _isLoadingGames) { bleState, games, loadingGames ->
-            Triple(bleState, games, loadingGames)
-        },
-        combine(_isLoadingGame, _selectedGameKey, _showPinDialog) { loadingGame, gameKey, showPinDialog ->
-            Triple(loadingGame, gameKey, showPinDialog)
-        }
-    ) { first, second ->
-        val (bleState, games, loadingGames) = first
-        val (loadingGame, gameKey, showPinDialog) = second
+        bleGroup,
+        gamesGroup
+    ) { ble, games ->
         BleUiState(
-            bleState = bleState,
-            availableGames = games,
-            isLoadingGames = loadingGames,
-            isLoadingGame = loadingGame,
-            selectedGameKey = gameKey,
-            isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady,
-            showPinDialog = showPinDialog
+            bleState = ble.bleState,
+            availableGames = ble.availableGames,
+            isLoadingGames = ble.isLoadingGames,
+            isLoadingGame = games.isLoadingGame,
+            selectedGameKey = games.selectedGameKey,
+            isConnected = ble.bleState.connectedDevice.deviceState == DeviceState.CONNECTED
+                && ble.bleState.connectedDevice.characteristicsReady,
+            showPinDialog = ble.showPinDialog
         )
     }.stateIn(
         scope = viewModelScope,
@@ -69,114 +77,38 @@ class BleViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = BleUiState()
     )
 
-    fun setBluetoothService(service: BluetoothService?) {
-        bluetoothServiceRef = service?.let { WeakReference(it) }
+    // BLE actions
+    fun startScan() = bleRepository.startScan()
+    fun stopScan() = bleRepository.stopScan()
+    fun connect(device: SimpleDevice) = bleRepository.connect(device)
+    fun disconnect() = bleRepository.disconnect()
+    fun checkBluetooth() = bleRepository.checkBluetooth()
+    fun submitPin(pin: String) = bleRepository.submitPin(pin)
+    fun dismissPinDialog() = bleRepository.cancelPinDialog()
 
-        if (service != null) {
-            // Set up PIN request callback
-            service.ble.onPinRequested = { submitCallback ->
-                pinSubmitCallback = submitCallback
-                _showPinDialog.value = true
-            }
-
-            viewModelScope.launch {
-                service.ble.bleState.collect { state ->
-                    _bleState.value = state
-                }
-            }
-            viewModelScope.launch {
-                service.chessBoardAction.ongoingGames.collect { gamesJson ->
-                    if (gamesJson != null) {
-                        try {
-                            val games = parseOngoingGames(gamesJson)
-                            _availableGames.value = games
-                        } catch (e: Exception) {
-                            Log.e(LOG_TAG, "Failed to parse ongoing games", e)
-                            _availableGames.value = emptyList()
-                        }
-                    }
-                }
-            }
-            viewModelScope.launch {
-                service.chessBoardAction.isLoadingGames.collect { isLoading ->
-                    _isLoadingGames.value = isLoading
-                }
-            }
-            viewModelScope.launch {
-                service.chessBoardAction.isLoadingGame.collect { isLoading ->
-                    _isLoadingGame.value = isLoading
-                }
-            }
-        } else {
-            _bleState.value = BleState()
-        }
-    }
-
-    fun startScan() {
-        bluetoothServiceRef?.get()?.ble?.startScan()
-    }
-
-    fun stopScan() {
-        bluetoothServiceRef?.get()?.ble?.stopScan()
-    }
-
-    fun connect(device: SimpleDevice) {
-        bluetoothServiceRef?.get()?.ble?.connect(device)
-    }
-
-    fun disconnect() {
-        Log.d(LOG_TAG, "disconnect called")
-        bluetoothServiceRef?.get()?.ble?.disconnect()
-    }
-
-    fun loadGame(gameKey: String) {
-        Log.d(LOG_TAG, "loadGame called with key: $gameKey")
-        Log.d(LOG_TAG, "Set isLoadingGame to true")
-
-        // Save the game key for next time
-        configStore.saveLastLoadedGame(gameKey)
-        val success = bluetoothServiceRef?.get()?.chessBoardAction?.loadGame(gameKey)
-        Log.d(LOG_TAG, "loadGame sent to board, success: $success")
-    }
-
-    fun fetchGames() {
-        bluetoothServiceRef?.get()?.chessBoardAction?.loadOpenGames()
-    }
-
-    private fun parseOngoingGames(json: String): List<GameOption> {
-        val array = JSONArray(json)
-        val games = mutableListOf<GameOption>()
-
-        for (i in 0 until array.length()) {
-            val game = array.getJSONObject(i)
-            val gameId = game.getString("game_id")
-            val opponent = game.optJSONObject("opponent")
-            val opponentName = opponent?.optString("username") ?: "Unknown"
-
-            games.add(
-                GameOption(
-                    id = gameId,
-                    displayName = "vs $opponentName ($gameId)"
-                )
-            )
-        }
-
-        return games
-    }
-
+    // Games actions
+    fun loadAvailableGames() = gamesRepository.loadAvailableGames()
+    fun loadGame(gameKey: String) = gamesRepository.selectGame(gameKey)
+    fun fetchGames() = gamesRepository.loadOpenGamesOnDevice()
     fun setSelectedGameKey(key: String) {
-        _selectedGameKey.value = key
+        // This is handled by selectGame, but kept for compatibility
+        // Could be removed if UI doesn't need this
     }
 
-    fun submitPin(pin: String) {
-        viewModelScope.launch {
-            pinSubmitCallback?.invoke(pin)
-            _showPinDialog.value = false
-        }
-    }
-
-    fun dismissPinDialog() {
-        _showPinDialog.value = false
-        disconnect()
-    }
+    // Error handling
+    fun clearBleError() = bleRepository.clearError()
+    fun clearGamesError() = gamesRepository.clearError()
 }
+
+// Helper data classes for nested combine
+private data class BleGroup(
+    val bleState: BleState,
+    val showPinDialog: Boolean,
+    val availableGames: List<GameOption>,
+    val isLoadingGames: Boolean
+)
+
+private data class GamesGroup(
+    val isLoadingGame: Boolean,
+    val selectedGameKey: String?
+)

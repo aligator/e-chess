@@ -1,7 +1,7 @@
 # Android App Refactoring - Status
 
 **Start**: 2026-01-11
-**Aktueller Stand**: Phase 4 - BLE Layer
+**Aktueller Stand**: Phase 5 - ViewModels
 
 ## ✅ Phase 1: Foundation (ABGESCHLOSSEN)
 - ✅ Koin Dependencies hinzugefügt (v3.5.6)
@@ -60,16 +60,28 @@
   - setBle() bei onCreate aufgerufen
   - Imports cleaned up (removed fully qualified names)
 
-## Phase 5: ViewModels (TODO)
+## ✅ Phase 5: ViewModels (ABGESCHLOSSEN)
+- ✅ BleViewModel refactored (183→115 LOC, -37%)
+  - Removed AndroidViewModel → regular ViewModel
+  - Removed WeakReference pattern
+  - Removed direct BluetoothService dependency
+  - Combines BleRepository + GamesRepository state
+  - 7 StateFlows via nested combine() (Flow limit: 5)
+    - bleGroup: bleState, showPinDialog, availableGames, isLoadingGames
+    - gamesGroup: isLoadingGame, selectedGameKey, error
+  - Pure delegation to repositories
+  - Methods: startScan(), stopScan(), connect(), disconnect(), submitPin(), loadAvailableGames(), loadGame(), fetchGames()
+- ✅ AppModule.kt updated
+  - BleViewModel(get(), get()) - beide Repositories injected
+
+## Phase 6: UI Layer (TODO)
 
 ### Nächste Schritte
-1. BleViewModel erstellen
-   - BleRepository delegation
-   - StateFlows propagation
-2. GamesViewModel erstellen
-   - GamesRepository delegation
-   - Game selection logic
-3. Existing ViewModels updaten falls nötig
+1. BleScreen updaten
+   - koinViewModel() injection
+   - Removed setBluetoothService() call
+   - Error handling UI (Snackbar)
+2. MainActivity updaten falls nötig
 
 ---
 *Letzte Aktualisierung: 2026-01-11*
