@@ -162,7 +162,7 @@ private fun BleContent(
         if (uiState.isConnected) {
             GameLoader(
                 availableGames = uiState.availableGames,
-                selectedGameKey = uiState.selectedGameKey,
+                selectedGameKey = uiState.selectedGameKey ?: "",
                 onGameKeyChanged = onGameKeyChanged,
                 onLoadGame = onLoadGame,
                 onFetchGames = onFetchGames,

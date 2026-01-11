@@ -166,13 +166,6 @@ fun EChessApp() {
                     )
 
                     AppDestination.CONFIG -> ConfigScreen(
-                        selectedLanguage = language,
-                        onLanguageSelected = { newLanguage ->
-                            language = newLanguage
-                            configStore.saveLanguage(newLanguage.code)
-                        },
-                        otaAction = bluetoothService?.otaAction,
-                        bleService = bluetoothService,
                         onOtaSelectFile = { otaFilePicker.launch("*/*") },
                         otaFileUri = otaFileUri,
                         onOtaFileConsumed = { otaFileUri = null }

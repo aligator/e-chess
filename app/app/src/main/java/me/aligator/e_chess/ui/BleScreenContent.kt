@@ -84,7 +84,7 @@ private fun BleContentPreview(
         if (uiState.isConnected) {
             GameLoader(
                 availableGames = uiState.availableGames,
-                selectedGameKey = uiState.selectedGameKey,
+                selectedGameKey = uiState.selectedGameKey ?: "",
                 onGameKeyChanged = {},
                 onLoadGame = {},
                 onFetchGames = {}
