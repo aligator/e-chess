@@ -19,6 +19,7 @@ import me.aligator.e_chess.service.bluetooth.SimpleDevice
  * - Available devices
  * - PIN dialog state
  */
+@Suppress("unused") // Injected via Koin DI
 class BleRepository {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 

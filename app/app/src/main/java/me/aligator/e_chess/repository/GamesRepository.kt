@@ -20,6 +20,7 @@ import me.aligator.e_chess.service.bluetooth.ChessBoardDeviceAction
  * - Loading states
  * - ChessBoard device communication
  */
+@Suppress("unused") // Injected via Koin DI
 class GamesRepository(
     private val lichessApi: LichessApi
 ) {

@@ -20,6 +20,7 @@ import me.aligator.e_chess.service.bluetooth.OtaState
  * - Language preference
  * - OTA state
  */
+@Suppress("unused") // Injected via Koin DI
 class SettingsRepository(
     private val configStore: ConfigurationStore
 ) {
