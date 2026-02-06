@@ -40,4 +40,14 @@
     <string
         name="ota_device_not_connected"
     >Bitte zuerst ein Gerät verbinden</string>
+    <string name="debug_logs_title">Debug-Logging</string>
+    <string
+        name="debug_logs_description"
+    >Schreibt die App-Logs in eine Datei, bis du es ausschaltest.</string>
+    <string name="debug_logs_share_title">Debug-Log teilen</string>
+    <string
+        name="debug_logs_no_file"
+    >Noch keine Logdatei – erst einschalten</string>
+    <string name="debug_logs_file_size">Dateigröße: %1$s</string>
+    <string name="debug_logs_file_name">Datei: %1$s</string>
 </resources>

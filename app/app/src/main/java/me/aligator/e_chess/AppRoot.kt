@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
 import me.aligator.e_chess.service.ConfigurationStore
+import me.aligator.e_chess.service.DebugLogManager
 import me.aligator.e_chess.ui.BleScreen
 import me.aligator.e_chess.ui.ConfigScreen
 import me.aligator.e_chess.service.bluetooth.BluetoothService
@@ -62,6 +63,11 @@ fun EChessApp() {
     }
     var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
     var bluetoothService by remember { mutableStateOf<BluetoothService?>(null) }
+
+    // Clear previous debug logs on each app start.
+    LaunchedEffect(Unit) {
+        DebugLogManager.clearAllLogs(context)
+    }
 
     // Create launchers BEFORE CompositionLocalProvider
     val permissionLauncher = rememberLauncherForActivityResult(

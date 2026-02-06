@@ -38,4 +38,14 @@
     <string
         name="ota_device_not_connected"
     >Please connect to a device first</string>
+    <string name="debug_logs_title">Debug logging</string>
+    <string
+        name="debug_logs_description"
+    >Write the app logs to a file until you turn it off.</string>
+    <string name="debug_logs_share_title">Share debug log</string>
+    <string
+        name="debug_logs_no_file"
+    >No log file yet – enable logging first</string>
+    <string name="debug_logs_file_size">File size: %1$s</string>
+    <string name="debug_logs_file_name">File: %1$s</string>
 </resources>

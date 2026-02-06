@@ -1,16 +1,19 @@
 package me.aligator.e_chess.ui
 
+import android.app.Activity
+import android.content.ClipData
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.ClickableText
@@ -26,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,25 +37,30 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import me.aligator.e_chess.AppLanguage
 import me.aligator.e_chess.R
 import me.aligator.e_chess.service.ConfigurationStore
+import me.aligator.e_chess.service.DebugLogManager
 import me.aligator.e_chess.service.bluetooth.OtaAction
 import me.aligator.e_chess.service.bluetooth.OtaStatus
 import me.aligator.e_chess.ui.theme.EChessTheme
@@ -63,6 +72,11 @@ private fun formatBytes(bytes: Long): String {
         else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
     }
 }
+
+private data class DebugLogUiState(
+    val fileName: String?,
+    val fileSizeBytes: Long
+)
 
 @Composable
 fun ConfigScreen(
@@ -76,11 +90,13 @@ fun ConfigScreen(
     onOtaFileConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val configStore = remember { ConfigurationStore(context.applicationContext) }
     val viewModel: ConfigViewModel = viewModel()
 
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
+    var debugLoggingEnabled by remember { mutableStateOf(false) }
 
     LaunchedEffect(configStore) {
         configStore.getLichessToken()?.let { token = it }
@@ -147,6 +163,40 @@ fun ConfigScreen(
         HorizontalDivider()
         Spacer(modifier = Modifier.height(16.dp))
 
+        DebugLogSection(
+            enabled = debugLoggingEnabled,
+            onToggle = { enabled ->
+                debugLoggingEnabled = enabled
+                if (enabled) {
+                    DebugLogManager.start(context)
+                } else {
+                    coroutineScope.launch {
+                        DebugLogManager.stopAndAwait()
+                        val uri = DebugLogManager.shareUri(context) ?: return@launch
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/octet-stream"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            clipData = ClipData.newRawUri("debug-log", uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val chooserIntent = Intent.createChooser(
+                            shareIntent,
+                            context.getString(R.string.debug_logs_share_title)
+                        ).apply {
+                            if (context !is Activity) {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                        }
+                        context.startActivity(chooserIntent)
+                    }
+                }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(16.dp))
+
         if (otaAction != null && onOtaSelectFile != null) {
             OtaSection(
                 viewModel = viewModel,
@@ -166,6 +216,82 @@ private fun ConfigScreenPreview() {
             selectedLanguage = AppLanguage.DE,
             onLanguageSelected = {}
         )
+    }
+}
+
+@Composable
+private fun DebugLogSection(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    val logUiState by produceState(
+        initialValue = DebugLogUiState(
+            fileName = DebugLogManager.currentLogFileName(),
+            fileSizeBytes = DebugLogManager.currentLogFileSizeBytes() ?: 0L
+        ),
+        key1 = enabled
+    ) {
+        while (true) {
+            value = DebugLogUiState(
+                fileName = DebugLogManager.currentLogFileName(),
+                fileSizeBytes = DebugLogManager.currentLogFileSizeBytes() ?: 0L
+            )
+            delay(1000)
+        }
+    }
+    val logAvailable = logUiState.fileSizeBytes > 0L
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.debug_logs_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = stringResource(R.string.debug_logs_description),
+                modifier = Modifier.weight(1f)
+            )
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle
+            )
+        }
+
+        Text(
+            text = stringResource(
+                R.string.debug_logs_file_size,
+                formatBytes(logUiState.fileSizeBytes)
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+
+        val logFileName = logUiState.fileName
+        if (logFileName != null) {
+            Text(
+                text = stringResource(R.string.debug_logs_file_name, logFileName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        if (enabled && !logAvailable) {
+            Text(
+                text = stringResource(R.string.debug_logs_no_file),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
     }
 }
 

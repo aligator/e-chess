@@ -40,4 +40,14 @@
     <string
         name="ota_device_not_connected"
     >Vennligst koble til en enhet først</string>
+    <string name="debug_logs_title">Debug logging</string>
+    <string
+        name="debug_logs_description"
+    >Skriver app-loggene til en fil til du slår det av.</string>
+    <string name="debug_logs_share_title">Del debug-logg</string>
+    <string
+        name="debug_logs_no_file"
+    >Ingen loggfil ennå – aktiver logging først</string>
+    <string name="debug_logs_file_size">Filstørrelse: %1$s</string>
+    <string name="debug_logs_file_name">Fil: %1$s</string>
 </resources>
