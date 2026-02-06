@@ -5,14 +5,52 @@
     <string name="bluetooth_enable">Enable Bluetooth</string>
     <string name="bluetooth_unavailable">Bluetooth unavailable</string>
     <string name="permissions_required">Permissions required</string>
+    <string
+        name="ble_bluetooth_hint"
+    >Bluetooth is required to connect to the board.</string>
+    <string
+        name="ble_unavailable_hint"
+    >This device does not support Bluetooth.</string>
+    <string
+        name="ble_permissions_hint"
+    >Grant Bluetooth permissions to scan and connect.</string>
+    <string
+        name="ble_location_hint"
+    >Location is required for BLE scanning on Android.</string>
     <string name="location_button">Enable location</string>
-    <string name="service_connecting">Connecting to Bluetooth service…</string>
     <string name="status_label">Status</string>
+    <string name="ble_status_connected">Connected</string>
+    <string name="ble_status_preparing">Preparing connection…</string>
+    <string name="ble_status_connecting">Connecting…</string>
+    <string name="ble_status_disconnecting">Disconnecting…</string>
+    <string name="ble_status_disconnected">Disconnected</string>
+    <string name="ble_status_unknown">Unknown</string>
+    <string name="ble_connected_address">Device: %1$s</string>
+    <string name="setup_ready_title">Board ready</string>
+    <string
+        name="setup_ready_description"
+    >Connected and ready to load a game.</string>
+    <string name="setup_scanning_title">Scanning for boards</string>
+    <string
+        name="setup_scanning_description"
+    >Select your board from the list.</string>
+    <string name="setup_ready_to_scan_title">Ready to scan</string>
+    <string
+        name="setup_ready_to_scan_description"
+    >Start a scan to find your board.</string>
+    <string name="setup_step_scan">1 Scan</string>
+    <string name="setup_step_connect">2 Connect</string>
+    <string name="setup_step_load">3 Load</string>
     <string name="scan_start">Search devices</string>
     <string name="scan_stop">Stop scan</string>
     <string name="connect_button">Connect</string>
     <string name="unknown_device">Unknown</string>
-    <string name="config_title">Lichess API Token</string>
+    <string name="last_connected_device">Last connected device</string>
+    <string name="settings_token_title">Lichess API Token</string>
+    <string name="language_description">Choose the app language.</string>
+    <string
+        name="token_description"
+    >Required to load and play Lichess games.</string>
     <string name="token_label">Token</string>
     <string name="save_token">Save</string>
     <string name="token_saved">Token saved</string>
@@ -25,7 +63,12 @@
     <string
         name="load_game_failed"
     >Could not send the game key. Check the connection.</string>
+    <string
+        name="fetch_games_failed"
+    >Could not fetch games. Check the connection.</string>
     <string name="standard_game_option">Standard game (local)</string>
+    <string name="use_last_game">Use last loaded game</string>
+    <string name="no_games_available">No ongoing games found</string>
     <string name="available_devices">Available devices</string>
     <string name="load_game_title">Load game</string>
     <string name="disconnect_button">Disconnect</string>
@@ -42,10 +85,14 @@
     <string
         name="debug_logs_description"
     >Write the app logs to a file until you turn it off.</string>
+    <string name="debug_logs_toggle">Enable logging</string>
     <string name="debug_logs_share_title">Share debug log</string>
     <string
         name="debug_logs_no_file"
     >No log file yet – enable logging first</string>
     <string name="debug_logs_file_size">File size: %1$s</string>
     <string name="debug_logs_file_name">File: %1$s</string>
+    <string
+        name="ota_description"
+    >Update the firmware on the chess board.</string>
 </resources>

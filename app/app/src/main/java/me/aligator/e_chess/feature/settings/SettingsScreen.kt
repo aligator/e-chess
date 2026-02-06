@@ -1,13 +1,11 @@
-package me.aligator.e_chess.ui
+package me.aligator.e_chess.feature.settings
 
 import android.app.Activity
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,14 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +28,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,10 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,10 +54,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import me.aligator.e_chess.AppLanguage
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.ConfigurationStore
-import me.aligator.e_chess.service.DebugLogManager
-import me.aligator.e_chess.service.bluetooth.OtaAction
-import me.aligator.e_chess.service.bluetooth.OtaStatus
+import me.aligator.e_chess.data.SettingsStore
+import me.aligator.e_chess.data.DebugLogStore
+import me.aligator.e_chess.platform.ble.BoardBleService
+import me.aligator.e_chess.platform.ble.BoardOtaAction
+import me.aligator.e_chess.platform.ble.BleState
+import me.aligator.e_chess.platform.ble.DeviceState
+import me.aligator.e_chess.platform.ble.OtaStatus
 import me.aligator.e_chess.ui.theme.EChessTheme
 
 private fun formatBytes(bytes: Long): String {
@@ -79,27 +77,27 @@ private data class DebugLogUiState(
 )
 
 @Composable
-fun ConfigScreen(
+fun SettingsScreen(
     selectedLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
-    otaAction: OtaAction? = null,
-    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService? = null,
+    otaAction: BoardOtaAction? = null,
+    bleService: BoardBleService? = null,
     onOtaSelectFile: (() -> Unit)? = null,
     otaFileUri: Uri? = null,
     onOtaFileConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val configStore = remember { ConfigurationStore(context.applicationContext) }
-    val viewModel: ConfigViewModel = viewModel()
+    val settingsStore = remember { SettingsStore(context.applicationContext) }
+    val viewModel: SettingsViewModel = viewModel()
 
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
     var debugLoggingEnabled by remember { mutableStateOf(false) }
 
-    LaunchedEffect(configStore) {
-        configStore.getLichessToken()?.let { token = it }
+    LaunchedEffect(settingsStore) {
+        settingsStore.getLichessToken()?.let { token = it }
     }
 
     LaunchedEffect(otaAction) {
@@ -119,100 +117,109 @@ fun ConfigScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        LanguageSelector(
-            selectedLanguage = selectedLanguage,
-            onLanguageSelected = onLanguageSelected,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = stringResource(R.string.config_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        TokenLink()
-
-        OutlinedTextField(
-            value = token,
-            onValueChange = { token = it },
-            label = { Text(stringResource(R.string.token_label)) },
-            singleLine = true,
-            modifier = Modifier
-                .padding(top = 8.dp)
-                .fillMaxWidth()
-        )
-        Button(
-            onClick = {
-                configStore.saveLichessToken(token)
-                savedMessage = context.getString(R.string.token_saved)
-            },
-            modifier = Modifier.padding(top = 12.dp)
-        ) { Text(stringResource(R.string.save_token)) }
-
-        if (savedMessage.isNotEmpty()) {
-            Text(
-                text = savedMessage,
+        SectionCard(
+            title = stringResource(R.string.language_label),
+            description = stringResource(R.string.language_description)
+        ) {
+            LanguageSelector(
+                selectedLanguage = selectedLanguage,
+                onLanguageSelected = onLanguageSelected,
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-        HorizontalDivider()
         Spacer(modifier = Modifier.height(16.dp))
 
-        DebugLogSection(
-            enabled = debugLoggingEnabled,
-            onToggle = { enabled ->
-                debugLoggingEnabled = enabled
-                if (enabled) {
-                    DebugLogManager.start(context)
-                } else {
-                    coroutineScope.launch {
-                        DebugLogManager.stopAndAwait()
-                        val uri = DebugLogManager.shareUri(context) ?: return@launch
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/octet-stream"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            clipData = ClipData.newRawUri("debug-log", uri)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        val chooserIntent = Intent.createChooser(
-                            shareIntent,
-                            context.getString(R.string.debug_logs_share_title)
-                        ).apply {
-                            if (context !is Activity) {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        SectionCard(
+            title = stringResource(R.string.settings_token_title),
+            description = stringResource(R.string.token_description)
+        ) {
+            TokenLink()
+
+            OutlinedTextField(
+                value = token,
+                onValueChange = { token = it },
+                label = { Text(stringResource(R.string.token_label)) },
+                singleLine = true,
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+            )
+            Button(
+                onClick = {
+                    settingsStore.saveLichessToken(token)
+                    savedMessage = context.getString(R.string.token_saved)
+                },
+                modifier = Modifier.padding(top = 12.dp)
+            ) { Text(stringResource(R.string.save_token)) }
+
+            if (savedMessage.isNotEmpty()) {
+                Text(
+                    text = savedMessage,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        SectionCard(
+            title = stringResource(R.string.debug_logs_title),
+            description = stringResource(R.string.debug_logs_description)
+        ) {
+            DebugLogSection(
+                enabled = debugLoggingEnabled,
+                onToggle = { enabled ->
+                    debugLoggingEnabled = enabled
+                    if (enabled) {
+                        DebugLogStore.start(context)
+                    } else {
+                        coroutineScope.launch {
+                            DebugLogStore.stopAndAwait()
+                            val uri = DebugLogStore.shareUri(context) ?: return@launch
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "application/octet-stream"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                clipData = ClipData.newRawUri("debug-log", uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             }
+                            val chooserIntent = Intent.createChooser(
+                                shareIntent,
+                                context.getString(R.string.debug_logs_share_title)
+                            ).apply {
+                                if (context !is Activity) {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                            }
+                            context.startActivity(chooserIntent)
                         }
-                        context.startActivity(chooserIntent)
                     }
                 }
-            }
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
+            )
+        }
 
         if (otaAction != null && onOtaSelectFile != null) {
-            OtaSection(
-                viewModel = viewModel,
-                otaAction = otaAction,
-                bleService = bleService,
-                onSelectFileClick = onOtaSelectFile
-            )
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionCard(
+                title = stringResource(R.string.ota_title),
+                description = stringResource(R.string.ota_description)
+            ) {
+                OtaSection(
+                    viewModel = viewModel,
+                    otaAction = otaAction,
+                    bleService = bleService,
+                    onSelectFileClick = onOtaSelectFile
+                )
+            }
         }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-private fun ConfigScreenPreview() {
+private fun SettingsScreenPreview() {
     EChessTheme {
-        ConfigScreen(
+        SettingsScreen(
             selectedLanguage = AppLanguage.DE,
             onLanguageSelected = {}
         )
@@ -226,15 +233,15 @@ private fun DebugLogSection(
 ) {
     val logUiState by produceState(
         initialValue = DebugLogUiState(
-            fileName = DebugLogManager.currentLogFileName(),
-            fileSizeBytes = DebugLogManager.currentLogFileSizeBytes() ?: 0L
+            fileName = DebugLogStore.currentLogFileName(),
+            fileSizeBytes = DebugLogStore.currentLogFileSizeBytes() ?: 0L
         ),
         key1 = enabled
     ) {
         while (true) {
             value = DebugLogUiState(
-                fileName = DebugLogManager.currentLogFileName(),
-                fileSizeBytes = DebugLogManager.currentLogFileSizeBytes() ?: 0L
+                fileName = DebugLogStore.currentLogFileName(),
+                fileSizeBytes = DebugLogStore.currentLogFileSizeBytes() ?: 0L
             )
             delay(1000)
         }
@@ -242,11 +249,6 @@ private fun DebugLogSection(
     val logAvailable = logUiState.fileSizeBytes > 0L
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.debug_logs_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -255,7 +257,7 @@ private fun DebugLogSection(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = stringResource(R.string.debug_logs_description),
+                text = stringResource(R.string.debug_logs_toggle),
                 modifier = Modifier.weight(1f)
             )
             Switch(
@@ -297,18 +299,18 @@ private fun DebugLogSection(
 
 @Composable
 private fun OtaSection(
-    viewModel: ConfigViewModel,
-    otaAction: OtaAction,
-    bleService: me.aligator.e_chess.service.bluetooth.BluetoothService?,
+    viewModel: SettingsViewModel,
+    otaAction: BoardOtaAction,
+    bleService: BoardBleService?,
     onSelectFileClick: () -> Unit
 ) {
     val otaState by otaAction.otaState.collectAsState()
     val uploadInProgress by viewModel.otaUploadInProgress.collectAsState()
     val bleState by (bleService?.ble?.bleState
-        ?: MutableStateFlow(me.aligator.e_chess.service.bluetooth.BleState())).collectAsState()
+        ?: MutableStateFlow(BleState())).collectAsState()
 
     val isDeviceConnected =
-        bleState.connectedDevice.deviceState == me.aligator.e_chess.service.bluetooth.DeviceState.CONNECTED
+        bleState.connectedDevice.deviceState == DeviceState.CONNECTED
 
     // Auto-reset UI after 3 seconds on completion or error
     LaunchedEffect(otaState.status) {
@@ -319,13 +321,6 @@ private fun OtaSection(
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.ota_title),
-            style = MaterialTheme.typography.titleMedium
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         when {
             otaState.status == OtaStatus.UPLOADING || uploadInProgress -> {
                 Column(
@@ -431,11 +426,6 @@ private fun LanguageSelector(
     var expanded by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.language_label),
-            style = MaterialTheme.typography.titleMedium
-        )
-
         OutlinedButton(
             onClick = { expanded = true },
             modifier = Modifier.padding(top = 8.dp)
@@ -461,6 +451,33 @@ private fun LanguageSelector(
                     }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SectionCard(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            content()
         }
     }
 }

@@ -5,14 +5,52 @@
     <string name="bluetooth_enable">Aktiver Bluetooth</string>
     <string name="bluetooth_unavailable">Bluetooth ikke tilgjengelig</string>
     <string name="permissions_required">Tillatelser kreves</string>
+    <string
+        name="ble_bluetooth_hint"
+    >Bluetooth kreves for å koble til brettet.</string>
+    <string
+        name="ble_unavailable_hint"
+    >Denne enheten støtter ikke Bluetooth.</string>
+    <string
+        name="ble_permissions_hint"
+    >Gi Bluetooth-tillatelser for å skanne og koble til.</string>
+    <string
+        name="ble_location_hint"
+    >Posisjon er nødvendig for BLE-skanning på Android.</string>
     <string name="location_button">Slå på posisjon</string>
-    <string name="service_connecting">Kobler til Bluetooth-tjeneste…</string>
     <string name="status_label">Status</string>
+    <string name="ble_status_connected">Tilkoblet</string>
+    <string name="ble_status_preparing">Klargjør tilkobling…</string>
+    <string name="ble_status_connecting">Kobler til…</string>
+    <string name="ble_status_disconnecting">Kobler fra…</string>
+    <string name="ble_status_disconnected">Frakoblet</string>
+    <string name="ble_status_unknown">Ukjent</string>
+    <string name="ble_connected_address">Enhet: %1$s</string>
+    <string name="setup_ready_title">Brett klart</string>
+    <string
+        name="setup_ready_description"
+    >Tilkoblet og klar til å laste et spill.</string>
+    <string name="setup_scanning_title">Skanner etter brett</string>
+    <string
+        name="setup_scanning_description"
+    >Velg brettet ditt fra listen.</string>
+    <string name="setup_ready_to_scan_title">Klar til å skanne</string>
+    <string
+        name="setup_ready_to_scan_description"
+    >Start et skann for å finne brettet ditt.</string>
+    <string name="setup_step_scan">1 Skann</string>
+    <string name="setup_step_connect">2 Koble til</string>
+    <string name="setup_step_load">3 Last</string>
     <string name="scan_start">Søk etter enheter</string>
     <string name="scan_stop">Stopp skann</string>
     <string name="connect_button">Koble til</string>
     <string name="unknown_device">Ukjent</string>
-    <string name="config_title">Lichess API-token</string>
+    <string name="last_connected_device">Sist tilkoblet enhet</string>
+    <string name="settings_token_title">Lichess API-token</string>
+    <string name="language_description">Velg appens språk.</string>
+    <string
+        name="token_description"
+    >Nødvendig for å laste og spille Lichess-spill.</string>
     <string name="token_label">Token</string>
     <string name="save_token">Lagre</string>
     <string name="token_saved">Token lagret</string>
@@ -25,7 +63,12 @@
     <string
         name="load_game_failed"
     >Kunne ikke sende spillnøkkelen. Sjekk tilkoblingen.</string>
+    <string
+        name="fetch_games_failed"
+    >Kunne ikke hente spill. Sjekk tilkoblingen.</string>
     <string name="standard_game_option">Standardspill (lokalt)</string>
+    <string name="use_last_game">Bruk sist lastede spill</string>
+    <string name="no_games_available">Ingen pågående spill funnet</string>
     <string name="available_devices">Tilgjengelige enheter</string>
     <string name="load_game_title">Last spill</string>
     <string name="disconnect_button">Koble fra</string>
@@ -44,10 +87,12 @@
     <string
         name="debug_logs_description"
     >Skriver app-loggene til en fil til du slår det av.</string>
+    <string name="debug_logs_toggle">Aktiver logging</string>
     <string name="debug_logs_share_title">Del debug-logg</string>
     <string
         name="debug_logs_no_file"
     >Ingen loggfil ennå – aktiver logging først</string>
     <string name="debug_logs_file_size">Filstørrelse: %1$s</string>
     <string name="debug_logs_file_name">Fil: %1$s</string>
+    <string name="ota_description">Oppdater fastvaren på sjakkbrettet.</string>
 </resources>

@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service.bluetooth
+package me.aligator.e_chess.platform.ble
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -106,7 +106,7 @@ data class BleState(
     val devices: List<SimpleDevice> = emptyList()
 )
 
-private const val LOG_TAG = "BLE"
+private const val LOG_TAG = "BleManager"
 
 data class BleResponse(
     val characteristic: UUID,
@@ -175,7 +175,7 @@ interface BleAction {
  * * abstracts away differences between android version
  * * provides utilities for sending and receiving larger data (chunking)
  */
-class Ble(
+class BleManager(
     private val parentScope: CoroutineScope,
     val context: Context,
     val serviceUuid: UUID

@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service
+package me.aligator.e_chess.data
 
 import android.content.Context
 import android.net.Uri
@@ -18,8 +18,8 @@ import java.io.InterruptedIOException
  * Minimal log collector that records the current process' logcat output into
  * an app-internal cache file. Intended for on-demand debugging by the user.
  */
-object DebugLogManager {
-    private const val LOG_TAG = "DebugLogManager"
+object DebugLogStore {
+    private const val LOG_TAG = "DebugLogStore"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var collectorJob: Job? = null
     private var logcatProcess: Process? = null

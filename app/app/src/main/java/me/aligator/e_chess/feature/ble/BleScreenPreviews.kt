@@ -1,4 +1,4 @@
-package me.aligator.e_chess.ui
+package me.aligator.e_chess.feature.ble
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -6,14 +6,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
-import me.aligator.e_chess.service.GameOption
-import me.aligator.e_chess.service.bluetooth.BleState
-import me.aligator.e_chess.service.bluetooth.ConnectionStep
-import me.aligator.e_chess.service.bluetooth.ConnectedDevice
-import me.aligator.e_chess.service.bluetooth.DeviceState
-import me.aligator.e_chess.ui.components.ConnectionStatusCard
-import me.aligator.e_chess.ui.components.DeviceScanner
-import me.aligator.e_chess.ui.components.GameLoader
+import me.aligator.e_chess.data.model.GameOption
+import me.aligator.e_chess.platform.ble.BleState
+import me.aligator.e_chess.platform.ble.ConnectionStep
+import me.aligator.e_chess.platform.ble.ConnectedDevice
+import me.aligator.e_chess.platform.ble.DeviceState
+import me.aligator.e_chess.feature.ble.components.ConnectionStatusCard
+import me.aligator.e_chess.feature.ble.components.DeviceScanner
+import me.aligator.e_chess.feature.ble.components.GameLoader
 import me.aligator.e_chess.ui.theme.EChessTheme
 
 /**
@@ -64,7 +64,9 @@ private fun BleScreenPreview(
             GameOption("def456", "vs Hikaru (def456)")
         ),
         isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady,
-        selectedGameKey = ""
+        selectedGameKey = "",
+        lastConnectedAddress = "AA:BB:CC:DD:EE:FF",
+        lastLoadedGame = "abc123"
     )
 
     BleContentPreview(
@@ -85,6 +87,7 @@ private fun BleContentPreview(
             GameLoader(
                 availableGames = uiState.availableGames,
                 selectedGameKey = uiState.selectedGameKey,
+                lastLoadedGame = uiState.lastLoadedGame,
                 onGameKeyChanged = {},
                 onLoadGame = {},
                 onFetchGames = {}
@@ -94,6 +97,7 @@ private fun BleContentPreview(
                 scanning = uiState.bleState.step == ConnectionStep.SCANNING,
                 devices = uiState.bleState.devices,
                 connectedDevice = uiState.bleState.connectedDevice,
+                lastConnectedAddress = uiState.lastConnectedAddress,
                 onStartScan = {},
                 onStopScan = {},
                 onConnect = {}

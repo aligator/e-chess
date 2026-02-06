@@ -1,4 +1,4 @@
-package me.aligator.e_chess.ui
+package me.aligator.e_chess.feature.settings
 
 import android.content.Context
 import android.net.Uri
@@ -9,31 +9,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import me.aligator.e_chess.service.bluetooth.OtaAction
+import me.aligator.e_chess.platform.ble.BoardOtaAction
+import me.aligator.e_chess.platform.ble.OtaStatus
 import java.io.InputStream
 
-private const val LOG_TAG = "ConfigViewModel"
+private const val LOG_TAG = "SettingsViewModel"
 
-class ConfigViewModel : ViewModel() {
-    private var otaAction: OtaAction? = null
+class SettingsViewModel : ViewModel() {
+    private var otaAction: BoardOtaAction? = null
 
     private val _otaUploadInProgress = MutableStateFlow(false)
     val otaUploadInProgress: StateFlow<Boolean> = _otaUploadInProgress.asStateFlow()
 
-    fun setOtaAction(action: OtaAction) {
+    fun setOtaAction(action: BoardOtaAction) {
         otaAction = action
 
         // Observe OTA state changes to auto-reset UI on completion, error, or disconnect
         viewModelScope.launch {
             action.otaState.collect { state ->
                 when (state.status) {
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.IDLE,
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.COMPLETED,
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.ERROR -> {
+                    OtaStatus.IDLE,
+                    OtaStatus.COMPLETED,
+                    OtaStatus.ERROR -> {
                         _otaUploadInProgress.value = false
                     }
 
-                    me.aligator.e_chess.service.bluetooth.OtaStatus.UPLOADING -> {
+                    OtaStatus.UPLOADING -> {
                         // Keep upload in progress
                     }
                 }

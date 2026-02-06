@@ -1,4 +1,4 @@
-package me.aligator.e_chess.ui.components
+package me.aligator.e_chess.feature.ble.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,13 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.GameOption
+import me.aligator.e_chess.data.model.GameOption
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameLoader(
     availableGames: List<GameOption>,
     selectedGameKey: String,
+    lastLoadedGame: String? = null,
     onGameKeyChanged: (String) -> Unit,
     onLoadGame: (String) -> Unit,
     onFetchGames: () -> Unit,
@@ -92,6 +94,18 @@ fun GameLoader(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            if (!lastLoadedGame.isNullOrBlank() && lastLoadedGame != selectedGameKey) {
+                TextButton(
+                    onClick = { onGameKeyChanged(lastLoadedGame) },
+                    modifier = Modifier.padding(bottom = 6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.use_last_game),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
             ExposedDropdownMenuBox(
                 expanded = expanded,
                 onExpandedChange = { expanded = it },
@@ -124,17 +138,25 @@ fun GameLoader(
                     )
 
                     // Available Lichess games
-                    availableGames.forEach { game ->
-                        if (game.id == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
-                            return@forEach
-                        }
+                    if (availableGames.isEmpty() && !isLoadingGames) {
                         DropdownMenuItem(
-                            text = { Text(game.displayName) },
-                            onClick = {
-                                onGameKeyChanged(game.id)
-                                expanded = false
-                            }
+                            text = { Text(stringResource(R.string.no_games_available)) },
+                            onClick = { expanded = false },
+                            enabled = false
                         )
+                    } else {
+                        availableGames.forEach { game ->
+                            if (game.id == "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+                                return@forEach
+                            }
+                            DropdownMenuItem(
+                                text = { Text(game.displayName) },
+                                onClick = {
+                                    onGameKeyChanged(game.id)
+                                    expanded = false
+                                }
+                            )
+                        }
                     }
                 }
             }

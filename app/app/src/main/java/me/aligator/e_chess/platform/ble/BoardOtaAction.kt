@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service.bluetooth
+package me.aligator.e_chess.platform.ble
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
@@ -18,7 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.UUID
 
-private const val LOG_TAG = "OtaAction"
+private const val LOG_TAG = "BoardOtaAction"
 
 private val OTA_ACTION_CHARACTERISTIC_UUID: UUID =
     UUID.fromString("5952abbd-0d7d-4f2d-b0bc-8b3ac5fb8686")
@@ -52,8 +52,8 @@ data class OtaState(
     val totalBytes: Long = 0
 )
 
-class OtaAction(
-    private val ble: Ble
+class BoardOtaAction(
+    private val ble: BleManager
 ) : BleAction {
     private val json = Json { ignoreUnknownKeys = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

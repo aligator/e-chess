@@ -1,4 +1,4 @@
-package me.aligator.e_chess.ui.components
+package me.aligator.e_chess.feature.ble.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -17,25 +15,36 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.aligator.e_chess.R
-import me.aligator.e_chess.service.bluetooth.ConnectedDevice
-import me.aligator.e_chess.service.bluetooth.DeviceState
-import me.aligator.e_chess.service.bluetooth.SimpleDevice
+import me.aligator.e_chess.platform.ble.ConnectedDevice
+import me.aligator.e_chess.platform.ble.DeviceState
+import me.aligator.e_chess.platform.ble.SimpleDevice
 
 @Composable
 fun DeviceScanner(
     scanning: Boolean,
     devices: List<SimpleDevice>,
     connectedDevice: ConnectedDevice,
+    lastConnectedAddress: String? = null,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onConnect: (SimpleDevice) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val orderedDevices = remember(devices, connectedDevice, lastConnectedAddress) {
+        devices.sortedWith(
+            compareByDescending<SimpleDevice> { it.address == connectedDevice.address }
+                .thenByDescending { it.address == lastConnectedAddress }
+                .thenBy { it.name ?: "" }
+                .thenBy { it.address }
+        )
+    }
+
     Column(modifier = modifier) {
         Button(
             onClick = if (scanning) onStopScan else onStartScan,
@@ -58,10 +67,11 @@ fun DeviceScanner(
             )
         }
 
-        devices.forEach { device ->
+        orderedDevices.forEach { device ->
             DeviceCard(
                 device = device,
                 connectedDevice = connectedDevice,
+                isLastConnected = device.address == lastConnectedAddress,
                 onConnect = onConnect
             )
         }
@@ -72,6 +82,7 @@ fun DeviceScanner(
 private fun DeviceCard(
     device: SimpleDevice,
     connectedDevice: ConnectedDevice,
+    isLastConnected: Boolean,
     onConnect: (SimpleDevice) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -96,6 +107,14 @@ private fun DeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            if (isLastConnected && connectedDevice.deviceState != DeviceState.CONNECTED) {
+                Text(
+                    text = stringResource(R.string.last_connected_device),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
             Button(
                 onClick = { onConnect(device) },
                 enabled = !isConnectingToThisDevice,

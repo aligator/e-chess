@@ -52,7 +52,7 @@
         </provider>
 
         <service
-            android:name=".service.bluetooth.BluetoothService"
+            android:name=".platform.ble.BoardBleService"
             android:enabled="true"
             android:exported="true"
         />

@@ -12,21 +12,21 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import me.aligator.e_chess.service.ConfigurationStore
+import me.aligator.e_chess.data.SettingsStore
 import me.aligator.e_chess.ui.theme.EChessTheme
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-    private lateinit var configStore: ConfigurationStore
+    private lateinit var settingsStore: SettingsStore
     private var currentLanguage by mutableStateOf<AppLanguage?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        configStore = ConfigurationStore(applicationContext)
+        settingsStore = SettingsStore(applicationContext)
 
         // Load language preference
-        val languageCode = configStore.getLanguage()
+        val languageCode = settingsStore.getLanguage()
         val appLanguage = AppLanguage.fromCode(languageCode)
         currentLanguage = appLanguage
 
@@ -41,8 +41,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-        val configStore = ConfigurationStore(newBase)
-        val languageCode = configStore.getLanguage()
+        val settingsStore = SettingsStore(newBase)
+        val languageCode = settingsStore.getLanguage()
         val appLanguage = AppLanguage.fromCode(languageCode)
 
         val context = if (appLanguage != AppLanguage.SYSTEM) {

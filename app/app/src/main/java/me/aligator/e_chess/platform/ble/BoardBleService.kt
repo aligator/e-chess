@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service.bluetooth
+package me.aligator.e_chess.platform.ble
 
 import android.app.Service
 import android.content.Intent
@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
-private const val LOG_TAG = "BluetoothService"
+private const val LOG_TAG = "BoardBleService"
 
 /**
  * UUID of the chess board BLE service.
@@ -21,51 +21,51 @@ private const val LOG_TAG = "BluetoothService"
  */
 private val SERVICE_UUID: UUID = UUID.fromString("b4d75b6c-7284-4268-8621-6e3cef3c6ac4")
 
-class BluetoothService : Service() {
+class BoardBleService : Service() {
     inner class LocalBinder : Binder() {
-        val service: BluetoothService
-            get() = this@BluetoothService
+        val service: BoardBleService
+            get() = this@BoardBleService
     }
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    lateinit var ble: Ble
+    lateinit var ble: BleManager
 
     /**
      * Bridges http requests from the board to an upstream api.
      */
-    private lateinit var httpBridgeAction: HttpBleBridgeAction
+    private lateinit var httpBridgeAction: BoardHttpBridgeAction
 
     /**
      * Connects to the board to set / query the board state.
      */
-    lateinit var chessBoardAction: ChessBoardDeviceAction
+    lateinit var boardControlAction: BoardControlAction
 
     /**
      * Handles OTA firmware updates.
      */
-    lateinit var otaAction: OtaAction
+    lateinit var otaAction: BoardOtaAction
 
 
     override fun onCreate() {
         super.onCreate()
-        ble = Ble(
+        ble = BleManager(
             parentScope = serviceScope,
             context = applicationContext,
             serviceUuid = SERVICE_UUID
         )
         ble.checkBluetooth()
-        httpBridgeAction = HttpBleBridgeAction(ble, applicationContext)
-        chessBoardAction = ChessBoardDeviceAction(ble)
-        otaAction = OtaAction(ble)
+        httpBridgeAction = BoardHttpBridgeAction(ble, applicationContext)
+        boardControlAction = BoardControlAction(ble)
+        otaAction = BoardOtaAction(ble)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onDestroy() {
         httpBridgeAction.onDestroy()
-        chessBoardAction.onDestroy()
+        boardControlAction.onDestroy()
         otaAction.onDestroy()
         ble.onDestroy()
         super.onDestroy()

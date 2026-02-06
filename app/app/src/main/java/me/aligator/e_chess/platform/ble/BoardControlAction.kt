@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service.bluetooth
+package me.aligator.e_chess.platform.ble
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.update
 import org.json.JSONObject
 import java.util.UUID
 
-private val LOG_TAG = "ChessBoardDeviceAction"
+private val LOG_TAG = "BoardControlAction"
 
 private val ACTION_CHARACTERISTIC_UUID: UUID = UUID.fromString("0de794de-c3a3-48b8-bd81-893d30342c87")
 private val EVENT_CHARACTERISTIC_UUID: UUID = UUID.fromString("a1a289ce-d553-4d81-b52d-44e6484507b3")
@@ -24,8 +24,8 @@ private val EVENT_CHARACTERISTIC_UUID: UUID = UUID.fromString("a1a289ce-d553-4d8
  *
  * All messages are wrapped in a Frame<T> JSON structure: {"v": 1, ...message}
  */
-class ChessBoardDeviceAction(
-    val ble: Ble,
+class BoardControlAction(
+    val ble: BleManager,
 ) : BleAction {
     private var actionCharacteristic: BluetoothGattCharacteristic? = null
     private var eventCharacteristic: BluetoothGattCharacteristic? = null

@@ -11,7 +11,6 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,35 +37,35 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
-import me.aligator.e_chess.service.ConfigurationStore
-import me.aligator.e_chess.service.DebugLogManager
-import me.aligator.e_chess.ui.BleScreen
-import me.aligator.e_chess.ui.ConfigScreen
-import me.aligator.e_chess.service.bluetooth.BluetoothService
-import me.aligator.e_chess.service.bluetooth.hasPermissions
-import me.aligator.e_chess.service.bluetooth.requiredPermissions
+import me.aligator.e_chess.data.SettingsStore
+import me.aligator.e_chess.data.DebugLogStore
+import me.aligator.e_chess.feature.ble.BleScreen
+import me.aligator.e_chess.feature.settings.SettingsScreen
+import me.aligator.e_chess.platform.ble.BoardBleService
+import me.aligator.e_chess.platform.ble.hasPermissions
+import me.aligator.e_chess.platform.ble.requiredPermissions
 
 private enum class AppDestination {
     BLE,
-    CONFIG
+    SETTINGS
 }
 
 @Composable
 fun EChessApp() {
     val context = LocalContext.current
-    val configStore = remember { ConfigurationStore(context.applicationContext) }
+    val settingsStore = remember { SettingsStore(context.applicationContext) }
     val isPreview = LocalInspectionMode.current
 
     var destination by rememberSaveable { mutableStateOf(AppDestination.BLE) }
     var language by rememberSaveable {
-        mutableStateOf(AppLanguage.fromCode(configStore.getLanguage()))
+        mutableStateOf(AppLanguage.fromCode(settingsStore.getLanguage()))
     }
     var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
-    var bluetoothService by remember { mutableStateOf<BluetoothService?>(null) }
+    var bluetoothService by remember { mutableStateOf<BoardBleService?>(null) }
 
     // Clear previous debug logs on each app start.
     LaunchedEffect(Unit) {
-        DebugLogManager.clearAllLogs(context)
+        DebugLogStore.clearAllLogs(context)
     }
 
     // Create launchers BEFORE CompositionLocalProvider
@@ -87,13 +86,13 @@ fun EChessApp() {
         }
     }
 
-    // Bind to BluetoothService
+    // Bind to BoardBleService
     DisposableEffect(Unit) {
         if (isPreview) return@DisposableEffect onDispose {}
 
         val connection = object : android.content.ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-                bluetoothService = (binder as? BluetoothService.LocalBinder)?.service
+                bluetoothService = (binder as? BoardBleService.LocalBinder)?.service
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -101,12 +100,12 @@ fun EChessApp() {
             }
         }
 
-        val intent = Intent(context, BluetoothService::class.java)
+        val intent = Intent(context, BoardBleService::class.java)
         context.startService(intent)
         val bound = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
 
         if (!bound) {
-            Log.e("AppRoot", "Failed to bind BluetoothService")
+            Log.e("AppRoot", "Failed to bind BoardBleService")
         }
 
         onDispose {
@@ -153,8 +152,8 @@ fun EChessApp() {
                         label = { Text(stringResource(R.string.nav_chess)) }
                     )
                     NavigationBarItem(
-                        selected = destination == AppDestination.CONFIG,
-                        onClick = { destination = AppDestination.CONFIG },
+                        selected = destination == AppDestination.SETTINGS,
+                        onClick = { destination = AppDestination.SETTINGS },
                         icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                         label = { Text(stringResource(R.string.nav_settings)) }
                     )
@@ -172,11 +171,11 @@ fun EChessApp() {
                         bluetoothService = bluetoothService
                     )
 
-                    AppDestination.CONFIG -> ConfigScreen(
+                    AppDestination.SETTINGS -> SettingsScreen(
                         selectedLanguage = language,
                         onLanguageSelected = { newLanguage ->
                             language = newLanguage
-                            configStore.saveLanguage(newLanguage.code)
+                            settingsStore.saveLanguage(newLanguage.code)
                         },
                         otaAction = bluetoothService?.otaAction,
                         bleService = bluetoothService,

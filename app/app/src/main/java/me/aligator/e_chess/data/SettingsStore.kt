@@ -1,4 +1,4 @@
-package me.aligator.e_chess.service
+package me.aligator.e_chess.data
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -9,6 +9,7 @@ import androidx.core.content.edit
 private const val PREF_NAME = "app_configuration"
 private const val KEY_LICHESS_TOKEN = "lichess_token"
 private const val KEY_LAST_GAME = "last_loaded_game"
+private const val KEY_LAST_CONNECTED_DEVICE = "last_connected_device"
 private const val KEY_LANGUAGE = "language"
 
 /**
@@ -18,7 +19,7 @@ private const val KEY_LANGUAGE = "language"
  * - Last loaded game key
  * - User language preference
  */
-class ConfigurationStore(private val context: Context) {
+class SettingsStore(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
@@ -44,6 +45,20 @@ class ConfigurationStore(private val context: Context) {
                 remove(KEY_LAST_GAME)
             } else {
                 putString(KEY_LAST_GAME, gameKey.trim())
+            }
+        }
+    }
+
+    // Last Connected Device
+    fun getLastConnectedDeviceAddress(): String? =
+        prefs.getString(KEY_LAST_CONNECTED_DEVICE, null)?.takeIf { it.isNotBlank() }
+
+    fun saveLastConnectedDeviceAddress(address: String?) {
+        prefs.edit {
+            if (address.isNullOrBlank()) {
+                remove(KEY_LAST_CONNECTED_DEVICE)
+            } else {
+                putString(KEY_LAST_CONNECTED_DEVICE, address.trim())
             }
         }
     }

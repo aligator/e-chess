@@ -1,11 +1,11 @@
-package me.aligator.e_chess.service.bluetooth
+package me.aligator.e_chess.platform.ble
 
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattService
 import android.content.Context
 import android.util.Log
-import me.aligator.e_chess.service.ConfigurationStore
+import me.aligator.e_chess.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,7 +28,7 @@ import java.io.BufferedReader
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-private const val LOG_TAG = "HttpBleBridge"
+private const val LOG_TAG = "BoardHttpBridgeAction"
 
 private val BRIDGE_REQUEST_CHARACTERISTIC_UUID = UUID.fromString("aa8381af-049a-46c2-9c92-1db7bd28883c")
 private val BRIDGE_RESPONSE_CHARACTERISTIC_UUID = UUID.fromString("29e463e6-a210-4234-8d1d-4daf345b41de")
@@ -113,8 +113,8 @@ private const val PROTOCOL_VERSION = 1
  * a special stream mode is implemented. This mode creates a long lived thread and
  * creates a new response for each "line".
  */
-class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
-    private val configStore = ConfigurationStore(context)
+class BoardHttpBridgeAction(val ble: BleManager, context: Context) : BleAction {
+    private val settingsStore = SettingsStore(context)
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -249,7 +249,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                 .get()
 
             if (url.startsWith("https://lichess.org/api")) {
-                configStore.getLichessToken()?.let { token ->
+                settingsStore.getLichessToken()?.let { token ->
                     requestBuilder.header("Authorization", "Bearer $token")
                 }
             }
@@ -277,7 +277,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                 .post(requestBody)
 
             if (url.startsWith("https://lichess.org/api")) {
-                configStore.getLichessToken()?.let { token ->
+                settingsStore.getLichessToken()?.let { token ->
                     requestBuilder.header("Authorization", "Bearer $token")
                 }
             }
@@ -305,7 +305,7 @@ class HttpBleBridgeAction(val ble: Ble, context: Context) : BleAction {
                     .get()
 
                 if (url.startsWith("https://lichess.org/api")) {
-                    configStore.getLichessToken()?.let { token ->
+                    settingsStore.getLichessToken()?.let { token ->
                         requestBuilder.header("Authorization", "Bearer $token")
                     }
                 }
