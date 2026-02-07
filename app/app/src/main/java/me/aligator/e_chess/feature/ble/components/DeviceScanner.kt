@@ -23,23 +23,20 @@ import androidx.compose.ui.unit.dp
 import me.aligator.e_chess.R
 import me.aligator.e_chess.platform.ble.ConnectedDevice
 import me.aligator.e_chess.platform.ble.DeviceState
-import me.aligator.e_chess.platform.ble.SimpleDevice
 
 @Composable
 fun DeviceScanner(
     scanning: Boolean,
-    devices: List<SimpleDevice>,
+    devices: List<me.aligator.e_chess.feature.ble.BleDeviceItem>,
     connectedDevice: ConnectedDevice,
-    lastConnectedAddress: String? = null,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
-    onConnect: (SimpleDevice) -> Unit,
+    onConnect: (me.aligator.e_chess.feature.ble.BleDeviceItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val orderedDevices = remember(devices, connectedDevice, lastConnectedAddress) {
+    val orderedDevices = remember(devices, connectedDevice) {
         devices.sortedWith(
-            compareByDescending<SimpleDevice> { it.address == connectedDevice.address }
-                .thenByDescending { it.address == lastConnectedAddress }
+            compareByDescending<me.aligator.e_chess.feature.ble.BleDeviceItem> { it.address == connectedDevice.address }
                 .thenBy { it.name ?: "" }
                 .thenBy { it.address }
         )
@@ -71,7 +68,6 @@ fun DeviceScanner(
             DeviceCard(
                 device = device,
                 connectedDevice = connectedDevice,
-                isLastConnected = device.address == lastConnectedAddress,
                 onConnect = onConnect
             )
         }
@@ -80,10 +76,9 @@ fun DeviceScanner(
 
 @Composable
 private fun DeviceCard(
-    device: SimpleDevice,
+    device: me.aligator.e_chess.feature.ble.BleDeviceItem,
     connectedDevice: ConnectedDevice,
-    isLastConnected: Boolean,
-    onConnect: (SimpleDevice) -> Unit,
+    onConnect: (me.aligator.e_chess.feature.ble.BleDeviceItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isConnectingToThisDevice = (
@@ -107,14 +102,6 @@ private fun DeviceCard(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 4.dp)
             )
-            if (isLastConnected && connectedDevice.deviceState != DeviceState.CONNECTED) {
-                Text(
-                    text = stringResource(R.string.last_connected_device),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
             Button(
                 onClick = { onConnect(device) },
                 enabled = !isConnectingToThisDevice,

@@ -4,6 +4,8 @@ import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattService
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,12 +33,16 @@ class BoardControlAction(
     private var eventCharacteristic: BluetoothGattCharacteristic? = null
     private var gatt: BluetoothGatt? = null
     private val eventBuffer = StringBuilder()
+    private val timeoutHandler = Handler(Looper.getMainLooper())
 
     private val _isLoadingGame = MutableStateFlow(false)
     val isLoadingGame: StateFlow<Boolean> = _isLoadingGame.asStateFlow()
 
     private val _ongoingGames = MutableStateFlow<String?>(null)
     val ongoingGames: StateFlow<String?> = _ongoingGames.asStateFlow()
+
+    private val _boardFen = MutableStateFlow<String?>(null)
+    val boardFen: StateFlow<String?> = _boardFen.asStateFlow()
 
     private val _isLoadingGames = MutableStateFlow(false)
     val isLoadingGames: StateFlow<Boolean> = _isLoadingGames.asStateFlow()
@@ -53,9 +59,11 @@ class BoardControlAction(
         actionCharacteristic = null
         eventCharacteristic = null
         gatt = null
+        timeoutHandler.removeCallbacksAndMessages(null)
         _isLoadingGame.value = false
         _isLoadingGames.value = false
         _ongoingGames.value = null
+        _boardFen.value = null
         eventBuffer.clear()
     }
 
@@ -112,6 +120,11 @@ class BoardControlAction(
                     val gameKey = json.getString("game_key")
                     Log.d(LOG_TAG, "Game loaded: $gameKey")
                     _isLoadingGame.value = false
+                }
+
+                "board_state" -> {
+                    val fen = json.getString("fen")
+                    _boardFen.value = fen
                 }
 
                 else -> {
@@ -173,7 +186,22 @@ class BoardControlAction(
         val command = JSONObject()
         command.put("type", "load_new_game")
         command.put("game_key", key)
-        return sendGameCommand(command)
+        val sent = sendGameCommand(command)
+        if (!sent) {
+            _isLoadingGame.value = false
+            return false
+        }
+        // Safety timeout: clear loading if board never responds (e.g., invalid game id)
+        timeoutHandler.postDelayed(
+            {
+                if (_isLoadingGame.value) {
+                    Log.w(LOG_TAG, "Game load timed out, resetting loading flag")
+                    _isLoadingGame.value = false
+                }
+            },
+            8_000
+        )
+        return true
     }
 
     fun loadOpenGames(): Boolean {

@@ -59,14 +59,16 @@ private fun BleScreenPreview(
 ) {
     val uiState = BleUiState(
         bleState = bleState,
+        devices = listOf(
+            BleDeviceItem("Mock Board A", "00:11:22:33:44:55"),
+            BleDeviceItem("Mock Board B", "AA:BB:CC:DD:EE:FF")
+        ),
         availableGames = listOf(
             GameOption("abc123", "vs Magnus (abc123)"),
             GameOption("def456", "vs Hikaru (def456)")
         ),
         isConnected = bleState.connectedDevice.deviceState == DeviceState.CONNECTED && bleState.connectedDevice.characteristicsReady,
-        selectedGameKey = "",
-        lastConnectedAddress = "AA:BB:CC:DD:EE:FF",
-        lastLoadedGame = "abc123"
+        selectedGameKey = ""
     )
 
     BleContentPreview(
@@ -87,7 +89,6 @@ private fun BleContentPreview(
             GameLoader(
                 availableGames = uiState.availableGames,
                 selectedGameKey = uiState.selectedGameKey,
-                lastLoadedGame = uiState.lastLoadedGame,
                 onGameKeyChanged = {},
                 onLoadGame = {},
                 onFetchGames = {}
@@ -95,9 +96,8 @@ private fun BleContentPreview(
         } else {
             DeviceScanner(
                 scanning = uiState.bleState.step == ConnectionStep.SCANNING,
-                devices = uiState.bleState.devices,
+                devices = uiState.devices,
                 connectedDevice = uiState.bleState.connectedDevice,
-                lastConnectedAddress = uiState.lastConnectedAddress,
                 onStartScan = {},
                 onStopScan = {},
                 onConnect = {}

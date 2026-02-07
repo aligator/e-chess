@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.location.LocationManager
 import android.provider.Settings
+import android.util.Log
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -37,7 +37,7 @@ import me.aligator.e_chess.platform.ble.BoardBleService
 import me.aligator.e_chess.platform.ble.ConnectionStep
 import me.aligator.e_chess.feature.ble.components.ConnectionStatusCard
 import me.aligator.e_chess.feature.ble.components.DeviceScanner
-import me.aligator.e_chess.feature.ble.components.GameLoader
+import me.aligator.e_chess.ui.AppTopBar
 import me.aligator.e_chess.ui.UiEvent
 import me.aligator.e_chess.ui.UiMessage
 
@@ -45,6 +45,14 @@ private fun isLocationEnabled(context: Context): Boolean {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
     return locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
             locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+}
+
+private fun Context.safeStartActivity(intent: Intent) {
+    try {
+        startActivity(intent)
+    } catch (e: SecurityException) {
+        Log.w("BleScreen", "startActivity blocked by missing permission", e)
+    }
 }
 
 private sealed class BleScreenState {
@@ -55,16 +63,17 @@ private sealed class BleScreenState {
         val action: (() -> Unit)? = null,
     ) : BleScreenState()
 
-    data class Ready(
-        val showSetupBanner: Boolean = true
-    ) : BleScreenState()
+    data object Ready : BleScreenState()
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun BleScreen(
     permissionsGranted: Boolean,
     modifier: Modifier = Modifier,
     bluetoothService: BoardBleService? = null,
+    mockModeEnabled: Boolean = false,
+    onOpenGame: () -> Unit,
     viewModel: BleViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -76,6 +85,10 @@ fun BleScreen(
 
     LaunchedEffect(bluetoothService) {
         viewModel.setBluetoothService(bluetoothService)
+    }
+
+    LaunchedEffect(mockModeEnabled) {
+        viewModel.setMockMode(mockModeEnabled)
     }
 
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -114,6 +127,7 @@ fun BleScreen(
     }
 
     val screenState = when {
+        mockModeEnabled -> BleScreenState.Ready
         uiState.bleState.step == ConnectionStep.DISABLED ->
             BleScreenState.Requirement(
                 title = stringResource(R.string.bluetooth_enable),
@@ -121,7 +135,7 @@ fun BleScreen(
                 actionLabel = stringResource(R.string.bluetooth_enable),
                 action = {
                     val intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                    context.startActivity(intent)
+                    context.safeStartActivity(intent)
                 }
             )
 
@@ -144,16 +158,19 @@ fun BleScreen(
                 actionLabel = stringResource(R.string.location_button),
                 action = {
                     val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                    context.startActivity(intent)
+                    context.safeStartActivity(intent)
                 }
             )
 
-        else -> BleScreenState.Ready()
+        else -> BleScreenState.Ready
     }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = {
+            AppTopBar(title = stringResource(R.string.nav_chess))
+        }
     ) { innerPadding ->
         val contentModifier = Modifier.padding(innerPadding)
 
@@ -167,17 +184,14 @@ fun BleScreen(
                     modifier = contentModifier
                 )
 
-            is BleScreenState.Ready ->
+            BleScreenState.Ready ->
                 BleContent(
                     uiState = uiState,
-                    showSetupBanner = screenState.showSetupBanner,
                     onStartScan = viewModel::startScan,
                     onStopScan = viewModel::stopScan,
                     onConnect = viewModel::connect,
                     onDisconnect = viewModel::disconnect,
-                    onLoadGame = viewModel::loadGame,
-                    onFetchGames = viewModel::fetchGames,
-                    onGameKeyChanged = viewModel::setSelectedGameKey,
+                    onOpenGame = onOpenGame,
                     modifier = contentModifier
                 )
         }
@@ -219,116 +233,37 @@ private fun RequirementCard(
 @Composable
 private fun BleContent(
     uiState: BleUiState,
-    showSetupBanner: Boolean,
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
-    onConnect: (me.aligator.e_chess.platform.ble.SimpleDevice) -> Unit,
+    onConnect: (BleDeviceItem) -> Unit,
     onDisconnect: () -> Unit,
-    onLoadGame: (String) -> Unit,
-    onFetchGames: () -> Unit,
-    onGameKeyChanged: (String) -> Unit,
+    onOpenGame: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        if (showSetupBanner) {
-            SetupStatusBanner(
-                isConnected = uiState.isConnected,
-                isScanning = uiState.bleState.step == ConnectionStep.SCANNING
-            )
-        }
         ConnectionStatusCard(
             connectionState = uiState.bleState.connectedDevice,
             onDisconnect = onDisconnect
         )
 
         if (uiState.isConnected) {
-            GameLoader(
-                availableGames = uiState.availableGames,
-                selectedGameKey = uiState.selectedGameKey,
-                lastLoadedGame = uiState.lastLoadedGame,
-                onGameKeyChanged = onGameKeyChanged,
-                onLoadGame = onLoadGame,
-                onFetchGames = onFetchGames,
-                isLoadingGames = uiState.isLoadingGames,
-                isLoadingGame = uiState.isLoadingGame
-            )
+            Button(
+                onClick = onOpenGame,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(stringResource(R.string.select_game))
+            }
         } else {
             DeviceScanner(
                 scanning = uiState.bleState.step == ConnectionStep.SCANNING,
-                devices = uiState.bleState.devices,
+                devices = uiState.devices,
                 connectedDevice = uiState.bleState.connectedDevice,
-                lastConnectedAddress = uiState.lastConnectedAddress,
                 onStartScan = onStartScan,
                 onStopScan = onStopScan,
                 onConnect = onConnect
             )
-        }
-    }
-}
-
-@Composable
-private fun SetupStatusBanner(
-    isConnected: Boolean,
-    isScanning: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val title = when {
-        isConnected -> stringResource(R.string.setup_ready_title)
-        isScanning -> stringResource(R.string.setup_scanning_title)
-        else -> stringResource(R.string.setup_ready_to_scan_title)
-    }
-    val description = when {
-        isConnected -> stringResource(R.string.setup_ready_description)
-        isScanning -> stringResource(R.string.setup_scanning_description)
-        else -> stringResource(R.string.setup_ready_to_scan_description)
-    }
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        colors = CardDefaults.cardColors()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = title)
-            Text(
-                text = description,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-            val step = when {
-                isConnected -> 3
-                isScanning -> 2
-                else -> 1
-            }
-            StepperRow(currentStep = step, modifier = Modifier.padding(top = 10.dp))
-        }
-    }
-}
-
-@Composable
-private fun StepperRow(
-    currentStep: Int,
-    modifier: Modifier = Modifier
-) {
-    val steps = listOf(
-        stringResource(R.string.setup_step_scan),
-        stringResource(R.string.setup_step_connect),
-        stringResource(R.string.setup_step_load)
-    )
-    androidx.compose.foundation.layout.Row(modifier = modifier) {
-        steps.forEachIndexed { index, label ->
-            val isCurrent = currentStep == index + 1
-            Text(
-                text = label,
-                style = if (isCurrent) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (index < steps.lastIndex) {
-                Text(
-                    text = "  >  ",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

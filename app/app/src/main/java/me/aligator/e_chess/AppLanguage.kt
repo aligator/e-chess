@@ -6,7 +6,7 @@ enum class AppLanguage(val code: String, val locale: Locale, val flag: String) {
     SYSTEM("system", Locale.getDefault(), "🌐"),
     DE("de", Locale.GERMAN, "🇩🇪"),
     EN("en", Locale.ENGLISH, "🇬🇧"),
-    NO("nb", Locale("nb"), "🇳🇴");
+    NO("nb", Locale.forLanguageTag("nb"), "🇳🇴");
 
     companion object {
         fun fromCode(code: String?): AppLanguage {

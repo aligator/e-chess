@@ -2,21 +2,17 @@ package me.aligator.e_chess.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.core.os.LocaleListCompat
-import java.util.Locale
 import androidx.core.content.edit
 
 private const val PREF_NAME = "app_configuration"
 private const val KEY_LICHESS_TOKEN = "lichess_token"
-private const val KEY_LAST_GAME = "last_loaded_game"
-private const val KEY_LAST_CONNECTED_DEVICE = "last_connected_device"
 private const val KEY_LANGUAGE = "language"
+private const val KEY_MOCK_MODE = "mock_mode_enabled"
 
 /**
  * Central configuration storage for the app.
  * Stores:
  * - Lichess API token
- * - Last loaded game key
  * - User language preference
  */
 class SettingsStore(private val context: Context) {
@@ -32,33 +28,6 @@ class SettingsStore(private val context: Context) {
                 remove(KEY_LICHESS_TOKEN)
             } else {
                 putString(KEY_LICHESS_TOKEN, token.trim())
-            }
-        }
-    }
-
-    // Last Loaded Game
-    fun getLastLoadedGame(): String? = prefs.getString(KEY_LAST_GAME, null)?.takeIf { it.isNotBlank() }
-
-    fun saveLastLoadedGame(gameKey: String?) {
-        prefs.edit {
-            if (gameKey.isNullOrBlank()) {
-                remove(KEY_LAST_GAME)
-            } else {
-                putString(KEY_LAST_GAME, gameKey.trim())
-            }
-        }
-    }
-
-    // Last Connected Device
-    fun getLastConnectedDeviceAddress(): String? =
-        prefs.getString(KEY_LAST_CONNECTED_DEVICE, null)?.takeIf { it.isNotBlank() }
-
-    fun saveLastConnectedDeviceAddress(address: String?) {
-        prefs.edit {
-            if (address.isNullOrBlank()) {
-                remove(KEY_LAST_CONNECTED_DEVICE)
-            } else {
-                putString(KEY_LAST_CONNECTED_DEVICE, address.trim())
             }
         }
     }
@@ -90,6 +59,12 @@ class SettingsStore(private val context: Context) {
                 putString(KEY_LANGUAGE, languageCode)
             }
         }
+    }
+
+    fun isMockModeEnabled(): Boolean = prefs.getBoolean(KEY_MOCK_MODE, false)
+
+    fun setMockModeEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_MOCK_MODE, enabled) }
     }
 
 

@@ -26,6 +26,7 @@ pub const EVENT_CHARACTERISTIC_UUID: &str = "a1a289ce-d553-4d81-b52d-44e6484507b
 pub enum SerializableGameStateEvent {
     OngoingGamesLoaded { games: Vec<OngoingGame> },
     GameLoaded { game_key: String },
+    BoardState { fen: String },
 }
 
 /// Game handler that manages game state communication over BLE
@@ -90,6 +91,11 @@ impl GameHandler {
                     }
                     GameStateEvent::GameLoaded(game_key) => {
                         Some(SerializableGameStateEvent::GameLoaded { game_key })
+                    }
+                    GameStateEvent::UpdateGame(state) => {
+                        Some(SerializableGameStateEvent::BoardState {
+                            fen: format!("{}", state.current_position),
+                        })
                     }
                     _ => None,
                 };

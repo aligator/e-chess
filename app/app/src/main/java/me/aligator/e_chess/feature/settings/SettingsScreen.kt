@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
@@ -30,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +56,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import me.aligator.e_chess.AppLanguage
+import me.aligator.e_chess.BuildConfig
 import me.aligator.e_chess.R
 import me.aligator.e_chess.data.SettingsStore
 import me.aligator.e_chess.data.DebugLogStore
@@ -61,6 +65,7 @@ import me.aligator.e_chess.platform.ble.BoardOtaAction
 import me.aligator.e_chess.platform.ble.BleState
 import me.aligator.e_chess.platform.ble.DeviceState
 import me.aligator.e_chess.platform.ble.OtaStatus
+import me.aligator.e_chess.ui.AppTopBar
 import me.aligator.e_chess.ui.theme.EChessTheme
 
 private fun formatBytes(bytes: Long): String {
@@ -76,11 +81,14 @@ private data class DebugLogUiState(
     val fileSizeBytes: Long
 )
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     selectedLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
+    mockModeEnabled: Boolean = false,
+    onMockModeChanged: (Boolean) -> Unit = {},
     otaAction: BoardOtaAction? = null,
     bleService: BoardBleService? = null,
     onOtaSelectFile: (() -> Unit)? = null,
@@ -95,9 +103,11 @@ fun SettingsScreen(
     var token by rememberSaveable { mutableStateOf("") }
     var savedMessage by remember { mutableStateOf("") }
     var debugLoggingEnabled by remember { mutableStateOf(false) }
+    var mockMode by rememberSaveable { mutableStateOf(mockModeEnabled) }
 
     LaunchedEffect(settingsStore) {
         settingsStore.getLichessToken()?.let { token = it }
+        mockMode = settingsStore.isMockModeEnabled()
     }
 
     LaunchedEffect(otaAction) {
@@ -112,104 +122,142 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        SectionCard(
-            title = stringResource(R.string.language_label),
-            description = stringResource(R.string.language_description)
-        ) {
-            LanguageSelector(
-                selectedLanguage = selectedLanguage,
-                onLanguageSelected = onLanguageSelected,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        topBar = {
+            AppTopBar(title = stringResource(R.string.nav_settings))
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SectionCard(
-            title = stringResource(R.string.settings_token_title),
-            description = stringResource(R.string.token_description)
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
         ) {
-            TokenLink()
-
-            OutlinedTextField(
-                value = token,
-                onValueChange = { token = it },
-                label = { Text(stringResource(R.string.token_label)) },
-                singleLine = true,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .fillMaxWidth()
-            )
-            Button(
-                onClick = {
-                    settingsStore.saveLichessToken(token)
-                    savedMessage = context.getString(R.string.token_saved)
-                },
-                modifier = Modifier.padding(top = 12.dp)
-            ) { Text(stringResource(R.string.save_token)) }
-
-            if (savedMessage.isNotEmpty()) {
-                Text(
-                    text = savedMessage,
+            SectionCard(
+                title = stringResource(R.string.language_label),
+                description = stringResource(R.string.language_description)
+            ) {
+                LanguageSelector(
+                    selectedLanguage = selectedLanguage,
+                    onLanguageSelected = onLanguageSelected,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        SectionCard(
-            title = stringResource(R.string.debug_logs_title),
-            description = stringResource(R.string.debug_logs_description)
-        ) {
-            DebugLogSection(
-                enabled = debugLoggingEnabled,
-                onToggle = { enabled ->
-                    debugLoggingEnabled = enabled
-                    if (enabled) {
-                        DebugLogStore.start(context)
-                    } else {
-                        coroutineScope.launch {
-                            DebugLogStore.stopAndAwait()
-                            val uri = DebugLogStore.shareUri(context) ?: return@launch
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/octet-stream"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                clipData = ClipData.newRawUri("debug-log", uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            val chooserIntent = Intent.createChooser(
-                                shareIntent,
-                                context.getString(R.string.debug_logs_share_title)
-                            ).apply {
-                                if (context !is Activity) {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            SectionCard(
+                title = stringResource(R.string.settings_token_title),
+                description = stringResource(R.string.token_description)
+            ) {
+                TokenLink()
+
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text(stringResource(R.string.token_label)) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        settingsStore.saveLichessToken(token)
+                        savedMessage = context.getString(R.string.token_saved)
+                    },
+                    modifier = Modifier.padding(top = 12.dp)
+                ) { Text(stringResource(R.string.save_token)) }
+
+                if (savedMessage.isNotEmpty()) {
+                    Text(
+                        text = savedMessage,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SectionCard(
+                title = stringResource(R.string.debug_logs_title),
+                description = stringResource(R.string.debug_logs_description)
+            ) {
+                DebugLogSection(
+                    enabled = debugLoggingEnabled,
+                    onToggle = { enabled ->
+                        debugLoggingEnabled = enabled
+                        if (enabled) {
+                            DebugLogStore.start(context)
+                        } else {
+                            coroutineScope.launch {
+                                DebugLogStore.stopAndAwait()
+                                val uri = DebugLogStore.shareUri(context) ?: return@launch
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/octet-stream"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    clipData = ClipData.newRawUri("debug-log", uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
+                                val chooserIntent = Intent.createChooser(
+                                    shareIntent,
+                                    context.getString(R.string.debug_logs_share_title)
+                                ).apply {
+                                    if (context !is Activity) {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                }
+                                context.startActivity(chooserIntent)
                             }
-                            context.startActivity(chooserIntent)
                         }
                     }
-                }
-            )
-        }
-
-        if (otaAction != null && onOtaSelectFile != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            SectionCard(
-                title = stringResource(R.string.ota_title),
-                description = stringResource(R.string.ota_description)
-            ) {
-                OtaSection(
-                    viewModel = viewModel,
-                    otaAction = otaAction,
-                    bleService = bleService,
-                    onSelectFileClick = onOtaSelectFile
                 )
+
+                if (BuildConfig.DEBUG) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.mock_mode_title),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = stringResource(R.string.mock_mode_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = mockMode,
+                            onCheckedChange = { enabled ->
+                                mockMode = enabled
+                                settingsStore.setMockModeEnabled(enabled)
+                                onMockModeChanged(enabled)
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (otaAction != null && onOtaSelectFile != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                SectionCard(
+                    title = stringResource(R.string.ota_title),
+                    description = stringResource(R.string.ota_description)
+                ) {
+                    OtaSection(
+                        viewModel = viewModel,
+                        otaAction = otaAction,
+                        bleService = bleService,
+                        onSelectFileClick = onOtaSelectFile
+                    )
+                }
             }
         }
     }

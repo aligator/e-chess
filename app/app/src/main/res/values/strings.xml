@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">EChess</string>
     <string name="nav_chess">Chess</string>
+    <string name="nav_game">Game</string>
     <string name="nav_settings">Settings</string>
     <string name="bluetooth_enable">Enable Bluetooth</string>
     <string name="bluetooth_unavailable">Bluetooth unavailable</string>
@@ -26,26 +27,11 @@
     <string name="ble_status_disconnected">Disconnected</string>
     <string name="ble_status_unknown">Unknown</string>
     <string name="ble_connected_address">Device: %1$s</string>
-    <string name="setup_ready_title">Board ready</string>
-    <string
-        name="setup_ready_description"
-    >Connected and ready to load a game.</string>
-    <string name="setup_scanning_title">Scanning for boards</string>
-    <string
-        name="setup_scanning_description"
-    >Select your board from the list.</string>
-    <string name="setup_ready_to_scan_title">Ready to scan</string>
-    <string
-        name="setup_ready_to_scan_description"
-    >Start a scan to find your board.</string>
-    <string name="setup_step_scan">1 Scan</string>
-    <string name="setup_step_connect">2 Connect</string>
-    <string name="setup_step_load">3 Load</string>
+    <string name="board_title">Board</string>
     <string name="scan_start">Search devices</string>
     <string name="scan_stop">Stop scan</string>
     <string name="connect_button">Connect</string>
     <string name="unknown_device">Unknown</string>
-    <string name="last_connected_device">Last connected device</string>
     <string name="settings_token_title">Lichess API Token</string>
     <string name="language_description">Choose the app language.</string>
     <string
@@ -67,8 +53,15 @@
         name="fetch_games_failed"
     >Could not fetch games. Check the connection.</string>
     <string name="standard_game_option">Standard game (local)</string>
-    <string name="use_last_game">Use last loaded game</string>
     <string name="no_games_available">No ongoing games found</string>
+    <string name="loaded_game_title">Loaded game</string>
+    <string name="change_game">Change game</string>
+    <string name="hide_game_loader">Hide game loader</string>
+    <string name="select_game">Select game</string>
+    <string name="select_game_title">Select game</string>
+    <string name="game_title">Game</string>
+    <string name="back_button">Back</string>
+    <string name="no_board_state">No board state yet</string>
     <string name="available_devices">Available devices</string>
     <string name="load_game_title">Load game</string>
     <string name="disconnect_button">Disconnect</string>
@@ -86,6 +79,10 @@
         name="debug_logs_description"
     >Write the app logs to a file until you turn it off.</string>
     <string name="debug_logs_toggle">Enable logging</string>
+    <string name="mock_mode_title">Mock mode (debug)</string>
+    <string
+        name="mock_mode_description"
+    >Simulate a connected board in the emulator.</string>
     <string name="debug_logs_share_title">Share debug log</string>
     <string
         name="debug_logs_no_file"

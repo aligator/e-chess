@@ -1,5 +1,6 @@
 package me.aligator.e_chess
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -33,26 +34,37 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.viewmodel.compose.viewModel
 import me.aligator.e_chess.data.SettingsStore
 import me.aligator.e_chess.data.DebugLogStore
 import me.aligator.e_chess.feature.ble.BleScreen
 import me.aligator.e_chess.feature.settings.SettingsScreen
+import me.aligator.e_chess.feature.game.GameScreen
+import me.aligator.e_chess.feature.game.SelectGameScreen
+import me.aligator.e_chess.feature.ble.BleViewModel
 import me.aligator.e_chess.platform.ble.BoardBleService
 import me.aligator.e_chess.platform.ble.hasPermissions
 import me.aligator.e_chess.platform.ble.requiredPermissions
+import androidx.core.net.toUri
 
 private enum class AppDestination {
     BLE,
+    SELECT_GAME,
+    GAME,
     SETTINGS
 }
 
+@SuppressLint("UseKtx")
 @Composable
 fun EChessApp() {
     val context = LocalContext.current
+    val baseConfig = LocalConfiguration.current
     val settingsStore = remember { SettingsStore(context.applicationContext) }
     val isPreview = LocalInspectionMode.current
 
@@ -60,8 +72,13 @@ fun EChessApp() {
     var language by rememberSaveable {
         mutableStateOf(AppLanguage.fromCode(settingsStore.getLanguage()))
     }
+    var mockModeEnabled by rememberSaveable {
+        mutableStateOf(settingsStore.isMockModeEnabled())
+    }
     var permissionsGranted by remember { mutableStateOf(hasPermissions(context)) }
     var bluetoothService by remember { mutableStateOf<BoardBleService?>(null) }
+    val bleViewModel: BleViewModel = viewModel()
+    val bleUiState by bleViewModel.uiState.collectAsState()
 
     // Clear previous debug logs on each app start.
     LaunchedEffect(Unit) {
@@ -80,9 +97,15 @@ fun EChessApp() {
     }
 
     // Request permissions on first launch
-    LaunchedEffect(Unit) {
+    LaunchedEffect(mockModeEnabled) {
         if (!hasPermissions(context)) {
             permissionLauncher.launch(requiredPermissions().toTypedArray())
+        }
+    }
+
+    LaunchedEffect(bleUiState.isConnected) {
+        if (bleUiState.isConnected && destination == AppDestination.BLE) {
+            destination = AppDestination.SELECT_GAME
         }
     }
 
@@ -118,7 +141,7 @@ fun EChessApp() {
     var otaFileUri by rememberSaveable(
         stateSaver = Saver<Uri?, String>(
             save = { it?.toString() },
-            restore = { Uri.parse(it) }
+            restore = { it.toUri() }
         )
     ) { mutableStateOf(null) }
 
@@ -128,8 +151,8 @@ fun EChessApp() {
         otaFileUri = uri
     }
 
-    val localizedContext = remember(language) {
-        val config = Configuration(context.resources.configuration).apply {
+    val localizedContext = remember(language, baseConfig) {
+        val config = Configuration(baseConfig).apply {
             setLocale(language.locale)
         }
         context.createConfigurationContext(config)
@@ -152,6 +175,19 @@ fun EChessApp() {
                         label = { Text(stringResource(R.string.nav_chess)) }
                     )
                     NavigationBarItem(
+                        selected = destination == AppDestination.GAME,
+                        onClick = { destination = AppDestination.SELECT_GAME },
+                        enabled = bleUiState.isConnected,
+                        icon = {
+                            Text(
+                                text = "♚",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        },
+                        label = { Text(stringResource(R.string.nav_game)) }
+                    )
+                    NavigationBarItem(
                         selected = destination == AppDestination.SETTINGS,
                         onClick = { destination = AppDestination.SETTINGS },
                         icon = { Icon(Icons.Default.Settings, contentDescription = null) },
@@ -168,7 +204,21 @@ fun EChessApp() {
                 when (destination) {
                     AppDestination.BLE -> BleScreen(
                         permissionsGranted = permissionsGranted,
-                        bluetoothService = bluetoothService
+                        bluetoothService = bluetoothService,
+                        mockModeEnabled = mockModeEnabled,
+                        onOpenGame = { destination = AppDestination.SELECT_GAME },
+                        viewModel = bleViewModel
+                    )
+
+                    AppDestination.SELECT_GAME -> SelectGameScreen(
+                        viewModel = bleViewModel,
+                        onBack = { destination = AppDestination.BLE },
+                        onGameLoaded = { destination = AppDestination.GAME }
+                    )
+
+                    AppDestination.GAME -> GameScreen(
+                        viewModel = bleViewModel,
+                        onBack = { destination = AppDestination.SELECT_GAME }
                     )
 
                     AppDestination.SETTINGS -> SettingsScreen(
@@ -176,6 +226,11 @@ fun EChessApp() {
                         onLanguageSelected = { newLanguage ->
                             language = newLanguage
                             settingsStore.saveLanguage(newLanguage.code)
+                        },
+                        mockModeEnabled = mockModeEnabled,
+                        onMockModeChanged = { enabled ->
+                            mockModeEnabled = enabled
+                            settingsStore.setMockModeEnabled(enabled)
                         },
                         otaAction = bluetoothService?.otaAction,
                         bleService = bluetoothService,

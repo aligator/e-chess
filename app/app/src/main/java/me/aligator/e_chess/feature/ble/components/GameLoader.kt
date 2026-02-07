@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +41,6 @@ import me.aligator.e_chess.data.model.GameOption
 fun GameLoader(
     availableGames: List<GameOption>,
     selectedGameKey: String,
-    lastLoadedGame: String? = null,
     onGameKeyChanged: (String) -> Unit,
     onLoadGame: (String) -> Unit,
     onFetchGames: () -> Unit,
@@ -93,18 +91,6 @@ fun GameLoader(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
-            if (!lastLoadedGame.isNullOrBlank() && lastLoadedGame != selectedGameKey) {
-                TextButton(
-                    onClick = { onGameKeyChanged(lastLoadedGame) },
-                    modifier = Modifier.padding(bottom = 6.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.use_last_game),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
 
             ExposedDropdownMenuBox(
                 expanded = expanded,

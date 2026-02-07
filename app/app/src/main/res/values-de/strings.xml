@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">EChess</string>
     <string name="nav_chess">Schach</string>
+    <string name="nav_game">Spiel</string>
     <string name="nav_settings">Einstellungen</string>
     <string name="bluetooth_enable">Bluetooth aktivieren</string>
     <string name="bluetooth_unavailable">Bluetooth nicht verfügbar</string>
@@ -26,26 +27,11 @@
     <string name="ble_status_disconnected">Getrennt</string>
     <string name="ble_status_unknown">Unbekannt</string>
     <string name="ble_connected_address">Gerät: %1$s</string>
-    <string name="setup_ready_title">Brett bereit</string>
-    <string
-        name="setup_ready_description"
-    >Verbunden und bereit zum Laden eines Spiels.</string>
-    <string name="setup_scanning_title">Suche nach Brettern</string>
-    <string
-        name="setup_scanning_description"
-    >Wähle dein Brett aus der Liste.</string>
-    <string name="setup_ready_to_scan_title">Bereit zum Scannen</string>
-    <string
-        name="setup_ready_to_scan_description"
-    >Starte einen Scan, um dein Brett zu finden.</string>
-    <string name="setup_step_scan">1 Scannen</string>
-    <string name="setup_step_connect">2 Verbinden</string>
-    <string name="setup_step_load">3 Laden</string>
+    <string name="board_title">Brett</string>
     <string name="scan_start">Nach Geräten suchen</string>
     <string name="scan_stop">Scan stoppen</string>
     <string name="connect_button">Verbinden</string>
     <string name="unknown_device">Unbekannt</string>
-    <string name="last_connected_device">Zuletzt verbundenes Gerät</string>
     <string name="settings_token_title">Lichess API Token</string>
     <string name="language_description">Wähle die App-Sprache.</string>
     <string
@@ -67,8 +53,15 @@
         name="fetch_games_failed"
     >Spiele konnten nicht geladen werden. Verbindung prüfen.</string>
     <string name="standard_game_option">Standardspiel (lokal)</string>
-    <string name="use_last_game">Letztes Spiel verwenden</string>
     <string name="no_games_available">Keine laufenden Spiele gefunden</string>
+    <string name="loaded_game_title">Geladenes Spiel</string>
+    <string name="change_game">Spiel wechseln</string>
+    <string name="hide_game_loader">Spielauswahl ausblenden</string>
+    <string name="select_game">Spiel auswählen</string>
+    <string name="select_game_title">Spiel auswählen</string>
+    <string name="game_title">Spiel</string>
+    <string name="back_button">Zurück</string>
+    <string name="no_board_state">Noch kein Brettzustand</string>
     <string name="available_devices">Verfügbare Geräte</string>
     <string name="load_game_title">Lade Spiel</string>
     <string name="disconnect_button">Trennen</string>
@@ -88,6 +81,10 @@
         name="debug_logs_description"
     >Schreibt die App-Logs in eine Datei, bis du es ausschaltest.</string>
     <string name="debug_logs_toggle">Logging aktivieren</string>
+    <string name="mock_mode_title">Mock-Modus (Debug)</string>
+    <string
+        name="mock_mode_description"
+    >Simuliert ein verbundenes Brett im Emulator.</string>
     <string name="debug_logs_share_title">Debug-Log teilen</string>
     <string
         name="debug_logs_no_file"
