@@ -208,7 +208,23 @@ class BoardControlAction(
         _isLoadingGames.value = true
         val command = JSONObject()
         command.put("type", "load_open_games")
-        return sendGameCommand(command)
+        val sent = sendGameCommand(command)
+        if (!sent) {
+            _isLoadingGames.value = false
+            Log.w(LOG_TAG, "Failed to send load_open_games command (not connected or service not ready)")
+            return false
+        }
+        // Reset the loading flag if the board never responds.
+        timeoutHandler.postDelayed(
+            {
+                if (_isLoadingGames.value) {
+                    Log.w(LOG_TAG, "Open games load timed out, resetting loading flag")
+                    _isLoadingGames.value = false
+                }
+            },
+            8_000
+        )
+        return true
     }
 
     fun onDestroy() {

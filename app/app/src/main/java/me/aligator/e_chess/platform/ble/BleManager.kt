@@ -32,6 +32,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.util.UUID
@@ -218,6 +220,7 @@ class BleManager(
 
     private var descriptorWriteQueue = mutableListOf<DescriptorWriteRequest>()
     private var isWritingDescriptor = false
+    private val readyForWrites = MutableStateFlow(false)
 
     fun register(action: BleAction) {
         bleActions.add(action)
@@ -243,6 +246,7 @@ class BleManager(
                             characteristicsReady = false
                         )
                     )
+                    readyForWrites.value = false
                 }
 
                 result
@@ -384,6 +388,9 @@ class BleManager(
                 )
             )
         }
+
+        // If there are no pending descriptor writes, allow outbound commands immediately.
+        maybeMarkReadyForWrites()
     }
 
     private fun handleCharacteristicChanged(
@@ -404,6 +411,17 @@ class BleManager(
         if (characteristic?.writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && characteristic.uuid != null && status == BluetoothGatt.GATT_SUCCESS) {
             parentScope.launch {
                 responseAckChannel.send(characteristic.uuid)
+            }
+        }
+    }
+
+    private fun maybeMarkReadyForWrites() {
+        synchronized(descriptorWriteQueue) {
+            if (!isWritingDescriptor && descriptorWriteQueue.isEmpty()) {
+                if (!readyForWrites.value) {
+                    readyForWrites.value = true
+                    Log.d(LOG_TAG, "All descriptors written; BLE link ready for outgoing commands")
+                }
             }
         }
     }
@@ -491,6 +509,7 @@ class BleManager(
                     synchronized(descriptorWriteQueue) {
                         isWritingDescriptor = false
                         processNextDescriptorWrite()
+                        maybeMarkReadyForWrites()
                     }
                 }
             }
@@ -499,6 +518,9 @@ class BleManager(
     private suspend fun responseLoop() {
         responseAckChannel.close()
         responseAckChannel = Channel(1)
+
+        // Avoid sending writes while descriptor setup is still running to prevent "prior command not finished".
+        readyForWrites.filter { it }.first()
 
         for (response in responseChannel) {
             val currentGatt = gatt ?: break
@@ -582,6 +604,7 @@ class BleManager(
             return
         }
 
+        readyForWrites.value = false
         // Start background thread to send the queued responses.
         responseJob = parentScope.launch {
             responseLoop()
@@ -674,12 +697,16 @@ class BleManager(
             }
         } else {
             Log.w(LOG_TAG, "CCCD Descriptor not found for ${characteristic.uuid}")
+            maybeMarkReadyForWrites()
         }
     }
 
     private fun processNextDescriptorWrite() {
         synchronized(descriptorWriteQueue) {
             if (isWritingDescriptor || descriptorWriteQueue.isEmpty()) {
+                if (!isWritingDescriptor && descriptorWriteQueue.isEmpty()) {
+                    maybeMarkReadyForWrites()
+                }
                 return
             }
 
@@ -691,6 +718,7 @@ class BleManager(
                 Log.w(LOG_TAG, "CCCD Descriptor not found for ${request.characteristic.uuid}")
                 isWritingDescriptor = false
                 processNextDescriptorWrite()
+                maybeMarkReadyForWrites()
                 return
             }
 
