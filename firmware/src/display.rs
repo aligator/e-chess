@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess::{BitBoard, Square};
+use chess::{BitBoard, Color, File, GameResult, Rank, Square};
 use chess_game::game::ChessGameState;
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
@@ -47,6 +47,7 @@ pub struct Display<'a> {
     previous_state: Option<(BitBoard, BitBoard)>,
     brightness: f32,
     tick_counter: u32,
+    game_over_tick: Option<u32>,
 }
 
 impl<'a> Display<'a> {
@@ -56,6 +57,7 @@ impl<'a> Display<'a> {
             previous_state: None,
             brightness: 0.15,
             tick_counter: 0,
+            game_over_tick: None,
         }
     }
 
@@ -95,6 +97,72 @@ impl<'a> Display<'a> {
         let game = game.unwrap();
 
         self.tick_counter = self.tick_counter.wrapping_add(1);
+
+        // Game-over animation: Phase C (king heartbeat) → Phase A (shockwave rings).
+        let loser_color = game.game_result.and_then(|result| match result {
+            GameResult::WhiteCheckmates | GameResult::BlackResigns => Some(Color::Black),
+            GameResult::BlackCheckmates | GameResult::WhiteResigns => Some(Color::White),
+            _ => None,
+        });
+        if let Some(loser_color) = loser_color {
+            let winner_color = match loser_color {
+                Color::White => Color::Black,
+                Color::Black => Color::White,
+            };
+            let start = *self.game_over_tick.get_or_insert(self.tick_counter);
+            let elapsed = self.tick_counter.wrapping_sub(start);
+
+            let king_sq = game.current_position.king_square(loser_color);
+            let king_rank = king_sq.get_rank().to_index() as f32;
+            let king_file = king_sq.get_file().to_index() as f32;
+
+            let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
+
+            const HEARTBEAT_TICKS: u32 = 80;
+            if elapsed < HEARTBEAT_TICKS {
+                // Frequency ramps from ~1.5 Hz to ~4.5 Hz then stops — panic pulse.
+                let t = elapsed as f32 / HEARTBEAT_TICKS as f32;
+                let phase = std::f32::consts::TAU * (1.5 * t + 3.0 * t * t);
+                let brightness = phase.sin().abs();
+                let r = (255.0 * self.brightness * brightness) as u8;
+                pixels[Self::get_pixel(king_sq)] = RGB { r, g: 0, b: 0 };
+            } else {
+                // Shockwave rings expand from king, looping every 55 ticks.
+                let shock_t = (elapsed - HEARTBEAT_TICKS) % 55;
+                let ring_radius = shock_t as f32 * 0.22;
+
+                for rank in 0..8usize {
+                    for file in 0..8usize {
+                        let sq = Square::make_square(
+                            Rank::from_index(rank),
+                            File::from_index(file),
+                        );
+                        let dist = {
+                            let dr = rank as f32 - king_rank;
+                            let df = file as f32 - king_file;
+                            (dr * dr + df * df).sqrt()
+                        };
+                        let diff = (dist - ring_radius).abs();
+                        if diff < 1.5 {
+                            let intensity = (1.0 - diff / 1.5) * self.brightness;
+                            let (r, g, b) = match winner_color {
+                                Color::White => ((255.0 * intensity) as u8, (160.0 * intensity) as u8, 0),
+                                Color::Black => (0, (80.0 * intensity) as u8, (255.0 * intensity) as u8),
+                            };
+                            pixels[Self::get_pixel(sq)] = RGB { r, g, b };
+                        }
+                    }
+                }
+                // King square stays red through the shockwave.
+                let glow = (self.brightness * 255.0) as u8;
+                pixels[Self::get_pixel(king_sq)] = RGB { r: glow, g: 0, b: 0 };
+            }
+
+            self.leds.write_nocopy(pixels)?;
+            self.previous_state = None;
+            return Ok(());
+        }
+        self.game_over_tick = None;
 
         if game.is_loading {
             // White trail running around board border — our move is being submitted.
