@@ -52,6 +52,12 @@ pub struct ChessGameState {
     pub possible_moves: BitBoard,
     pub current_position: Board,
     pub active_player: Color,
+
+    /// True while a move is being sent to the oppenent (not local).
+    pub is_loading: bool,
+
+    /// True when opponent's turn in a remote game (not local, not while we're submitting).
+    pub opponent_is_thinking: bool,
 }
 
 impl Debug for ChessGameState {
@@ -100,6 +106,12 @@ pub struct ChessGame {
     /// Current game id.
     /// Needed to reset the game in case of "undo" since the chess lib does not support undoing.
     id: String,
+
+    /// Move submitted locally but not yet confirmed by server.
+    pending_move: Option<ChessMove>,
+
+    /// Color we play as in remote games; None for local games.
+    our_color: Option<Color>,
 }
 
 impl fmt::Debug for ChessGame {
@@ -261,6 +273,8 @@ impl ChessGame {
             playing_state: PlayingState::Idle,
             server_moves: Vec::new(),
             id: String::new(),
+            pending_move: None,
+            our_color: None,
         })
     }
 
@@ -286,7 +300,9 @@ impl ChessGame {
 
     pub fn reset(&mut self, id: &str) -> Result<(), ChessGameError> {
         let mut connection = self.connection.lock().unwrap();
-        self.game = Some(connection.load_game(id)?);
+        let (game, our_color) = connection.load_game(id)?;
+        self.game = Some(game);
+        self.our_color = our_color;
         self.id = id.to_string();
 
         if let Some(game) = &self.game {
@@ -323,22 +339,47 @@ impl ChessGame {
 
         // Check if the move has already been made.
         if self.server_moves.last() != Some(&chess_move) {
-            // Ensure the move is legal by checking the connection first
-            if !self.connection.lock().unwrap().make_move(chess_move) {
-                return false;
+            // Apply locally optimistically; defer server call so tick() stays non-blocking.
+            if !game.make_move(chess_move) {
+                panic!(
+                    "Move was legal but could not be executed locally. Should not happen. {:?}",
+                    chess_move
+                );
             }
-            self.server_moves.push(chess_move);
+            // Save in the pending moves so it can be executed after the tick.
+            self.pending_move = Some(chess_move);
+        } else {
+            // Already confirmed by server stream — just apply locally.
+            if !game.make_move(chess_move) {
+                panic!(
+                    "Move was legal but could not be executed locally. Should not happen. {:?}",
+                    chess_move
+                );
+            }
         }
 
-        // If it was successful, execute the move also locally
-        // -> should not fail as it is legal.
-        if !game.make_move(chess_move) {
-            panic!(
-                "Move was legal but could not be executed locally. Should not happen. {:?}",
-                chess_move
-            );
-        }
         true
+    }
+
+    pub fn has_pending_move(&self) -> bool {
+        self.pending_move.is_some()
+    }
+
+    /// Blocking: submits the pending move to the server via the connector.
+    /// Call this from the game thread AFTER sending a loading state update to the display.
+    pub fn submit_pending_move(&mut self) {
+        let Some(chess_move) = self.pending_move.take() else {
+            return;
+        };
+        let ok = self.connection.lock().unwrap().make_move(chess_move);
+        if ok {
+            self.server_moves.push(chess_move);
+        } else {
+            // Server rejected — revert by reloading from server.
+            if let Err(e) = self.reset(&self.id.clone()) {
+                eprintln!("Failed to reset game after rejected move: {:?}", e);
+            }
+        }
     }
 
     /// A new pice got placed.
@@ -613,6 +654,13 @@ impl ChessGame {
                 possible_moves: self.get_possible_moves(),
                 current_position: game.current_position(),
                 active_player: game.side_to_move(),
+                is_loading: self.pending_move.is_some() && self.our_color.is_some(),
+                opponent_is_thinking: {
+                    let our_color = self.our_color;
+                    our_color.is_some()
+                        && game.side_to_move() != our_color.unwrap()
+                        && self.pending_move.is_none()
+                },
             });
         }
         None

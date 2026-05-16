@@ -4,7 +4,7 @@ use crate::{
     },
     requester::Requester,
 };
-use chess::{ChessMove, Game};
+use chess::{ChessMove, Color, Game};
 use serde::{Deserialize, Serialize};
 use std::{
     str::FromStr,
@@ -26,10 +26,17 @@ struct LichessGameState {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct LichessPlayer {
+    id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct LichessGameResponse {
     id: String,
     #[serde(rename = "initialFen")]
     initial_fen: String,
+    white: LichessPlayer,
+    black: LichessPlayer,
     state: LichessGameState,
 }
 
@@ -77,6 +84,14 @@ impl<R: Requester> LichessConnector<R> {
             game.make_move(ChessMove::from_str(m).unwrap());
         }
         Ok(game)
+    }
+
+    fn fetch_our_user_id(&self) -> Option<String> {
+        self.request
+            .get("https://lichess.org/api/account")
+            .ok()
+            .and_then(|resp| serde_json::from_str::<serde_json::Value>(&resp).ok())
+            .and_then(|v| v.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
     }
 
     fn parse_game(&self, game_response: String) -> Result<LichessResponse, ChessConnectorError> {
@@ -158,7 +173,7 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         Ok(game_ids)
     }
 
-    fn load_game(&mut self, id: &str) -> Result<Game, ChessConnectorError> {
+    fn load_game(&mut self, id: &str) -> Result<(Game, Option<Color>), ChessConnectorError> {
         let (tx, rx) = mpsc::channel();
         self.upstream_rx = rx;
         self.upstream_tx = tx;
@@ -186,8 +201,17 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
 
         self.id = Some(id.to_string());
 
-        // Parse json to object
-        Ok(self.create_game(game)?)
+        let our_color = self.fetch_our_user_id().as_deref().and_then(|uid| {
+            if game.white.id.as_deref() == Some(uid) {
+                Some(Color::White)
+            } else if game.black.id.as_deref() == Some(uid) {
+                Some(Color::Black)
+            } else {
+                None
+            }
+        });
+
+        Ok((self.create_game(game)?, our_color))
     }
 
     fn make_move(&self, chess_move: ChessMove) -> bool {
@@ -251,4 +275,5 @@ impl<R: Requester> ChessConnector for LichessConnector<R> {
         let valid = len >= 8 && len <= 12 && key.chars().all(|c| c.is_ascii_alphanumeric());
         valid
     }
+
 }

@@ -170,20 +170,26 @@ pub fn run_game(event_manager: &EventManager<Event>) {
             match chess_game.tick(physical) {
                 Ok(()) => {
                     if let Some(state) = chess_game.get_state() {
-                        if let Some(last_game_state_extracted) = last_game_state {
-                            if last_game_state_extracted == state {
-                                continue;
+                        if last_game_state != Some(state) {
+                            let event = Event::GameState(GameStateEvent::UpdateGame(state));
+                            if let Err(e) = event_tx.send(event) {
+                                error!("Failed to send new game state: {:?}", e);
                             }
+                            last_game_state = Some(state);
                         }
+                    }
 
-                        let event = Event::GameState(GameStateEvent::UpdateGame(state));
-                        if let Err(e) = event_tx.send(event) {
-                            error!("Failed to send new game state: {:?}", e);
+                    // Submit pending move AFTER sending loading state so display
+                    // sees is_loading=true before the blocking BLE call.
+                    if chess_game.has_pending_move() {
+                        chess_game.submit_pending_move();
+                        if let Some(state) = chess_game.get_state() {
+                            let event = Event::GameState(GameStateEvent::UpdateGame(state));
+                            if let Err(e) = event_tx.send(event) {
+                                error!("Failed to send new game state: {:?}", e);
+                            }
+                            last_game_state = Some(state);
                         }
-
-                        last_game_state = Some(state)
-                    } else {
-                        //warn!("No game state found");
                     }
                 }
                 Err(e) => error!("Error ticking game: {:?}", e),
