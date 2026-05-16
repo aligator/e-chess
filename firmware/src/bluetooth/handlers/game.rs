@@ -97,7 +97,6 @@ impl GameHandler {
                             fen: format!("{}", state.current_position),
                         })
                     }
-                    _ => None,
                 };
 
                 if let Some(evt) = serializable {
