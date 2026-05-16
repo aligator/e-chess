@@ -58,6 +58,9 @@ pub struct ChessGameState {
 
     /// True when opponent's turn in a remote game (not local, not while we're submitting).
     pub opponent_is_thinking: bool,
+
+    /// Set when the game has ended.
+    pub game_result: Option<chess::GameResult>,
 }
 
 impl Debug for ChessGameState {
@@ -661,6 +664,7 @@ impl ChessGame {
                         && game.side_to_move() != our_color.unwrap()
                         && self.pending_move.is_none()
                 },
+                game_result: game.result(),
             });
         }
         None

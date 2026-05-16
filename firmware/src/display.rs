@@ -1,6 +1,6 @@
 use anyhow::Result;
-use chess::{BitBoard, Square};
-use chess_game::game::ChessGameState;
+use chess::{BitBoard, Color, File, GameResult, Rank, Square};
+use chess_game::game::{ChessGameState, PlayingState};
 use smart_leds::RGB;
 use ws2812_esp32_rmt_driver::Ws2812Esp32Rmt;
 
@@ -19,6 +19,10 @@ const BORDER_SQUARES: [u8; 28] = [
     48, 40, 32, 24, 16, 8,
 ];
 
+const HEARTBEAT_TICKS: u32 = 80;
+
+type Pixels = [RGB<u8>; BOARD_SIZE * BOARD_SIZE];
+
 struct DiffResult {
     _same: BitBoard,
     missing: BitBoard,
@@ -34,11 +38,26 @@ impl BitBoardDiff for BitBoard {
         let same = self & other;
         let missing = self & !other;
         let added = !self & other;
-        DiffResult {
-            _same: same,
-            missing,
-            added,
-        }
+        DiffResult { _same: same, missing, added }
+    }
+}
+
+fn blank() -> Pixels {
+    [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE]
+}
+
+fn loser_color(result: Option<GameResult>) -> Option<Color> {
+    result.and_then(|r| match r {
+        GameResult::WhiteCheckmates | GameResult::BlackResigns => Some(Color::Black),
+        GameResult::BlackCheckmates | GameResult::WhiteResigns => Some(Color::White),
+        _ => None,
+    })
+}
+
+fn opposite(color: Color) -> Color {
+    match color {
+        Color::White => Color::Black,
+        Color::Black => Color::White,
     }
 }
 
@@ -47,6 +66,7 @@ pub struct Display<'a> {
     previous_state: Option<(BitBoard, BitBoard)>,
     brightness: f32,
     tick_counter: u32,
+    game_over_tick: Option<u32>,
 }
 
 impl<'a> Display<'a> {
@@ -56,6 +76,7 @@ impl<'a> Display<'a> {
             previous_state: None,
             brightness: 0.15,
             tick_counter: 0,
+            game_over_tick: None,
         }
     }
 
@@ -63,29 +84,115 @@ impl<'a> Display<'a> {
         Ok(())
     }
 
-    fn border_spinner(pixels: &mut [RGB<u8>; BOARD_SIZE * BOARD_SIZE], head: usize, r: u8, g: u8, b: u8) {
-        const TRAIL: usize = 8;
-        for i in 0..TRAIL {
-            let pos = (head + BORDER_SQUARES.len() - i) % BORDER_SQUARES.len();
-            let fade = (TRAIL - i) as f32 / TRAIL as f32;
-            pixels[Self::get_pixel(Square::new(BORDER_SQUARES[pos]))] = RGB {
-                r: (r as f32 * fade) as u8,
-                g: (g as f32 * fade) as u8,
-                b: (b as f32 * fade) as u8,
-            };
-        }
-    }
-
     fn get_pixel(square: Square) -> usize {
         let rank = BOARD_SIZE - 1 - square.get_rank().to_index();
         let file = square.get_file().to_index();
-
         let mut pixel = rank * BOARD_SIZE + file;
         if rank % 2 == 0 {
             pixel = rank * BOARD_SIZE + (BOARD_SIZE - file - 1);
         }
-
         pixel
+    }
+
+    /// Scale r/g/b (0–255 range) by brightness factor.
+    fn rgb(r: f32, g: f32, b: f32, brightness: f32) -> RGB<u8> {
+        RGB {
+            r: (r * brightness) as u8,
+            g: (g * brightness) as u8,
+            b: (b * brightness) as u8,
+        }
+    }
+
+    /// King pulses red with frequency ramping up — panic effect.
+    fn render_king_heartbeat(brightness: f32, elapsed: u32, king_sq: Square) -> Pixels {
+        let t = elapsed as f32 / HEARTBEAT_TICKS as f32;
+        let phase = std::f32::consts::TAU * (1.5 * t + 3.0 * t * t);
+        let pulse = phase.sin().abs();
+        let mut pixels = blank();
+        pixels[Self::get_pixel(king_sq)] = Self::rgb(255.0 * pulse, 0.0, 0.0, brightness);
+        pixels
+    }
+
+    /// Winner-colored rings expand outward from the losing king, looping.
+    fn render_shockwave(
+        brightness: f32,
+        shock_elapsed: u32,
+        king_sq: Square,
+        winner_color: Color,
+    ) -> Pixels {
+        let ring_radius = (shock_elapsed % 55) as f32 * 0.22;
+        let king_rank = king_sq.get_rank().to_index() as f32;
+        let king_file = king_sq.get_file().to_index() as f32;
+
+        let mut pixels = blank();
+        for rank in 0..8usize {
+            for file in 0..8usize {
+                let sq = Square::make_square(Rank::from_index(rank), File::from_index(file));
+                let dr = rank as f32 - king_rank;
+                let df = file as f32 - king_file;
+                let dist = (dr * dr + df * df).sqrt();
+                let diff = (dist - ring_radius).abs();
+                if diff < 1.5 {
+                    let i = (1.0 - diff / 1.5) * 255.0;
+                    pixels[Self::get_pixel(sq)] = match winner_color {
+                        Color::White => Self::rgb(i, i * 0.63, 0.0, brightness),
+                        Color::Black => Self::rgb(0.0, i * 0.31, i, brightness),
+                    };
+                }
+            }
+        }
+        // King stays red through the shockwave.
+        pixels[Self::get_pixel(king_sq)] = Self::rgb(255.0, 0.0, 0.0, brightness);
+        pixels
+    }
+
+    /// Fading trail running around the board border.
+    fn render_border_spinner(
+        brightness: f32,
+        tick: u32,
+        speed_divisor: u32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> Pixels {
+        const TRAIL: usize = 8;
+        let head = (tick / speed_divisor) as usize % BORDER_SQUARES.len();
+        let mut pixels = blank();
+        for i in 0..TRAIL {
+            let pos = (head + BORDER_SQUARES.len() - i) % BORDER_SQUARES.len();
+            let fade = (TRAIL - i) as f32 / TRAIL as f32;
+            pixels[Self::get_pixel(Square::new(BORDER_SQUARES[pos]))] =
+                Self::rgb(r * fade, g * fade, b * fade, brightness);
+        }
+        pixels
+    }
+
+    /// Normal play: highlights for last move, moving piece, diff squares, and possible moves.
+    fn render_board(brightness: f32, game: &ChessGameState) -> Pixels {
+        let mut pixels = blank();
+
+        if let Some(last_move) = game.last_move {
+            pixels[Self::get_pixel(last_move.get_source())] = Self::rgb(0.0, 127.0, 127.0, brightness);
+            pixels[Self::get_pixel(last_move.get_dest())] = Self::rgb(0.0, 255.0, 255.0, brightness);
+        }
+
+        if let PlayingState::MovingPiece { piece: _, from } = game.playing_state {
+            // Source square is a valid placement target — highlight green.
+            pixels[Self::get_pixel(from)] = Self::rgb(0.0, 255.0, 0.0, brightness);
+        }
+
+        let diff = game.expected_physical.diff(game.physical);
+        diff.missing.for_each(|sq| {
+            pixels[Self::get_pixel(sq)] = Self::rgb(255.0, 255.0, 0.0, brightness);
+        });
+        diff.added.for_each(|sq| {
+            pixels[Self::get_pixel(sq)] = Self::rgb(255.0, 0.0, 0.0, brightness);
+        });
+        game.possible_moves.for_each(|sq| {
+            pixels[Self::get_pixel(sq)] = Self::rgb(0.0, 255.0, 0.0, brightness);
+        });
+
+        pixels
     }
 
     pub fn tick(&mut self, game: &Option<ChessGameState>) -> Result<()> {
@@ -95,90 +202,39 @@ impl<'a> Display<'a> {
         let game = game.unwrap();
 
         self.tick_counter = self.tick_counter.wrapping_add(1);
+        let t = self.tick_counter;
+        let b = self.brightness;
 
-        if game.is_loading {
-            // White trail running around board border — our move is being submitted.
-            let idx = (self.tick_counter / 4) as usize % BORDER_SQUARES.len();
-            let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
-            let b = (255.0 * self.brightness) as u8;
-            Self::border_spinner(&mut pixels, idx, b, b, b);
-            self.leds.write_nocopy(pixels)?;
-            // Invalidate previous_state so normal rendering re-draws fully after loading.
+        let pixels = if let Some(loser) = loser_color(game.game_result) {
+            let elapsed = t.wrapping_sub(*self.game_over_tick.get_or_insert(t));
+            let king_sq = game.current_position.king_square(loser);
             self.previous_state = None;
-            return Ok(());
-        }
-
-        if game.opponent_is_thinking {
-            // Blue trail running slowly around board border — opponent is thinking.
-            let idx = (self.tick_counter / 20) as usize % BORDER_SQUARES.len();
-            let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
-            let b = (255.0 * self.brightness) as u8;
-            Self::border_spinner(&mut pixels, idx, 0, 0, b);
-            self.leds.write_nocopy(pixels)?;
-            self.previous_state = None;
-            return Ok(());
-        }
-
-        if self.previous_state != Some((game.physical, game.expected_physical)) {
-            let diff = game.expected_physical.diff(game.physical);
-            let mut pixels = [RGB { r: 0, g: 0, b: 0 }; BOARD_SIZE * BOARD_SIZE];
-
-            let last_move = game.last_move;
-
-            // Colorize the last moved square.
-            if let Some(last_move) = last_move {
-                pixels[Self::get_pixel(last_move.get_source())] = RGB {
-                    r: 0,
-                    g: (127 as f32 * self.brightness) as u8,
-                    b: (127 as f32 * self.brightness) as u8,
-                };
-                pixels[Self::get_pixel(last_move.get_dest())] = RGB {
-                    r: 0,
-                    g: (255 as f32 * self.brightness) as u8,
-                    b: (255 as f32 * self.brightness) as u8,
-                };
-            };
-
-            // Colorize the currently moving piece in blue
-            if let chess_game::game::PlayingState::MovingPiece { piece: _, from } =
-                game.playing_state
-            {
-                // Highlight the source square of the moving piece in green (as it is effectively a valid field for placement)
-                pixels[Self::get_pixel(from)] = RGB {
-                    r: 0,
-                    g: (255 as f32 * self.brightness) as u8,
-                    b: 0,
-                };
+            if elapsed < HEARTBEAT_TICKS {
+                Self::render_king_heartbeat(b, elapsed, king_sq)
+            } else {
+                Self::render_shockwave(b, elapsed - HEARTBEAT_TICKS, king_sq, opposite(loser))
             }
+        } else {
+            self.game_over_tick = None;
+            if game.is_loading {
+                // White spinner — our move is being submitted.
+                self.previous_state = None;
+                Self::render_border_spinner(b, t, 4, 255.0, 255.0, 255.0)
+            } else if game.opponent_is_thinking {
+                // Blue spinner — opponent is thinking.
+                self.previous_state = None;
+                Self::render_border_spinner(b, t, 20, 0.0, 0.0, 255.0)
+            } else {
+                let state_key = (game.physical, game.expected_physical);
+                if self.previous_state == Some(state_key) {
+                    return Ok(());
+                }
+                self.previous_state = Some(state_key);
+                Self::render_board(b, &game)
+            }
+        };
 
-            diff.missing.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB {
-                    r: (255 as f32 * self.brightness) as u8,
-                    g: (255 as f32 * self.brightness) as u8,
-                    b: 0,
-                };
-            });
-
-            diff.added.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB {
-                    r: (255 as f32 * self.brightness) as u8,
-                    g: 0,
-                    b: 0,
-                };
-            });
-
-            game.possible_moves.for_each(|square| {
-                pixels[Self::get_pixel(square)] = RGB {
-                    r: 0,
-                    g: (255 as f32 * self.brightness) as u8,
-                    b: 0,
-                };
-            });
-
-            self.leds.write_nocopy(pixels)?;
-            self.previous_state = Some((game.physical, game.expected_physical));
-        }
-
+        self.leds.write_nocopy(pixels)?;
         Ok(())
     }
 }
