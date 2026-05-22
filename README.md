@@ -1,5 +1,7 @@
 # E-Chess
 
+# MOVED to https://codeberg.org/aligator/e-chess
+
 This project is a physical chess board that is connected to an online chess
 server (currently lichess).\
 It allows to play chess on a physical board with a computer/remote opponent.
